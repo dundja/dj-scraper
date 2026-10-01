@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+.vite/
+
+# Tests
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.playwright-mcp/
+
+# Secrets — never commit; yt-dlp cookie files carry live login sessions
+.env
+.env.*
+!.env.example
+*cookies*.txt
+
+# Logs
+*.log
+logs/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Claude Code — personal, per machine
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Local download output while developing
+/downloads/

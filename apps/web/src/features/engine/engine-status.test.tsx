@@ -159,6 +159,19 @@ describe('EngineStatus', () => {
     expect(codeTexts(popover)).toEqual(['pnpm dev'])
   })
 
+  it('tells people running the built app to start it with pnpm start', async () => {
+    // The server serves the production build, where import.meta.env.DEV is false.
+    vi.stubEnv('DEV', false)
+    server.on('GET /api/health', networkError)
+    const user = userEvent.setup()
+    renderWithQueryClient(<EngineStatus />)
+
+    await findChip('Server offline')
+    const popover = await openPopover(user, 'Server offline')
+    expect(popover.textContent).toContain('Start it with pnpm start in the project folder.')
+    expect(codeTexts(popover)).toEqual(['pnpm start'])
+  })
+
   it('reconnects by itself once the server is back, then stops asking', async () => {
     vi.useFakeTimers()
     // TanStack Query hands cache updates to React in a setTimeout(0), and the fake clock runs a
@@ -222,6 +235,18 @@ describe('EngineStatus', () => {
     expect(popover.textContent).toContain("The server's reply doesn't match this app.")
     expect(codeTexts(popover)).toEqual(['pnpm dev'])
     expect(popover.textContent).toContain('HTTP 200: Unexpected response from GET /api/health.')
+  })
+
+  it('asks people running the built app to restart pnpm start after an update', async () => {
+    vi.stubEnv('DEV', false)
+    server.on('GET /api/health', () => json({ ok: true }))
+    const user = userEvent.setup()
+    renderWithQueryClient(<EngineStatus />)
+
+    await findChip('Unexpected response')
+    const popover = await openPopover(user, 'Unexpected response')
+    expect(popover.textContent).toContain('If you just updated, restart pnpm start.')
+    expect(codeTexts(popover)).toEqual(['pnpm start'])
   })
 
   it('shows the status, code and message when the server refuses the check', async () => {

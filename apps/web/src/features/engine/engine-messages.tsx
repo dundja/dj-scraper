@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button.tsx'
 import { PopoverDescription, PopoverHeader, PopoverTitle } from '@/components/ui/popover.tsx'
 import { ApiError } from '@/lib/api.ts'
 import { ProblemText } from './problem-text.tsx'
+import { startCommand } from './start-command.ts'
 
 /** The popover body while the first health check runs. */
 export function CheckingMessage({ title }: { title: string }) {
@@ -24,7 +25,9 @@ export function OfflineMessage({ title, onRetry }: { title: string; onRetry: Ret
       <PopoverHeader>
         <PopoverTitle>{title}</PopoverTitle>
         <PopoverDescription>
-          <ProblemText message="The DJ Scraper server isn't running, so links can't be resolved or downloaded. Start it with `pnpm dev` in the project folder." />
+          <ProblemText
+            message={`The DJ Scraper server isn't running, so links can't be resolved or downloaded. Start it with \`${startCommand()}\` in the project folder.`}
+          />
         </PopoverDescription>
       </PopoverHeader>
       <RetryRow note="This status reconnects by itself." onRetry={onRetry} />
@@ -51,7 +54,9 @@ export function UnexpectedMessage({
           {api ? (
             'The server refused the engine check.'
           ) : (
-            <ProblemText message="The server's reply doesn't match this app. If you just updated, restart `pnpm dev`." />
+            <ProblemText
+              message={`The server's reply doesn't match this app. If you just updated, restart \`${startCommand()}\`.`}
+            />
           )}
         </PopoverDescription>
       </PopoverHeader>

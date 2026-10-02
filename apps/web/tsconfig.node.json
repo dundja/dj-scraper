@@ -9,6 +9,8 @@
     "vitest.config.ts",
     "dev-guard.ts",
     "dev-guard.test.ts",
+    "dev-exit.ts",
+    "dev-exit.test.ts",
     "vite-config.test.ts"
   ]
 }

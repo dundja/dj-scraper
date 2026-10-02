@@ -22,6 +22,7 @@
     "typecheck": "pnpm -r --if-present run typecheck",
     "test": "pnpm -r --if-present run test",
     "test:e2e": "pnpm --filter @dj-scraper/web --fail-if-no-match run test:e2e",
+    "test:e2e:install": "pnpm --filter @dj-scraper/web --fail-if-no-match run test:e2e:install",
     "smoke": "pnpm --filter @dj-scraper/server --fail-if-no-match run smoke"
   },
   "devDependencies": {

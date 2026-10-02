@@ -1,10 +1,11 @@
 import { fileURLToPath } from 'node:url'
-import { PortSchema, SERVER_PORT, WEB_DEV_PORT } from '@dj-scraper/shared'
+import { PortSchema, SECURITY_HEADERS, SERVER_PORT, WEB_DEV_PORT } from '@dj-scraper/shared'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import * as z from 'zod'
+import { devExit } from './dev-exit.ts'
 import { devGuard } from './dev-guard.ts'
 
 /** `pnpm dev` passes one env to both apps, so the PORT the server listens on is the proxy target. */
@@ -19,6 +20,8 @@ const serverPort = (() => {
 export default defineConfig({
   plugins: [
     devGuard(WEB_DEV_PORT),
+    // Ctrl-C exits 0, so pnpm dev doesn't end with ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL.
+    devExit(),
     // Before react(), so its route code splitting sees the original route files.
     // addExtensions: the generated src/routeTree.gen.ts imports routes as .tsx, like our own code.
     tanstackRouter({ target: 'react', autoCodeSplitting: true, addExtensions: true }),
@@ -36,8 +39,9 @@ export default defineConfig({
     strictPort: true,
     // Otherwise Vite answers CORS requests from any localhost origin, including other local apps.
     cors: false,
-    // The server's guard refuses iframe loads, but in dev Vite serves the page itself.
-    headers: { 'Content-Security-Policy': "frame-ancestors 'none'", 'X-Frame-Options': 'DENY' },
+    // The server's own headers (anti-framing, nosniff, no-referrer): in dev Vite serves the page,
+    // so the guard's iframe refusal doesn't cover it.
+    headers: { ...SECURITY_HEADERS },
     proxy: {
       '/api': {
         target: `http://127.0.0.1:${serverPort}`,

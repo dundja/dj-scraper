@@ -9,19 +9,26 @@ import { PROBE_ARGV } from '../src/engine/binaries.ts'
 import { killActiveGroups, type RunResult, run } from '../src/engine/run.ts'
 import {
   engineFixture,
+  FIXTURE_ASSET,
+  FIXTURE_INDEX,
   freePort,
   makeTempDir,
   SERVER_DIR,
   todaysYtdlpVersion,
   writeFakeTool,
+  writeWebDist,
 } from './helpers.ts'
 
-// Boots the real entry (`node src/index.ts`, what `pnpm start` runs) as a child process. Its env
-// is only PATH (a temp dir of fake tools) and PORT, so it never finds the real yt-dlp or ffmpeg.
+// Boots the real entry (`node src/index.ts`, what `pnpm start` runs, minus --open) as a child
+// process. Its env is only PATH (a temp dir of fake tools), PORT and DJS_WEB_DIST (a fixture UI
+// build), so it never finds the real yt-dlp or ffmpeg, and doesn't depend on whether apps/web/dist
+// exists.
 
 let root = ''
+let webDist = ''
 beforeAll(async () => {
   root = await makeTempDir('boot')
+  webDist = await writeWebDist(path.join(root, 'dist'))
 })
 afterAll(async () => {
   await rm(root, { recursive: true, force: true })
@@ -47,6 +54,14 @@ async function fakeEngine({ ytdlpVersion = todaysYtdlpVersion(), ffprobe = true 
   }
   return bin
 }
+
+/** The server's whole environment: fake engine, port and the fixture UI build. */
+const serverEnv = (bin: string, port: number, extra: NodeJS.ProcessEnv = {}) => ({
+  PATH: bin,
+  PORT: String(port),
+  DJS_WEB_DIST: webDist,
+  ...extra,
+})
 
 type Stream = 'stdout' | 'stderr'
 
@@ -94,13 +109,13 @@ function boot(env: NodeJS.ProcessEnv, args: readonly string[] = []) {
   return { done, lines, waitForLine, stop }
 }
 
-/** GET /api/health with a chosen Host header, which fetch can't set. Resolves with the status. */
-function statusWithHost(port: number, host: string): Promise<number> {
+/** GET `target` with a chosen Host header, which fetch can't set. Resolves with the status. */
+function statusWithHost(port: number, host: string, target = '/api/health'): Promise<number> {
   return new Promise((resolve, reject) => {
     const options = {
       host: '127.0.0.1',
       port,
-      path: '/api/health',
+      path: target,
       headers: { host },
       agent: false,
     }
@@ -119,7 +134,7 @@ const listening = (port: number, dev = false) =>
 describe('server boot', () => {
   it('serves the health of the fake engine, warns about nothing, and exits 0 on Ctrl-C', async () => {
     const [bin, port] = await Promise.all([fakeEngine(), freePort()])
-    const server = boot({ PATH: bin, PORT: String(port) })
+    const server = boot(serverEnv(bin, port))
     expect(await server.waitForLine('stdout', /DJ Scraper on/)).toMatch(listening(port))
 
     const res = await fetch(`http://127.0.0.1:${port}/api/health`)
@@ -131,7 +146,8 @@ describe('server boot', () => {
         status: 'ok',
         path: path.join(bin, 'yt-dlp'),
         source: 'path',
-        version: todaysYtdlpVersion(),
+        // A pattern, not today's date: the test may run across midnight UTC.
+        version: expect.stringMatching(/^\d{4}\.\d{2}\.\d{2}$/),
         stale: false,
       },
       ffmpeg: { status: 'ok', path: path.join(bin, 'ffmpeg'), version: '8.0', mp3: true },
@@ -160,7 +176,7 @@ describe('server boot', () => {
       fakeEngine({ ytdlpVersion: '2025.11.12', ffprobe: false }),
       freePort(),
     ])
-    const server = boot({ PATH: bin, PORT: String(port) })
+    const server = boot(serverEnv(bin, port))
     await server.waitForLine('stdout', listening(port))
 
     const stale = await server.waitForLine('stderr', /yt-dlp 2025\.11\.12/)
@@ -186,7 +202,7 @@ describe('server boot', () => {
 
   it('allows the Vite dev server with --dev and says so in the log line', async () => {
     const [bin, port] = await Promise.all([fakeEngine(), freePort()])
-    const server = boot({ PATH: bin, PORT: String(port) }, ['--dev'])
+    const server = boot(serverEnv(bin, port), ['--dev'])
     await server.waitForLine('stdout', listening(port, true))
 
     const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
@@ -199,12 +215,77 @@ describe('server boot', () => {
     expect(await server.stop()).toMatchObject({ exitCode: 0 })
   })
 
+  it('serves no UI with --dev and does not look for a build', async () => {
+    const [bin, port] = await Promise.all([fakeEngine(), freePort()])
+    const missing = path.join(root, 'no-dist-dev')
+    const server = boot(serverEnv(bin, port, { DJS_WEB_DIST: missing }), ['--dev'])
+    await server.waitForLine('stdout', listening(port, true))
+
+    const res = await fetch(`http://127.0.0.1:${port}/`)
+    expect(res.status).toBe(404)
+    expect(ApiErrorBodySchema.parse(await res.json()).error.message).toBe('Not found')
+    expect(await server.stop()).toMatchObject({ exitCode: 0 })
+    expect(server.lines.stderr).toEqual([])
+  })
+
+  it('serves the built UI from DJS_WEB_DIST, behind the guard and with the security headers', async () => {
+    const [bin, port] = await Promise.all([fakeEngine(), freePort()])
+    const server = boot(serverEnv(bin, port))
+    await server.waitForLine('stdout', listening(port))
+
+    for (const target of ['/', '/downloads']) {
+      const res = await fetch(`http://127.0.0.1:${port}${target}`)
+      expect(res.status).toBe(200)
+      expect(Object.fromEntries(res.headers)).toMatchObject({
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-cache',
+        'x-frame-options': 'DENY',
+        'content-security-policy': "frame-ancestors 'none'",
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
+      })
+      expect(await res.text()).toBe(FIXTURE_INDEX)
+    }
+
+    const asset = await fetch(`http://localhost:${port}${FIXTURE_ASSET.path}`)
+    expect(asset.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
+    expect(asset.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+    expect(await asset.text()).toBe(FIXTURE_ASSET.body)
+
+    expect((await fetch(`http://127.0.0.1:${port}/assets/missing.js`)).status).toBe(404)
+    expect(await statusWithHost(port, `evil.test:${port}`, '/')).toBe(403)
+
+    expect(await server.stop()).toMatchObject({ exitCode: 0 })
+    expect(server.lines.stderr).toEqual([])
+  })
+
+  it('warns once when there is no built UI, and keeps serving the API', async () => {
+    const [bin, port] = await Promise.all([fakeEngine(), freePort()])
+    const missing = path.join(root, 'no-dist')
+    const server = boot(serverEnv(bin, port, { DJS_WEB_DIST: missing }))
+    await server.waitForLine('stdout', listening(port))
+    expect(await server.waitForLine('stderr', /No built UI/)).toBe(
+      `[server] No built UI in ${missing}. Run \`pnpm build\` (pnpm start does).`,
+    )
+
+    expect((await fetch(`http://127.0.0.1:${port}/api/health`)).status).toBe(200)
+    const page = await fetch(`http://127.0.0.1:${port}/`)
+    expect(page.status).toBe(404)
+    expect(ApiErrorBodySchema.parse(await page.json()).error).toEqual({
+      code: 'not_found',
+      message: 'The UI is not built. Run `pnpm build` (pnpm start does).',
+    })
+
+    expect(await server.stop()).toMatchObject({ exitCode: 0 })
+    expect(server.lines.stderr).toHaveLength(1)
+  })
+
   it('exits 1 with a clear message when the port is already in use', async () => {
     const [bin, port] = await Promise.all([fakeEngine(), freePort()])
-    const first = boot({ PATH: bin, PORT: String(port) })
+    const first = boot(serverEnv(bin, port))
     await first.waitForLine('stdout', listening(port))
 
-    const second = await boot({ PATH: bin, PORT: String(port) }).done
+    const second = await boot(serverEnv(bin, port)).done
     expect(second.exitCode).toBe(1)
     expect(second.stderr).toBe(`[server] Port ${port} is in use. Is DJ Scraper already running?\n`)
     expect(second.stdout).toBe('')
@@ -226,7 +307,7 @@ describe('server boot', () => {
     // Spawned directly, not through run(), to signal the server's own pid.
     const child = spawn(process.execPath, ['src/index.ts'], {
       cwd: SERVER_DIR,
-      env: { PATH: bin, PORT: String(port) },
+      env: serverEnv(bin, port),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stdout = ''
@@ -238,7 +319,7 @@ describe('server boot', () => {
       stderr += chunk
     })
     const exited = once(child, 'exit')
-    await expect.poll(() => stdout, { timeout: 5_000 }).toMatch(/DJ Scraper on/)
+    await expect.poll(() => stdout, { timeout: 4_000 }).toMatch(/DJ Scraper on/)
 
     for (const signal of signals) child.kill(signal)
     const until = performance.now() + repeatForMs

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApp } from '../src/app.ts'
 import type { HealthCheck } from '../src/engine/health.ts'
 import { HOSTNAME, type RunningServer, startServer } from '../src/server.ts'
+import { rawRequest as raw } from './helpers.ts'
 
 const health: Health = {
   ok: false,
@@ -25,31 +26,6 @@ async function start(makeApp = (port: number) => createApp({ port, health: stubH
   const server = await startServer(0, makeApp)
   running.push(server)
   return server
-}
-
-type RawResponse = { status: number; headers: string; body: string }
-
-/** Sends raw bytes (\n becomes \r\n) and parses the reply once the server closes the socket. */
-function raw(port: number, request: string): Promise<RawResponse | 'closed'> {
-  return new Promise((resolve, reject) => {
-    const socket = net.connect(port, HOSTNAME, () => socket.write(request.replaceAll('\n', '\r\n')))
-    let data = ''
-    socket.setEncoding('utf8')
-    socket.on('data', (chunk: string) => {
-      data += chunk
-    })
-    socket.on('error', reject)
-    socket.on('close', () => {
-      const match = /^HTTP\/1\.[01] (\d{3})/.exec(data)
-      if (match?.[1] === undefined) return resolve('closed')
-      const split = data.indexOf('\r\n\r\n')
-      resolve({
-        status: Number(match[1]),
-        headers: data.slice(0, split).toLowerCase(),
-        body: data.slice(split + 4),
-      })
-    })
-  })
 }
 
 /** Resolves once a socket is connected, rejects with the connect error. */

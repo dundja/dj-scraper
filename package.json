@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "pnpm -r --parallel --if-present run dev",
     "build": "pnpm -r --if-present run build",
-    "start": "pnpm --filter @dj-scraper/server --fail-if-no-match run start",
+    "start": "pnpm build && pnpm --filter @dj-scraper/server --fail-if-no-match run start",
     "check": "biome check",
     "check:fix": "biome check --write",
     "typecheck": "pnpm -r --if-present run typecheck",

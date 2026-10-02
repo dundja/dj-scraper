@@ -1,7 +1,7 @@
 // Shared helpers for the tests in this directory. Not a test file; never import from src/.
 import { readFileSync } from 'node:fs'
 import { chmod, mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:net'
+import { connect, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -86,3 +86,45 @@ export const freePort = (): Promise<number> =>
 /** Today's (UTC) date as a yt-dlp stable version, so a fake yt-dlp is never stale. */
 export const todaysYtdlpVersion = (now = new Date()): string =>
   now.toISOString().slice(0, 10).replaceAll('-', '.')
+
+export type RawResponse = { status: number; headers: string; body: string }
+
+/**
+ * Sends raw bytes to 127.0.0.1:port (\n becomes \r\n) and parses the reply once the server closes
+ * the socket. For requests fetch can't make: duplicate headers, un-normalized targets.
+ */
+export function rawRequest(port: number, request: string): Promise<RawResponse | 'closed'> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1', () => socket.write(request.replaceAll('\n', '\r\n')))
+    let data = ''
+    socket.setEncoding('utf8')
+    socket.on('data', (chunk: string) => {
+      data += chunk
+    })
+    socket.on('error', reject)
+    socket.on('close', () => {
+      const match = /^HTTP\/1\.[01] (\d{3})/.exec(data)
+      if (match?.[1] === undefined) return resolve('closed')
+      const split = data.indexOf('\r\n\r\n')
+      resolve({
+        status: Number(match[1]),
+        headers: data.slice(0, split).toLowerCase(),
+        body: data.slice(split + 4),
+      })
+    })
+  })
+}
+
+/** The index.html of a fixture UI build (see writeWebDist). */
+export const FIXTURE_INDEX =
+  '<!doctype html><html><head><title>DJ Scraper fixture</title></head><body></body></html>\n'
+/** A hashed asset of a fixture UI build, as Vite names them. */
+export const FIXTURE_ASSET = { path: '/assets/index-Fx7a2B_c.js', body: "console.log('fixture')\n" }
+
+/** Writes a minimal UI build (like apps/web/dist) to `dir` and returns `dir`. */
+export async function writeWebDist(dir: string): Promise<string> {
+  await mkdir(path.join(dir, 'assets'), { recursive: true })
+  await writeFile(path.join(dir, 'index.html'), FIXTURE_INDEX)
+  await writeFile(path.join(dir, FIXTURE_ASSET.path), FIXTURE_ASSET.body)
+  return dir
+}

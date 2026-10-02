@@ -5,6 +5,7 @@ import { checkHealth } from './engine/binaries.ts'
 import { cachedHealthCheck } from './engine/health.ts'
 import { killActiveGroups } from './engine/run.ts'
 import { HOSTNAME, type RunningServer, startServer } from './server.ts'
+import { afterListen } from './startup.ts'
 
 /** node --watch waits for the old process forever on restart, so shutdown needs a hard deadline. */
 const SHUTDOWN_DEADLINE_MS = 8_000
@@ -50,7 +51,13 @@ const health = cachedHealthCheck(() => checkHealth(config.engine, new Date()))
 
 try {
   running = await startServer(config.port, (port) =>
-    createApp({ port, devPort: config.dev ? WEB_DEV_PORT : undefined, health }),
+    createApp({
+      port,
+      devPort: config.dev ? WEB_DEV_PORT : undefined,
+      health,
+      // With --dev, Vite serves the UI.
+      webRoot: config.dev ? undefined : config.webDist,
+    }),
   )
 } catch (error) {
   if (error instanceof Error && 'code' in error && error.code === 'EADDRINUSE') {
@@ -61,6 +68,10 @@ try {
 }
 console.log(
   `[server] DJ Scraper on http://${HOSTNAME}:${running.port}${config.dev ? ' (dev)' : ''}`,
+)
+// Warns about a missing UI build and handles --open (a failure to open only logs).
+afterListen(config, running.port).catch((error: unknown) =>
+  console.error('[server] Startup step failed:', error),
 )
 
 // Probe the engine at boot without delaying listen; the result also warms the cache.

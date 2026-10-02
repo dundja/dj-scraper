@@ -1,0 +1,14 @@
+{
+  // The Vite and Vitest configs run on Node, not in the browser.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": [
+    "vite.config.ts",
+    "vitest.config.ts",
+    "dev-guard.ts",
+    "dev-guard.test.ts",
+    "vite-config.test.ts"
+  ]
+}

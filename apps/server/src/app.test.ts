@@ -4,6 +4,7 @@ import { createApp } from './app.ts'
 import type { HealthCheck } from './engine/health.ts'
 import { ApiError } from './http/errors.ts'
 import { SECURITY_HEADERS } from './http/security-headers.ts'
+import { UNUSED_RESOLVE_DEPS } from './resolve/unused.ts'
 
 const PORT = 4747
 const HOST = `127.0.0.1:${PORT}`
@@ -58,7 +59,7 @@ function stubHealth(overrides: Partial<HealthCheck> = {}) {
     recheck: vi.fn<HealthCheck['recheck']>(async () => rechecked),
     ...overrides,
   }
-  return { health, app: createApp({ port: PORT, health }) }
+  return { health, app: createApp({ port: PORT, health, ...UNUSED_RESOLVE_DEPS }) }
 }
 
 /** app.request sends no Host, so add ours (absolute URL, since the guard checks the URL too). */

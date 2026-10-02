@@ -8,8 +8,9 @@ build/
 .vite/
 .tanstack/
 
-# Tests
+# Tests (.vitest/ is Vitest 5's artifact dir: attachments, blob and json reports)
 coverage/
+.vitest/
 playwright-report/
 test-results/
 blob-report/
@@ -21,9 +22,10 @@ blob-report/
 !.env.example
 *cookies*.txt
 
-# Logs
+# Logs (recorded yt-dlp stderr fixtures are kept)
 *.log
 logs/
+!apps/server/test/fixtures/**/*.log
 
 # OS / editors
 .DS_Store

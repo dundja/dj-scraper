@@ -3,7 +3,10 @@ import { PlatformSchema } from './platform.ts'
 import { TrackSchema } from './track.ts'
 import { HttpUrlSchema } from './url.ts'
 
-/** `channel` covers a YouTube channel tab and a SoundCloud user page (all, tracks, reposts). */
+/**
+ * `channel` covers a YouTube channel tab and a SoundCloud user page (all, tracks, reposts). `album`
+ * also covers SoundCloud sets the uploader labelled album, EP, single or compilation.
+ */
 export const CollectionKindSchema = z.enum([
   'playlist',
   'album',
@@ -40,6 +43,14 @@ export const CollectionSchema = z.object({
   title: z.string().min(1),
   owner: z.string().min(1).optional(),
   thumbnailUrl: HttpUrlSchema.optional(),
+  /** The platform's own track count when yt-dlp reports it; it can exceed `entries.length`. */
+  trackCount: z.int().nonnegative().optional(),
+  /** The total duration the platform reports (SoundCloud sets), in seconds. */
+  durationSec: z.number().nonnegative().optional(),
+  /** Our listing cap cut the list: the platform has more rows than `entries` holds. */
+  truncated: z.boolean(),
+  /** Rows left out because they aren't tracks, e.g. sets listed on a SoundCloud user page. */
+  skippedEntries: z.int().positive().optional(),
   entries: z.array(CollectionEntrySchema),
 })
 export type Collection = z.infer<typeof CollectionSchema>

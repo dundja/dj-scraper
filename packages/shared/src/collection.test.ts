@@ -85,6 +85,7 @@ const youtubePlaylist = {
   title: 'Deep House Selection 2026',
   owner: 'Some Channel',
   thumbnailUrl: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+  truncated: false,
   entries: [youtubeEntry, privateYoutubeEntry],
 } satisfies Collection
 
@@ -95,6 +96,9 @@ const soundcloudSet = {
   kind: 'set',
   title: 'Summer 2026',
   owner: 'Some Artist',
+  trackCount: 2,
+  durationSec: 425.06,
+  truncated: false,
   entries: [bareSetEntry, otherBareSetEntry],
 } satisfies Collection
 
@@ -109,7 +113,32 @@ const soundcloudUserTracks = {
   url: 'https://soundcloud.com/some-artist/tracks',
   kind: 'channel',
   title: 'Some Artist (Tracks)',
+  truncated: false,
   entries: [userTracksEntry],
+} satisfies Collection
+
+/** A SoundCloud user page lists sets too; the server keeps only the tracks and counts the rest. */
+const soundcloudUserPage = {
+  id: '987654321',
+  platform: 'soundcloud',
+  url: 'https://soundcloud.com/some-artist',
+  kind: 'channel',
+  title: 'Some Artist',
+  truncated: false,
+  skippedEntries: 3,
+  entries: [userTracksEntry],
+} satisfies Collection
+
+/** A playlist longer than the listing cap: the platform's count exceeds the rows listed. */
+const truncatedPlaylist = {
+  id: 'PLbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  platform: 'youtube',
+  url: 'https://www.youtube.com/playlist?list=PLbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  kind: 'playlist',
+  title: 'Every House Track Ever',
+  trackCount: 5214,
+  truncated: true,
+  entries: [youtubeEntry],
 } satisfies Collection
 
 const youtubeMix = {
@@ -118,6 +147,7 @@ const youtubeMix = {
   url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ',
   kind: 'mix',
   title: 'Mix - Rick Astley - Never Gonna Give You Up',
+  truncated: true,
   entries: [youtubeEntry],
 } satisfies Collection
 
@@ -127,12 +157,20 @@ const emptyPlaylist = {
   url: 'https://www.youtube.com/playlist?list=PLaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   kind: 'playlist',
   title: 'Crate (empty)',
+  trackCount: 0,
+  truncated: false,
   entries: [],
 } satisfies Collection
 
 const partialEntryRequiredFields = ['id', 'platform', 'url', 'availability', 'partial'] as const
-const requiredFields = ['id', 'platform', 'url', 'kind', 'title', 'entries'] as const
-const optionalFields = ['owner', 'thumbnailUrl'] as const
+const requiredFields = ['id', 'platform', 'url', 'kind', 'title', 'truncated', 'entries'] as const
+const optionalFields = [
+  'owner',
+  'thumbnailUrl',
+  'trackCount',
+  'durationSec',
+  'skippedEntries',
+] as const
 const urlFields = ['url', 'thumbnailUrl'] as const
 const nonEmptyStringFields = ['id', 'title', 'owner'] as const
 
@@ -237,7 +275,9 @@ describe('CollectionSchema', () => {
     ['a SoundCloud set as listed in flat mode, every entry bare', soundcloudSet],
     ['a SoundCloud set with some entries enriched', partlyEnrichedSet],
     ['a SoundCloud user /tracks page', soundcloudUserTracks],
-    ['a YouTube mix', youtubeMix],
+    ['a SoundCloud user page with skipped sets', soundcloudUserPage],
+    ['a YouTube mix cut at the mix cap', youtubeMix],
+    ['a playlist cut at the listing cap', truncatedPlaylist],
     ['a playlist without entries', emptyPlaylist],
   ])('parses %s unchanged', (_label, collection) => {
     expect(CollectionSchema.parse(collection)).toStrictEqual(collection)
@@ -248,7 +288,39 @@ describe('CollectionSchema', () => {
   })
 
   it.each(optionalFields)('allows %s to be omitted', (field) => {
-    expect(issuePaths(CollectionSchema, without(youtubePlaylist, field))).toEqual([])
+    expect(issuePaths(CollectionSchema, without(truncatedPlaylist, field))).toEqual([])
+  })
+
+  it.each([
+    ['trackCount', 0],
+    ['trackCount', 5214],
+    ['durationSec', 0],
+    ['durationSec', 425.06],
+    ['skippedEntries', 1],
+    ['truncated', true],
+    ['truncated', false],
+  ])('accepts %s %j', (field, value) => {
+    expect(issuePaths(CollectionSchema, { ...youtubePlaylist, [field]: value })).toEqual([])
+  })
+
+  it.each([
+    ['trackCount', 'a negative count', -1],
+    ['trackCount', 'a fractional count', 2.5],
+    ['trackCount', 'a count as a string', '5214'],
+    ['trackCount', 'null (normalizers must drop yt-dlp nulls)', null],
+    ['trackCount', 'infinity', Number.POSITIVE_INFINITY],
+    ['durationSec', 'a negative duration', -1],
+    ['durationSec', 'a duration as a string', '425'],
+    ['durationSec', 'null', null],
+    ['durationSec', 'NaN', Number.NaN],
+    ['skippedEntries', 'zero (omit it instead)', 0],
+    ['skippedEntries', 'a negative count', -2],
+    ['skippedEntries', 'a fractional count', 1.5],
+    ['truncated', 'a string that reads as false', 'false'],
+    ['truncated', 'a number', 0],
+    ['truncated', 'null', null],
+  ])('rejects %s that is %s', (field, _label, value) => {
+    expect(issuePaths(CollectionSchema, { ...youtubePlaylist, [field]: value })).toEqual([[field]])
   })
 
   it.each([
@@ -324,6 +396,10 @@ describe('CollectionSchema', () => {
 
   it('types entries as CollectionEntry[] and the enums with their shared types', () => {
     expectTypeOf<Collection['entries']>().toEqualTypeOf<CollectionEntry[]>()
+    expectTypeOf<Collection['truncated']>().toEqualTypeOf<boolean>()
+    expectTypeOf<Collection['trackCount']>().toEqualTypeOf<number | undefined>()
+    expectTypeOf<Collection['durationSec']>().toEqualTypeOf<number | undefined>()
+    expectTypeOf<Collection['skippedEntries']>().toEqualTypeOf<number | undefined>()
     expectTypeOf<Collection['kind']>().toEqualTypeOf<CollectionKind>()
     expectTypeOf<Collection['platform']>().toEqualTypeOf<Platform>()
   })

@@ -1,0 +1,1 @@
+ERROR: [soundcloud:user] dj-scraper-no-such-user-8f3k2: Unable to download JSON metadata: HTTP Error 404: Not Found (caused by <HTTPError 404: Not Found>)

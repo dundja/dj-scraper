@@ -185,3 +185,50 @@ The web enriches partial rows through `POST /api/resolve/entries`, which returns
 
 **Consequences.** No ETag, Last-Modified or Range support. Files in `apps/web/public` must have names inside the allowed character set. During a rebuild, which empties `dist`, requests can briefly get 404 until Vite finishes.
 
+## ADR-013 — Resolve: one flat yt-dlp call, capped listings, `ambiguous` for a track inside a list
+*2026-10-02 · accepted*
+
+**Context.** Pasting a link must answer quickly with what it is: a track, a list, or both (`watch?v=…&list=…`). The roadmap asked to reconcile the original 1,000-entry cap with "smooth with 1,000+ tracks". Live probes with yt-dlp 2026.08.19 found:
+- Listing 5,001 rows takes 38–56 s, and a 200-row playlist about 2 s.
+- `playlist_count` is null for channel tabs, mixes and SoundCloud user pages.
+- `playlist?list=RD…` is "unviewable", while `watch?v=X&list=RDX` lists the mix.
+- A channel root lists its tabs, not its videos.
+
+**Decision.**
+- **One call.** Each resolve is a single `yt-dlp -J --flat-playlist -I 1:<cap+1>` call, planned by a pure function (`resolve/plan.ts`) from `classifyUrl` (shared) and the request's `mode`.
+- **Caps.** The cap is 5,000 entries, YouTube's own playlist limit, and 50 for a mix, which never ends. Asking for one extra row makes `truncated` exact on every platform. `trackCount` is set only when the platform reports its own count.
+- **Track inside a list.** `watch?v=…&list=…` in `auto` mode is one `--no-playlist` track lookup, answered as `ambiguous` with the list's `collectionUrl` and `collectionKind` (`playlist`, `album` or `mix`), so the UI can word the question and default to the track for a mix. `mode: 'collection'` then lists it.
+- **Rewrites.** A mix's `collectionUrl` keeps its seed video, and `playlist?list=RD<video id>` is rewritten to that form. Channel roots resolve as `<channel>/videos`.
+- **Kind and owner.** A SoundCloud set whose `album_type` is album, EP, single or compilation is kind `album`, as a YouTube album is, whatever URL it came from; playlists stay `set`. When yt-dlp names no owner, it is derived only where it is certain: a SoundCloud user page's is the username in its `<username> (<Resource>)` title, and a YouTube Music album's is the artist of the `<artist> - Topic` channel all its rows share. An album by several artists gets none.
+- **DRM.** DRM services (Spotify, Apple Music, Amazon Music, Tidal, Deezer, Beatport) are refused by URL before anything is spawned (non-negotiable 7).
+- **Limits.** At most 4 resolves run at once. The timeout is 60 s for a track and 180 s for a list, and a closed browser request stops its yt-dlp.
+
+**Rejected.**
+- *Keeping 1,000.* It cut ordinary channels and long playlists, and the UI virtualizes anyway.
+- *Unlimited listings.* A 20,000-video channel would take minutes.
+- *Streaming rows as they arrive* (`--lazy-playlist -j`). It needs a streaming API and progressive UI, so it is deferred until big lists prove slow in practice.
+- *Answering a mix as a plain track.* That hides the choice, and `ambiguous` lets the UI default to the track instead.
+
+**Consequences.** Lists over 5,000 rows show their first 5,000 and say so. A big channel takes tens of seconds to list, so the UI needs a visible loading state. `Collection` gained `trackCount`, `durationSec`, `truncated` and `skippedEntries`, and `ambiguous` gained `collectionKind`.
+
+## ADR-014 — Partial rows are enriched lazily, one yt-dlp lookup per row, within each platform's budget
+*2026-10-02 · accepted · implements ADR-008*
+
+**Context.** SoundCloud set rows come back bare from the flat listing (ADR-008). A per-track `yt-dlp -J` lookup takes about 1 s, half of it process start, and costs 3–5 SoundCloud API requests: one lookup plus one per stream format. SoundCloud allows about 600 requests per 10 min. Narrowing the formats with `--extractor-args soundcloud:formats=…` saves 1–2 requests, but a track without the chosen formats fails with "No video formats found!". Skipping formats entirely costs one request, but loses the source codec and bitrate and Go+ preview detection, and honest audio needs both.
+
+**Decision.**
+- **Lookups.** `POST /api/resolve/entries` takes up to 25 rows (a screenful) and looks each up with `yt-dlp -J --flat-playlist --no-playlist`, using default formats. `--flat-playlist` keeps a URL that turns out to be a list from being fully extracted, and rows whose URL is a list are refused before spawning.
+- **Results.** There is one result per distinct platform + id, `ok` with a full `Track` or `error` with an `ErrorInfo`. A removed track or a 429 fails only its row.
+- **Pacing.** Pacing is per platform and keyed by the platform of the row's URL: two at a time with a minimum gap between starts. SoundCloud adds a token bucket, a burst of 25 lookups refilling one every 5 s, which keeps a long scroll within its budget. Rows wait for a token, and a request that the browser drops leaves the queue.
+- **Cooldown.** A `rate_limited` row pauses its platform for 60 s, doubling up to 10 min. During the pause, rows fail at once without spawning.
+- **Cache.** Results stay in memory for 30 min (2,000 rows), and concurrent requests for the same row share one lookup. Answers from the cache or a cooldown spend no pacing slot or budget token.
+
+**Rejected.**
+- *Calling SoundCloud's API ourselves* (`/tracks?ids=…` fills 50 rows per request). It re-implements extractor internals that yt-dlp keeps working (ADR-003).
+- *Full extraction of the whole set up front* (no `--flat-playlist`). It is slow and spends the whole budget at once.
+- *Failing rows when the budget runs low.* A wait is honest and recovers by itself.
+
+**Consequences.**
+- A fast scroll through a big set fills in at the budget's pace, about one row every 5 s after the first 25, so the UI must show placeholders and cancel requests for rows that scrolled away.
+- Up to 10 yt-dlp processes can run at once: 4 resolves plus 2 per platform for enrichment.
+- Phase 2 should decide format narrowing together with the download argv, because the source shown at enrichment should match what the download picks.

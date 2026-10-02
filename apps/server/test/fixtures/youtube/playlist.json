@@ -1,0 +1,107 @@
+{
+  "id": "PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0",
+  "title": "dlp test playlist",
+  "availability": "public",
+  "channel_follower_count": null,
+  "description": "test",
+  "tags": [],
+  "thumbnails": [
+    {
+      "url": "https://i.ytimg.com/vi/gHKT4uU8Zng/hqdefault.jpg?sqp=-oaymwEwCKgBEF5IWvKriqkDIwgBFQAAiEIYAfABAfgB_gmAAtAFigIMCAAQARhcIBMofzAP&rs=AOn4CLDMqt5q8aONsjMiSYMu5RcQ5XiSzA",
+      "height": 94,
+      "width": 168,
+      "id": "0",
+      "resolution": "168x94"
+    },
+    {
+      "url": "https://i.ytimg.com/vi/gHKT4uU8Zng/hqdefault.jpg?sqp=-oaymwEwCMQBEG5IWvKriqkDIwgBFQAAiEIYAfABAfgB_gmAAtAFigIMCAAQARhcIBMofzAP&rs=AOn4CLCPjNkW7tvuRZn4HM6a3McyeMzQYQ",
+      "height": 110,
+      "width": 196,
+      "id": "1",
+      "resolution": "196x110"
+    },
+    {
+      "url": "https://i.ytimg.com/vi/gHKT4uU8Zng/hqdefault.jpg?sqp=-oaymwExCPYBEIoBSFryq4qpAyMIARUAAIhCGAHwAQH4Af4JgALQBYoCDAgAEAEYXCATKH8wDw==&rs=AOn4CLBihCxfnXLEa_IqLdfHkEOtMGr_CA",
+      "height": 138,
+      "width": 246,
+      "id": "2",
+      "resolution": "246x138"
+    },
+    {
+      "url": "https://i.ytimg.com/vi/gHKT4uU8Zng/hqdefault.jpg?sqp=-oaymwExCNACELwBSFryq4qpAyMIARUAAIhCGAHwAQH4Af4JgALQBYoCDAgAEAEYXCATKH8wDw==&rs=AOn4CLBK7d9INJMEaK_SE2Yxfo_TJOWQ6A",
+      "height": 188,
+      "width": 336,
+      "id": "3",
+      "resolution": "336x188"
+    }
+  ],
+  "modified_date": "20220810",
+  "view_count": 11,
+  "playlist_count": 1,
+  "channel": "cole-dlp-test-acc",
+  "channel_id": "UCiu-3thuViMebBjw_5nWYrA",
+  "uploader_id": "@coletdjnz",
+  "uploader": "cole-dlp-test-acc",
+  "channel_url": "https://www.youtube.com/channel/UCiu-3thuViMebBjw_5nWYrA",
+  "uploader_url": "https://www.youtube.com/@coletdjnz",
+  "_type": "playlist",
+  "entries": [
+    {
+      "title": "dlp test video title translated (en)",
+      "thumbnails": [
+        {
+          "url": "https://i.ytimg.com/vi/gHKT4uU8Zng/hqdefault.jpg?sqp=-oaymwE1CKgBEF5IVfKriqkDKAgBFQAAiEIYAXABwAEG8AEB-AH-CYAC0AWKAgwIABABGFwgEyh_MA8=&rs=AOn4CLCRwzEVyhH6B1Pt85sE8UK3lEEgRw",
+          "height": 94,
+          "width": 168
+        },
+        {
+          "url": "https://i.ytimg.com/vi/gHKT4uU8Zng/hqdefault.jpg?sqp=-oaymwE1CMQBEG5IVfKriqkDKAgBFQAAiEIYAXABwAEG8AEB-AH-CYAC0AWKAgwIABABGFwgEyh_MA8=&rs=AOn4CLCL73OGP68q2SMa2q31ixtorByARg",
+          "height": 110,
+          "width": 196
+        },
+        {
+          "url": "https://i.ytimg.com/vi/gHKT4uU8Zng/hqdefault.jpg?sqp=-oaymwE2CPYBEIoBSFXyq4qpAygIARUAAIhCGAFwAcABBvABAfgB_gmAAtAFigIMCAAQARhcIBMofzAP&rs=AOn4CLBZqaqpg5rh1jP0rUBLnAWMWHJteg",
+          "height": 138,
+          "width": 246
+        },
+        {
+          "url": "https://i.ytimg.com/vi/gHKT4uU8Zng/hqdefault.jpg?sqp=-oaymwE2CNACELwBSFXyq4qpAygIARUAAIhCGAFwAcABBvABAfgB_gmAAtAFigIMCAAQARhcIBMofzAP&rs=AOn4CLAhtS1eII_HcNOXiR17wbyhASj5Fg",
+          "height": 188,
+          "width": 336
+        }
+      ],
+      "duration": 6,
+      "view_count": 138,
+      "timestamp": null,
+      "live_status": null,
+      "availability": null,
+      "channel_url": "https://www.youtube.com/channel/UCiu-3thuViMebBjw_5nWYrA",
+      "uploader_url": "https://www.youtube.com/@coletdjnz",
+      "creators": null,
+      "channel": "cole-dlp-test-acc",
+      "channel_id": "UCiu-3thuViMebBjw_5nWYrA",
+      "uploader": "cole-dlp-test-acc",
+      "uploader_id": "@coletdjnz",
+      "ie_key": "Youtube",
+      "id": "gHKT4uU8Zng",
+      "_type": "url",
+      "url": "https://www.youtube.com/watch?v=gHKT4uU8Zng",
+      "__x_forwarded_for_ip": null
+    }
+  ],
+  "extractor_key": "YoutubeTab",
+  "extractor": "youtube:tab",
+  "webpage_url": "https://www.youtube.com/playlist?list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0",
+  "original_url": "https://www.youtube.com/playlist?list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0",
+  "webpage_url_basename": "playlist",
+  "webpage_url_domain": "youtube.com",
+  "release_year": null,
+  "epoch": 1790956194,
+  "__files_to_move": {},
+  "_version": {
+    "version": "2026.08.19",
+    "current_git_head": null,
+    "release_git_head": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+    "repository": "yt-dlp/yt-dlp"
+  }
+}

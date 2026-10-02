@@ -1,9 +1,10 @@
 // Shared helpers for the tests in this directory. Not a test file; never import from src/.
 import { readFileSync } from 'node:fs'
-import { chmod, mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { connect, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 
 /** apps/server, the cwd `pnpm start` runs the entry from. */
 export const SERVER_DIR = path.resolve(import.meta.dirname, '..')
@@ -67,6 +68,97 @@ export async function writeFakeTool(
   const file = path.join(dir, name)
   await symlink(FAKE_TOOL, file)
   return file
+}
+
+/** The fake yt-dlp that replays test/fixtures; see the comment at its top. */
+export const FAKE_YTDLP = path.join(import.meta.dirname, 'fake-yt-dlp.mjs')
+
+/** A rule of the fake's manifest (fixtures/fake-yt-dlp.json); the fake documents each field. */
+export type FakeYtdlpRule = {
+  url: string
+  playlist?: 'yes' | 'no'
+  args?: readonly (string | readonly string[])[]
+  /** Relative to test/fixtures, or absolute (for files a test writes itself). */
+  stdout?: string
+  stderr?: string
+  exit?: number
+  delayMs?: number
+  hang?: boolean
+  note?: string
+}
+
+/** One invocation of the fake, from its FAKE_YTDLP_CALLS log. `url` is null for --version. */
+export type FakeYtdlpCall = { argv: string[]; url: string | null; time: number; pid: number }
+
+export type FakeYtdlpKnobs = {
+  FAKE_YTDLP_VERSION?: string
+  FAKE_YTDLP_DELAY_MS?: string
+  FAKE_YTDLP_HANG?: string
+}
+
+export type FakeYtdlp = {
+  /** dir/yt-dlp, for YTDLP_PATH. */
+  path: string
+  /**
+   * YTDLP_PATH plus every FAKE_YTDLP_* knob, for a spawned server: `{ ...process.env, ...env }`.
+   * In-process run() calls need none of it: the knobs also sit in a file beside the link.
+   */
+  env: Record<string, string>
+  /** Every invocation so far, in order. */
+  calls: () => Promise<FakeYtdlpCall[]>
+  /** Resolves once `count` invocations have started (the fake is then ready for SIGINT). */
+  waitForCalls: (count: number) => Promise<FakeYtdlpCall[]>
+}
+
+/**
+ * The fake yt-dlp at dir/yt-dlp: a symlink to fake-yt-dlp.mjs, with its calls logged to
+ * dir/.yt-dlp.calls.jsonl. `manifestRules` are tried before the recorded fixtures' rules, and
+ * `env` sets knobs such as FAKE_YTDLP_HANG. `dir` must not hold a yt-dlp yet.
+ */
+export async function writeFakeYtdlp(
+  dir: string,
+  options: { manifestRules?: readonly FakeYtdlpRule[]; env?: FakeYtdlpKnobs } = {},
+): Promise<FakeYtdlp> {
+  await mkdir(dir, { recursive: true })
+  const link = path.join(dir, 'yt-dlp')
+  const callsFile = path.join(dir, '.yt-dlp.calls.jsonl')
+  const knobs: Record<string, string> = { FAKE_YTDLP_CALLS: callsFile }
+  if (options.manifestRules !== undefined) {
+    const manifest = path.join(dir, '.yt-dlp.manifest.json')
+    await writeFile(manifest, JSON.stringify({ rules: options.manifestRules }, null, 2))
+    knobs.FAKE_YTDLP_MANIFEST = manifest
+  }
+  for (const [name, value] of Object.entries(options.env ?? {})) {
+    if (value !== undefined) knobs[name] = value
+  }
+  await writeFile(path.join(dir, '.yt-dlp.fake.json'), JSON.stringify(knobs, null, 2))
+  await symlink(FAKE_YTDLP, link)
+
+  const calls = async (): Promise<FakeYtdlpCall[]> => {
+    let text: string
+    try {
+      text = await readFile(callsFile, 'utf8')
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return []
+      throw error
+    }
+    return text
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as FakeYtdlpCall)
+  }
+  const waitForCalls = async (count: number): Promise<FakeYtdlpCall[]> => {
+    const deadline = Date.now() + 10_000
+    for (;;) {
+      const seen = await calls()
+      if (seen.length >= count) return seen
+      if (Date.now() > deadline) {
+        throw new Error(`fake yt-dlp: expected ${count} calls within 10 s, saw ${seen.length}`)
+      }
+      await delay(10)
+    }
+  }
+  return { path: link, env: { YTDLP_PATH: link, ...knobs }, calls, waitForCalls }
 }
 
 /** A port that was free a moment ago. Only for spawning a server that needs a fixed PORT. */

@@ -4,6 +4,7 @@ import type { Health } from '@dj-scraper/shared'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../src/app.ts'
 import type { HealthCheck } from '../src/engine/health.ts'
+import { UNUSED_RESOLVE_DEPS } from '../src/resolve/unused.ts'
 import { type RunningServer, startServer } from '../src/server.ts'
 import { FIXTURE_ASSET, FIXTURE_INDEX, makeTempDir, rawRequest, writeWebDist } from './helpers.ts'
 
@@ -29,7 +30,9 @@ beforeAll(async () => {
   root = await makeTempDir('web')
   await writeFile(path.join(root, 'package.json'), `{"name":"${SECRET}"}`)
   const webRoot = await writeWebDist(path.join(root, 'dist'))
-  server = await startServer(0, (port) => createApp({ port, health: stubHealth, webRoot }))
+  server = await startServer(0, (port) =>
+    createApp({ port, health: stubHealth, webRoot, ...UNUSED_RESOLVE_DEPS }),
+  )
   host = `127.0.0.1:${server.port}`
 })
 afterAll(async () => {

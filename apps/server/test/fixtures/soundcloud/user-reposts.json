@@ -1,0 +1,47 @@
+{
+  "_type": "playlist",
+  "id": "9615865",
+  "title": "The Royal Concept (Reposts)",
+  "entries": [
+    {
+      "ie_key": "Soundcloud",
+      "id": "88359828",
+      "title": "ENTERTAINMENT STEM BV'S",
+      "_type": "url",
+      "url": "https://soundcloud.com/phoenix/entertainment-stem-bvs",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "153528495",
+      "title": "MRTN Feat. Deer -  Illusion",
+      "_type": "url",
+      "url": "https://soundcloud.com/mrtnoriginal/mrtn-feat-oh-deer-illusion",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "122071563",
+      "title": "The Royal Concept - Goldrushed (Beat Mafia Remix)",
+      "_type": "url",
+      "url": "https://soundcloud.com/beatmafia/goldrushed_beat_mafia_remix",
+      "__x_forwarded_for_ip": null
+    }
+  ],
+  "webpage_url": "https://soundcloud.com/the-concept-band/reposts",
+  "original_url": "https://soundcloud.com/the-concept-band/reposts",
+  "webpage_url_basename": "reposts",
+  "webpage_url_domain": "soundcloud.com",
+  "extractor": "soundcloud:user",
+  "extractor_key": "SoundcloudUser",
+  "release_year": null,
+  "playlist_count": 3,
+  "epoch": 1790956512,
+  "__files_to_move": {},
+  "_version": {
+    "version": "2026.08.19",
+    "current_git_head": null,
+    "release_git_head": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+    "repository": "yt-dlp/yt-dlp"
+  }
+}

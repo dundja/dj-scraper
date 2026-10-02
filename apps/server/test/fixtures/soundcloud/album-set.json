@@ -1,0 +1,160 @@
+{
+  "album": "out of spite",
+  "album_artist": "Levi Ryan",
+  "album_type": "album",
+  "uploader": "Levi Ryan",
+  "uploader_id": "229146182",
+  "uploader_url": "https://soundcloud.com/leviryan",
+  "timestamp": 1667935849,
+  "release_timestamp": 1667865600,
+  "modified_timestamp": 1667935903,
+  "duration": 1531.376,
+  "license": "all-rights-reserved",
+  "like_count": 190,
+  "repost_count": 38,
+  "genres": ["Hip-hop & Rap"],
+  "tags": ["Drum & Bass", "Alternative", "Ambient"],
+  "thumbnails": [
+    {
+      "id": "mini",
+      "url": "https://i1.sndcdn.com/artworks-2hmuDCrcvCzzCaXZ-1rztZA-mini.jpg",
+      "width": 16,
+      "height": 16,
+      "resolution": "16x16"
+    },
+    {
+      "id": "t300x300",
+      "url": "https://i1.sndcdn.com/artworks-2hmuDCrcvCzzCaXZ-1rztZA-t300x300.jpg",
+      "width": 300,
+      "height": 300,
+      "resolution": "300x300"
+    },
+    {
+      "id": "crop",
+      "url": "https://i1.sndcdn.com/artworks-2hmuDCrcvCzzCaXZ-1rztZA-crop.jpg",
+      "width": 400,
+      "height": 400,
+      "resolution": "400x400"
+    },
+    {
+      "id": "t500x500",
+      "url": "https://i1.sndcdn.com/artworks-2hmuDCrcvCzzCaXZ-1rztZA-t500x500.jpg",
+      "width": 500,
+      "height": 500,
+      "resolution": "500x500"
+    },
+    {
+      "id": "original",
+      "url": "https://i1.sndcdn.com/artworks-2hmuDCrcvCzzCaXZ-1rztZA-original.jpg",
+      "preference": 10
+    }
+  ],
+  "id": "1524158182",
+  "title": "out of spite",
+  "description": "",
+  "_type": "playlist",
+  "entries": [
+    {
+      "album": "out of spite",
+      "album_artist": "Levi Ryan",
+      "album_type": "album",
+      "ie_key": "Soundcloud",
+      "id": "1378985008",
+      "_type": "url_transparent",
+      "url": "https://soundcloud.com/leviryan/crackshot-wgl0wrm",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "album": "out of spite",
+      "album_artist": "Levi Ryan",
+      "album_type": "album",
+      "ie_key": "Soundcloud",
+      "id": "1378983277",
+      "_type": "url_transparent",
+      "url": "https://soundcloud.com/leviryan/matrix-wdavid-shawty",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "album": "out of spite",
+      "album_artist": "Levi Ryan",
+      "album_type": "album",
+      "ie_key": "Soundcloud",
+      "id": "1378981744",
+      "_type": "url_transparent",
+      "url": "https://soundcloud.com/leviryan/silkroad-wlonewolfprie",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "album": "out of spite",
+      "album_artist": "Levi Ryan",
+      "album_type": "album",
+      "ie_key": "Soundcloud",
+      "id": "1378980004",
+      "_type": "url_transparent",
+      "url": "https://soundcloud.com/leviryan/purextc",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "album": "out of spite",
+      "album_artist": "Levi Ryan",
+      "album_type": "album",
+      "ie_key": "Soundcloud",
+      "id": "1378978405",
+      "_type": "url_transparent",
+      "url": "https://soundcloud.com/leviryan/bright-eyes-wfuneral",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "album": "out of spite",
+      "album_artist": "Levi Ryan",
+      "album_type": "album",
+      "ie_key": "Soundcloud",
+      "id": "1378976746",
+      "_type": "url_transparent",
+      "url": "https://api-v2.soundcloud.com/tracks/1378976746",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "album": "out of spite",
+      "album_artist": "Levi Ryan",
+      "album_type": "album",
+      "ie_key": "Soundcloud",
+      "id": "1378973569",
+      "_type": "url_transparent",
+      "url": "https://api-v2.soundcloud.com/tracks/1378973569",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "album": "out of spite",
+      "album_artist": "Levi Ryan",
+      "album_type": "album",
+      "ie_key": "Soundcloud",
+      "id": "1378971022",
+      "_type": "url_transparent",
+      "url": "https://api-v2.soundcloud.com/tracks/1378971022",
+      "__x_forwarded_for_ip": null
+    }
+  ],
+  "webpage_url": "https://soundcloud.com/leviryan/sets/out-of-spite",
+  "original_url": "https://soundcloud.com/leviryan/sets/out-of-spite",
+  "webpage_url_basename": "out-of-spite",
+  "webpage_url_domain": "soundcloud.com",
+  "extractor": "soundcloud:set",
+  "extractor_key": "SoundcloudSet",
+  "duration_string": "25:31",
+  "upload_date": "20221108",
+  "release_date": "20221108",
+  "modified_date": "20221108",
+  "release_year": 2022,
+  "album_artists": ["Levi Ryan"],
+  "genre": "Hip-hop & Rap",
+  "playlist_count": 8,
+  "epoch": 1790956457,
+  "__files_to_move": {},
+  "_version": {
+    "version": "2026.08.19",
+    "current_git_head": null,
+    "release_git_head": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+    "repository": "yt-dlp/yt-dlp"
+  }
+}

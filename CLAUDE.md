@@ -2,7 +2,7 @@
 
 A local web app for DJs. Paste a YouTube or SoundCloud link (track or playlist), review the metadata, pick tracks, and download them as DJ-ready audio files into a folder you choose. It runs only on this machine: a Vite/React UI at localhost plus a Node server that drives yt-dlp and ffmpeg.
 
-**Status:** Phase 0 (scaffold) is done: `packages/shared` (the contract), `apps/server` (guard, engine health, spawn wrapper, serving the built UI) and `apps/web` (dark shell with live engine status), with `pnpm dev`, `pnpm start` and Vitest/Playwright tests. Next is roadmap Phase 1 (engine & resolve). The current phase and next items are in `docs/roadmap.md`.
+**Status:** Phase 0 (scaffold) is done: `packages/shared` (the contract), `apps/server` (guard, engine health, spawn wrapper, serving the built UI) and `apps/web` (dark shell with live engine status), with `pnpm dev`, `pnpm start` and Vitest/Playwright tests. Phase 1 (engine & resolve) is done on the server: `classifyUrl`, `POST /api/resolve`, `POST /api/resolve/entries`, the fake engine and `pnpm smoke`; the UI starts calling them in Phase 3. Next is roadmap Phase 2 (download pipeline). The current phase and next items are in `docs/roadmap.md`.
 
 ## Where things are explained
 | Need | Read |
@@ -27,14 +27,14 @@ A local web app for DJs. Paste a YouTube or SoundCloud link (track or playlist),
 These scripts are created in roadmap Phase 0. Keep this list true.
 ```
 pnpm dev          # web on :5173 (proxies /api) + server on :4747
-pnpm build        # build all packages
+pnpm build        # build the web UI (the server runs from source, ADR-009)
 pnpm start        # production: builds the UI, then the server serves it on :4747 and opens the browser
 pnpm check        # Biome lint + format check (check:fix applies fixes)
 pnpm typecheck    # tsc across the workspace
 pnpm test         # Vitest unit + integration, no network
 pnpm test:e2e     # build the UI + Playwright (Chromium, WebKit) against the fake engine, port 4849
 pnpm test:e2e:install # download the Playwright browsers once (network)
-pnpm smoke '<url>' # live resolve against real YouTube/SoundCloud (network)
+pnpm smoke ['<url>' …] # live resolve against real YouTube/SoundCloud (network); no URL = sample set, --entries N, --mode, --json
 ```
 To scope a script to one package: `pnpm --filter @dj-scraper/<web|server|shared> <script>`. Biome is scoped by path instead: `pnpm check apps/web`.
 
@@ -42,7 +42,7 @@ To scope a script to one package: `pnpm --filter @dj-scraper/<web|server|shared>
 ```
 ./                 package.json, pnpm-workspace.yaml, tsconfig.base.json, biome.json
 apps/web/          React SPA
-apps/server/       Hono API, download queue, yt-dlp/ffmpeg engine
+apps/server/       Hono API, resolve, yt-dlp/ffmpeg engine (download queue in Phase 2)
 packages/shared/   Zod schemas + pure helpers used by both
 docs/              product, architecture, decisions, roadmap
 .claude/           agents, skills, hooks, settings
@@ -55,7 +55,7 @@ docs/              product, architecture, decisions, roadmap
 4. **One contract.** Every API and SSE shape is a Zod schema in `packages/shared`, and both sides change together. No `any`.
 5. **Tests stay offline.** Unit, integration and e2e tests use recorded fixtures and the fake engine. Only `pnpm smoke` goes live.
 6. **Honest audio.** Show the source codec and bitrate. Never present an upconverted file as higher quality. No Opus/WebM in final files unless the user picks "original".
-7. **No DRM circumvention.** Spotify, Apple Music, Tidal, Deezer and Beatport streams are out of scope, and so is bypassing paywalls or private content.
+7. **No DRM circumvention.** Spotify, Apple Music, Amazon Music, Tidal, Deezer and Beatport streams are out of scope (`classifyUrl` refuses them before yt-dlp runs), and so is bypassing paywalls or private content.
 
 ## How to work here
 - Start from the roadmap item and read the relevant doc sections before coding. Ask when a request conflicts with `docs/decisions.md`.

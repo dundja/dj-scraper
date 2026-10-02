@@ -4,6 +4,8 @@ import { ConfigError, loadConfig } from './config.ts'
 import { checkHealth } from './engine/binaries.ts'
 import { cachedHealthCheck } from './engine/health.ts'
 import { killActiveGroups } from './engine/run.ts'
+import { createEnricher } from './resolve/enricher.ts'
+import { createResolver } from './resolve/resolver.ts'
 import { HOSTNAME, type RunningServer, startServer } from './server.ts'
 import { afterListen } from './startup.ts'
 
@@ -48,6 +50,8 @@ try {
 }
 
 const health = cachedHealthCheck(() => checkHealth(config.engine, new Date()))
+const resolver = createResolver({ engine: config.engine })
+const enricher = createEnricher({ engine: config.engine })
 
 try {
   running = await startServer(config.port, (port) =>
@@ -55,6 +59,8 @@ try {
       port,
       devPort: config.dev ? WEB_DEV_PORT : undefined,
       health,
+      resolver,
+      enricher,
       // With --dev, Vite serves the UI.
       webRoot: config.dev ? undefined : config.webDist,
     }),

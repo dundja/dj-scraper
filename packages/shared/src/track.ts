@@ -33,9 +33,15 @@ export const AudioSourceSchema = z
   })
 export type AudioSource = z.infer<typeof AudioSourceSchema>
 
+/**
+ * The longest platform id the contract accepts. Real ids are far shorter (YouTube 11 characters,
+ * SoundCloud about 10 digits); the cap bounds what a request can put into a log line.
+ */
+export const MAX_ID_LENGTH = 256
+
 export const TrackSchema = z.object({
   /** Platform id from yt-dlp. */
-  id: z.string().min(1),
+  id: z.string().min(1).max(MAX_ID_LENGTH),
   platform: PlatformSchema,
   /** Canonical page URL. */
   url: HttpUrlSchema,

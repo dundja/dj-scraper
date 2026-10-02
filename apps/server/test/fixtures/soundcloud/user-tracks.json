@@ -1,0 +1,72 @@
+{
+  "_type": "playlist",
+  "id": "9615865",
+  "title": "The Royal Concept (Tracks)",
+  "entries": [
+    {
+      "ie_key": "Soundcloud",
+      "id": "607075623",
+      "title": "Kick It",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/kick-it-main",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "597335928",
+      "title": "Up All Night",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/up-all-night-4",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "149905846",
+      "title": "Cabin Down Below (Mix 6)",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/cabin-down-below-mix-6-1",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "149905575",
+      "title": "Cabin Down Below (Mix 6)",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/cabin-down-below-mix-6",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "149906096",
+      "title": "Cabin Down Below (feat. Kenny G)",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/cabin-down-below-mix-6-2",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "109919787",
+      "title": "Shut The World",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/shut-the-world",
+      "__x_forwarded_for_ip": null
+    }
+  ],
+  "webpage_url": "https://soundcloud.com/the-concept-band/tracks",
+  "original_url": "https://soundcloud.com/the-concept-band/tracks",
+  "webpage_url_basename": "tracks",
+  "webpage_url_domain": "soundcloud.com",
+  "extractor": "soundcloud:user",
+  "extractor_key": "SoundcloudUser",
+  "release_year": null,
+  "requested_entries": [1, 2, 3, 4, 5, 6],
+  "playlist_count": null,
+  "epoch": 1790956512,
+  "__files_to_move": {},
+  "_version": {
+    "version": "2026.08.19",
+    "current_git_head": null,
+    "release_git_head": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+    "repository": "yt-dlp/yt-dlp"
+  }
+}

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { SERVER_PORT } from '@dj-scraper/shared'
+import { SECURITY_HEADERS, SERVER_PORT } from '@dj-scraper/shared'
 import type { Plugin, ViteDevServer } from 'vite'
 import { describe, expect, it, vi } from 'vitest'
 import config from './vite.config.ts'
@@ -22,8 +22,8 @@ describe('the Vite dev server config', () => {
       port: 5173,
       strictPort: true,
       cors: false,
-      headers: { 'Content-Security-Policy': "frame-ancestors 'none'", 'X-Frame-Options': 'DENY' },
     })
+    expect(server.headers).toEqual(SECURITY_HEADERS)
     for (const key of ['allowedHosts', 'host', 'https']) expect(server).not.toHaveProperty(key)
   })
 
@@ -43,5 +43,13 @@ describe('the Vite dev server config', () => {
     expect(returned).toBeUndefined()
     expect(use).toHaveBeenCalledTimes(1)
     expect(use.mock.calls[0]).toEqual([expect.any(Function)])
+  })
+
+  it('exits cleanly on Ctrl-C, so pnpm dev does not end with ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL', () => {
+    const plugins = (config.plugins ?? []).flat() as Plugin[]
+    expect(plugins.find((plugin) => plugin?.name === 'dj-scraper:dev-exit')).toMatchObject({
+      apply: 'serve',
+      configureServer: expect.any(Function),
+    })
   })
 })

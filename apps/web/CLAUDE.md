@@ -10,7 +10,10 @@ React 19 · TypeScript (strict) · Vite 8 · TanStack Router (file-based routes 
 vite.config.ts      dev server: port 5173, strictPort, cors: false, anti-framing headers, /api proxy
                     keeping the browser's Host (docs/architecture.md, Security model; ADR-011)
 dev-guard.ts        dev-server plugin: the guard's Host + Fetch Metadata rules for every request Vite answers
+dev-exit.ts         dev-server plugin: Ctrl-C/SIGTERM close Vite and exit 0 (clean `pnpm dev` exit)
 vite-config.test.ts pins the dev server's security settings (ADR-011)
+playwright.config.ts e2e on port 4849 against apps/server/test/e2e-server.ts (Chromium, WebKit)
+e2e/                fixtures.ts (console guard: import test/expect from here), *.spec.ts
 vitest.config.ts    tests: jsdom, src/test/setup.ts; no router/Tailwind plugins
 src/
   main.tsx          QueryClient + router (context { queryClient }), StrictMode
@@ -37,7 +40,7 @@ src/
 - Style with Tailwind utilities and the `cn()` helper. Dark theme first; respect `prefers-reduced-motion`.
 - Accessibility: everything keyboard-reachable, labelled inputs and checkboxes, visible focus, `aria-live` for progress and status.
 - Customize shadcn/ui components through variants and props. Re-add a component rather than hand-patching its generated internals.
-- Tests: Vitest + Testing Library for non-trivial hooks and components (`*.test.tsx`); user flows in Playwright e2e.
+- Tests: Vitest + Testing Library for non-trivial hooks and components (`*.test.tsx`); user flows in Playwright e2e (`e2e/*.spec.ts`, importing `test`/`expect` from `e2e/fixtures.ts`). In WebKit, Tab skips links, so keyboard specs use Option-Tab (Alt+Tab) there.
   - Fake `fetch` at the network edge (`src/test/fake-api.ts`), not the hooks, and render with a fresh QueryClient (`src/test/render.tsx`).
   - Any `console.error` or `console.warn` fails the test (`src/test/setup.ts`), so fix React warnings instead of muting them.
   - With fake timers, RTL's `findBy`/`waitFor` don't see Vitest's clock: advance with `act(() => vi.advanceTimersByTimeAsync(ms))`, then query synchronously.

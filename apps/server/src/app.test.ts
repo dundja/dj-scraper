@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from './app.ts'
 import type { HealthCheck } from './engine/health.ts'
 import { ApiError } from './http/errors.ts'
+import { SECURITY_HEADERS } from './http/security-headers.ts'
 
 const PORT = 4747
 const HOST = `127.0.0.1:${PORT}`
@@ -162,7 +163,7 @@ describe('POST /api/health/recheck', () => {
 describe('unknown routes', () => {
   it.each([
     ['an unknown API path', 'GET', '/api/nope'],
-    ['the root, until the UI is served', 'GET', '/'],
+    ['the root when no UI is served (--dev, where Vite serves it)', 'GET', '/'],
     ['POST to a GET-only route (Hono has no 405)', 'POST', '/api/health'],
   ])('answer %s with 404 not_found', async (_label, method, path) => {
     const { app } = stubHealth()
@@ -213,5 +214,45 @@ describe('CORS', () => {
         [],
       )
     }
+  })
+})
+
+describe('security headers', () => {
+  it('are on every response: allowed, rejected by the guard, 404 and 500', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { app } = stubHealth()
+    const { app: failing } = stubHealth({
+      current: async () => {
+        throw new Error('boom')
+      },
+    })
+    const responses = [
+      await send(app, '/api/health'),
+      await send(app, '/api/health', { method: 'HEAD' }),
+      await send(app, '/api/health/recheck', postJson),
+      await send(app, '/api/health', { headers: { origin: 'http://evil.test' } }),
+      await Promise.resolve(app.request('http://evil.test/api/health')),
+      await send(app, '/api/health/recheck', { method: 'POST' }),
+      await send(app, '/api/nope'),
+      await send(failing, '/api/health'),
+    ]
+    expect(responses.map((res) => res.status)).toEqual([200, 200, 200, 403, 403, 415, 404, 500])
+    for (const res of responses) {
+      expect(Object.fromEntries(res.headers)).toMatchObject({
+        'x-frame-options': 'DENY',
+        'content-security-policy': "frame-ancestors 'none'",
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
+      })
+    }
+  })
+
+  it('are exactly the four anti-framing, no-sniff and no-referrer headers', () => {
+    expect(SECURITY_HEADERS).toStrictEqual({
+      'X-Frame-Options': 'DENY',
+      'Content-Security-Policy': "frame-ancestors 'none'",
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer',
+    })
   })
 })

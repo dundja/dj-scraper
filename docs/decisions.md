@@ -166,3 +166,22 @@ The web enriches partial rows through `POST /api/resolve/entries`, which returns
 - With `--dev`, the server also accepts `Host: localhost:5173` on direct connections. That's harmless: a browser sends that Host only to port 5173, which is Vite.
 - A foreign Host such as `file:5173` gets 403 from the dev guard for every page, module and endpoint Vite serves, and from the server's guard for `/api`. Visiting `http://[::1]:5173` directly is refused too; use `localhost:5173`.
 - Production is unchanged: without `--dev`, nothing on port 5173 is trusted.
+
+## ADR-012 — The server serves the built UI with its own small file server
+*2026-10-02 · accepted*
+
+**Context.** `pnpm start` has the server serve `apps/web/dist` next to `/api`. `@hono/node-server`'s `serveStatic` (2.1.3) joins its root with the decoded request path, so a relative root resolves against the cwd. It also serves dotfiles and follows symlinks out of its root. It brings Range and precompressed-file support that one local browser doesn't need.
+
+**Decision.**
+- `apps/server/src/routes/web.ts` is about 100 lines and is mounted after the guard and the `/api` routes:
+  - It serves only path segments matching `^[\w-][\w.-]*$`.
+  - The file's `realpath` must lie inside the dist dir's `realpath`, and only regular files are served.
+  - It falls back to `index.html` for extensionless paths outside `/api`.
+  - Hashed `/assets/*` files are cached as immutable; everything else is `no-cache`.
+- Every response gets anti-framing, `nosniff` and `no-referrer` headers.
+- The root `pnpm start` runs `pnpm build` first.
+
+**Rejected.** *`serveStatic` with wrappers* for dotfiles, symlink containment and cache headers: that is more code than the file server, and the security depends on another library's path handling.
+
+**Consequences.** No ETag, Last-Modified or Range support. Files in `apps/web/public` must have names inside the allowed character set. During a rebuild, which empties `dist`, requests can briefly get 404 until Vite finishes.
+

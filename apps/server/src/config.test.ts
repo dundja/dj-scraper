@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { ConfigError, loadConfig } from './config.ts'
+import path from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
+import { ConfigError, DEFAULT_WEB_DIST, loadConfig } from './config.ts'
+
+/** The repo root, from this file (apps/server/src). */
+const REPO = path.resolve(import.meta.dirname, '../../..')
 
 /** The ConfigError loadConfig throws, or a failure if it doesn't throw one. */
 function configError(env: NodeJS.ProcessEnv, argv: readonly string[] = []): ConfigError {
@@ -13,8 +17,27 @@ function configError(env: NodeJS.ProcessEnv, argv: readonly string[] = []): Conf
 }
 
 describe('loadConfig', () => {
-  it('defaults to port 4747, production mode and no engine overrides', () => {
-    expect(loadConfig({}, [])).toStrictEqual({ port: 4747, dev: false, engine: {} })
+  it('defaults to port 4747, production mode, the web build in the repo and no overrides', () => {
+    expect(loadConfig({}, [])).toStrictEqual({
+      port: 4747,
+      dev: false,
+      open: false,
+      webDist: path.join(REPO, 'apps', 'web', 'dist'),
+      engine: {},
+    })
+  })
+
+  it('finds the web build from the source location, not the cwd', async () => {
+    expect(DEFAULT_WEB_DIST).toBe(path.join(REPO, 'apps', 'web', 'dist'))
+    // Evaluated again from another cwd, so a cwd-relative default would show.
+    const cwd = vi.spyOn(process, 'cwd').mockReturnValue('/')
+    try {
+      vi.resetModules()
+      const { DEFAULT_WEB_DIST: fromRoot } = await import('./config.ts')
+      expect(fromRoot).toBe(path.join(REPO, 'apps', 'web', 'dist'))
+    } finally {
+      cwd.mockRestore()
+    }
   })
 
   it.each([
@@ -49,13 +72,22 @@ describe('loadConfig', () => {
   })
 
   it('turns on dev mode with --dev', () => {
-    expect(loadConfig({}, ['--dev']).dev).toBe(true)
+    expect(loadConfig({}, ['--dev'])).toMatchObject({ dev: true, open: false })
+  })
+
+  it('asks for the browser with --open', () => {
+    expect(loadConfig({}, ['--open'])).toMatchObject({ dev: false, open: true })
+  })
+
+  it('parses --open next to --dev (startup ignores it in dev mode)', () => {
+    expect(loadConfig({}, ['--dev', '--open'])).toMatchObject({ dev: true, open: true })
   })
 
   it.each([
     ['an unknown flag', ['--verbose'], '--verbose'],
     ['a positional argument', ['serve'], 'serve'],
     ['a value for --dev', ['--dev=false'], '--dev'],
+    ['a value for --open', ['--open=false'], '--open'],
   ])('rejects %s with a ConfigError', (_label, argv, mentioned) => {
     const error = configError({}, argv)
     expect(error).toBeInstanceOf(Error)
@@ -73,12 +105,26 @@ describe('loadConfig', () => {
   })
 
   it('keeps unrelated environment variables out of the engine config', () => {
-    const env = { PATH: '/usr/bin', HOME: '/Users/dj', YTDLP_COOKIES: 'secret', PORT: '5000' }
+    const env = {
+      PATH: '/usr/bin',
+      HOME: '/Users/dj',
+      YTDLP_COOKIES: 'secret',
+      PORT: '5000',
+      DJS_WEB_DIST: '/tmp/dist',
+    }
     expect(loadConfig(env, []).engine).toStrictEqual({ PATH: '/usr/bin' })
   })
 
   it.each(['YTDLP_PATH', 'FFMPEG_PATH'])('treats an empty %s as unset', (name) => {
     expect(loadConfig({ [name]: '' }, []).engine).toEqual({})
+  })
+
+  it('serves the web build from an absolute DJS_WEB_DIST', () => {
+    expect(loadConfig({ DJS_WEB_DIST: '/tmp/e2e/dist' }, []).webDist).toBe('/tmp/e2e/dist')
+  })
+
+  it('treats an empty DJS_WEB_DIST as unset', () => {
+    expect(loadConfig({ DJS_WEB_DIST: '' }, []).webDist).toBe(DEFAULT_WEB_DIST)
   })
 
   it.each([
@@ -87,6 +133,8 @@ describe('loadConfig', () => {
     ['YTDLP_PATH', '~/bin/yt-dlp'],
     ['FFMPEG_PATH', '~/ffmpeg'],
     ['FFMPEG_PATH', 'ffmpeg'],
+    ['DJS_WEB_DIST', 'apps/web/dist'],
+    ['DJS_WEB_DIST', '~/dist'],
   ])('rejects a relative %s %j (it would depend on the cwd)', (name, value) => {
     const error = configError({ [name]: value })
     expect(error.message).toContain(name)
@@ -94,7 +142,14 @@ describe('loadConfig', () => {
   })
 
   it('reports every invalid variable at once', () => {
-    const error = configError({ PORT: 'abc', YTDLP_PATH: 'yt-dlp', FFMPEG_PATH: 'ffmpeg' })
-    for (const name of ['PORT', 'YTDLP_PATH', 'FFMPEG_PATH']) expect(error.message).toContain(name)
+    const error = configError({
+      PORT: 'abc',
+      YTDLP_PATH: 'yt-dlp',
+      FFMPEG_PATH: 'ffmpeg',
+      DJS_WEB_DIST: 'dist',
+    })
+    for (const name of ['PORT', 'YTDLP_PATH', 'FFMPEG_PATH', 'DJS_WEB_DIST']) {
+      expect(error.message).toContain(name)
+    }
   })
 })

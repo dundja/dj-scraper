@@ -2,7 +2,7 @@
 
 Paste a YouTube or SoundCloud link (a single track or a whole playlist) and pick what you want. You get DJ-ready audio files (MP3 320, AIFF, M4A, …) with tags and artwork, in the folder you choose. Runs locally on your Mac; nothing is hosted.
 
-> **Status:** scaffolding (roadmap Phase 0). `pnpm dev` runs the local server and a dark app shell that shows whether yt-dlp and ffmpeg are ready. Pasting links and downloading come in later phases. See [docs/roadmap.md](docs/roadmap.md).
+> **Status:** early development. The scaffold (roadmap Phase 0) is done: the local server and a dark app shell that shows whether yt-dlp and ffmpeg are ready. Pasting links and downloading come in the next phases. See [docs/roadmap.md](docs/roadmap.md).
 
 ## Prerequisites (macOS)
 - **Node.js 24 LTS**: `nvm install` (reads `.nvmrc`). Also **pnpm 12**: `brew install pnpm`. The repo pins its exact pnpm version, and older Homebrew pnpm (e.g. 10.17) can't switch to it, so run `brew upgrade pnpm` if pnpm commands fail with `ENOEXEC`.
@@ -14,7 +14,8 @@ Keep yt-dlp current, because YouTube changes break old versions: `brew upgrade y
 ## Getting started
 ```bash
 pnpm install
-pnpm dev        # http://localhost:5173 (the UI) + the local server on 127.0.0.1:4747
+pnpm start      # builds the UI, serves it on http://127.0.0.1:4747 and opens your browser
+pnpm dev        # for development: http://localhost:5173 with hot reload + the server on :4747
 ```
 
 ## Docs

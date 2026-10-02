@@ -16,5 +16,7 @@ export default defineConfig({
     include: ['src/**/*.test.{ts,tsx}', '*.test.ts'],
     // Tests replace fetch with vi.stubGlobal (src/test/fake-api.ts); put the real one back after each.
     unstubGlobals: true,
+    // Likewise for vi.stubEnv, e.g. DEV: false to render the copy of the built app (pnpm start).
+    unstubEnvs: true,
   },
 })

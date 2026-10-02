@@ -10,11 +10,11 @@ Done when `pnpm dev` shows the app shell with live engine status, and `pnpm chec
 - [x] `apps/server`: Hono on `127.0.0.1:4747`, Host/Origin guard, `GET /api/health` (yt-dlp/ffmpeg/ffprobe found? versions? JS runtime?), watch mode for dev; add `forbidden` and `not_found` error codes for the guard and unknown routes
 - [x] `apps/web`: Vite + React + TanStack Router (file routes) + Query + Tailwind v4 + shadcn/ui (Base UI, Nova: ADR-010); dark app shell showing engine status from `/api/health`. Vite dev server: `strictPort`, `cors: false`, anti-framing headers, the Fetch Metadata dev guard, and an `/api` proxy that keeps the browser's Host (ADR-011); ports from `@dj-scraper/shared`. The API client sends `Content-Type: application/json` on every non-GET
 - [x] `pnpm dev` runs both with the `/api` proxy (done with the `apps/web` item)
-- [ ] `pnpm start` serves the built SPA from the server: static files and the SPA fallback behind the guard, the same anti-framing headers as the dev server, and the browser opened on start. The "Server offline" and "Unexpected response" texts say `pnpm dev`; make them fit `pnpm start` too
+- [x] `pnpm start` serves the built SPA from the server: static files and the SPA fallback behind the guard (ADR-012), anti-framing, `nosniff` and `no-referrer` headers on every response, and the browser opened on start (`--open`). The offline texts say `pnpm start` in the built app
 - [x] Vitest across packages (web: Testing Library + jsdom, done with the `apps/web` item)
-- [ ] Playwright with one e2e (shell loads, health is OK). Also cover what jsdom can't: the focus ring, popover placement in the viewport, reduced motion
-- [ ] Ctrl-C on `pnpm dev` stops both processes but ends with `ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL`, because Vite dies by SIGINT. Make Vite exit 0 on SIGINT
-- [ ] Update `CLAUDE.md` (commands, layout) to match what was built
+- [x] Playwright (Chromium, WebKit) with one e2e spec (shell loads, health is OK, deep link, recheck), plus what jsdom can't test: the focus ring, popover placement in the viewport, reduced motion
+- [x] Ctrl-C on `pnpm dev` exits 0: a dev-only Vite plugin (`dev-exit.ts`) closes Vite on SIGINT/SIGTERM. Before, pnpm reported `ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL` because Vite died by SIGINT
+- [x] Update `CLAUDE.md` (commands, layout) to match what was built
 
 ## Phase 1 — Engine & resolve
 Done when `pnpm smoke <url>` prints a normalized result for YouTube and SoundCloud tracks and playlists, and the parsers are covered by fixture tests.

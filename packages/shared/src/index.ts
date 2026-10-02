@@ -40,6 +40,7 @@ export { type HealthProblem, healthProblems } from './health-problems.ts'
 export { type Platform, PlatformSchema } from './platform.ts'
 export { loopbackHosts, PortSchema, SERVER_PORT, WEB_DEV_PORT } from './ports.ts'
 export { type ResolveResult, ResolveResultSchema } from './resolve.ts'
+export { SECURITY_HEADERS } from './security-headers.ts'
 export {
   type AudioSource,
   AudioSourceSchema,

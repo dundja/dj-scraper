@@ -1,7 +1,8 @@
+import { healthProblems, WEB_DEV_PORT } from '@dj-scraper/shared'
 import { createApp } from './app.ts'
-import { ConfigError, DEV_ORIGINS, loadConfig } from './config.ts'
+import { ConfigError, loadConfig } from './config.ts'
 import { checkHealth } from './engine/binaries.ts'
-import { cachedHealthCheck, healthWarnings } from './engine/health.ts'
+import { cachedHealthCheck } from './engine/health.ts'
 import { killActiveGroups } from './engine/run.ts'
 import { HOSTNAME, type RunningServer, startServer } from './server.ts'
 
@@ -49,7 +50,7 @@ const health = cachedHealthCheck(() => checkHealth(config.engine, new Date()))
 
 try {
   running = await startServer(config.port, (port) =>
-    createApp({ port, extraOrigins: config.dev ? DEV_ORIGINS : [], health }),
+    createApp({ port, devPort: config.dev ? WEB_DEV_PORT : undefined, health }),
   )
 } catch (error) {
   if (error instanceof Error && 'code' in error && error.code === 'EADDRINUSE') {
@@ -65,7 +66,7 @@ console.log(
 // Probe the engine at boot without delaying listen; the result also warms the cache.
 health.current().then(
   (result) => {
-    for (const warning of healthWarnings(result)) console.warn(`[server] ${warning}`)
+    for (const problem of healthProblems(result)) console.warn(`[server] ${problem.message}`)
   },
   (error: unknown) => console.error('[server] Engine check failed:', error),
 )

@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { parseArgs } from 'node:util'
-import { SERVER_PORT, WEB_DEV_PORT } from '@dj-scraper/shared'
+import { PortSchema, SERVER_PORT } from '@dj-scraper/shared'
 import * as z from 'zod'
 import type { EngineEnv } from './engine/binaries.ts'
 
@@ -16,28 +16,16 @@ const BinPathSchema = z.preprocess(
 )
 
 const EnvSchema = z.object({
-  // Browsers drop default ports (80) from Host, which the guard would reject, so stay above 1023.
-  PORT: z.preprocess(
-    unsetIfEmpty,
-    z
-      .string()
-      .regex(/^\d{1,5}$/, 'must be a number')
-      .transform(Number)
-      .pipe(z.int().min(1024).max(65535))
-      .default(SERVER_PORT),
-  ),
+  PORT: z.preprocess(unsetIfEmpty, PortSchema.default(SERVER_PORT)),
   YTDLP_PATH: BinPathSchema,
   /** The ffmpeg binary, or a directory holding ffmpeg and ffprobe (like --ffmpeg-location). */
   FFMPEG_PATH: BinPathSchema,
   PATH: z.string().optional(),
 })
 
-/** Vite's dev server origin, allowed only with --dev. */
-export const DEV_ORIGINS = [`http://localhost:${WEB_DEV_PORT}`, `http://127.0.0.1:${WEB_DEV_PORT}`]
-
 export type Config = {
   port: number
-  /** `--dev`: started by `pnpm dev`, so the Vite dev origin may call the API. */
+  /** `--dev`: started by `pnpm dev`, so the Vite dev server (WEB_DEV_PORT) may call the API. */
   dev: boolean
   engine: EngineEnv
 }

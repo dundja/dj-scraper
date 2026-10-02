@@ -9,12 +9,12 @@ src/
   config.ts         env + --dev → Config (Zod)
   server.ts         startServer on 127.0.0.1 (node:http + Hono listener)
   app.ts            Hono app: guard first, routes, notFound/onError
-  http/             guard.ts (Host/Origin/Fetch-Metadata, JSON-only), errors.ts (ApiError, status map)
+  http/             guard.ts (Host/Origin/Fetch-Metadata, JSON-only; --dev trusts the Vite port), errors.ts (ApiError, status map)
   routes/           resolve, downloads, events (SSE), settings, system (health, folder picker)
   engine/
     binaries.ts     find yt-dlp/ffmpeg/ffprobe (YTDLP_PATH/FFMPEG_PATH → PATH), JS runtime, versions → Health
     versions.ts     pure: version output parsers, minimums
-    health.ts       cached health check, boot warnings
+    health.ts       cached health check (the boot log words problems with shared healthProblems)
     run.ts          the only module that spawns processes
     ytdlp-args.ts   pure: options → argv
     ytdlp-parse.ts  pure: info JSON → Track/Collection, DL/PP/DONE lines, stderr → ErrorCode

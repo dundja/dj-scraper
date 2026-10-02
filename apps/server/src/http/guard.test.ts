@@ -1,7 +1,6 @@
 import { ApiErrorBodySchema, type Health } from '@dj-scraper/shared'
 import { describe, expect, it } from 'vitest'
 import { createApp } from '../app.ts'
-import { DEV_ORIGINS } from '../config.ts'
 import { isJson } from './guard.ts'
 
 // Not the default 4747, so the guard is shown to use the port it was given.
@@ -19,7 +18,8 @@ const health: Health = {
 const stubHealth = { current: async () => health, recheck: async () => health }
 
 const prod = createApp({ port: PORT, health: stubHealth })
-const dev = createApp({ port: PORT, extraOrigins: DEV_ORIGINS, health: stubHealth })
+// pnpm dev: Vite on 5173 proxies /api here and forwards the browser's Host and Origin unchanged.
+const dev = createApp({ port: PORT, devPort: 5173, health: stubHealth })
 
 type Case = {
   name: string
@@ -64,7 +64,12 @@ const hostCases: Case[] = [
   { name: 'no Host (HTTP/1.0)', host: null, status: 403, error: HOST_403 },
   { name: 'an empty Host', host: '', status: 403, error: HOST_403 },
   { name: 'Host with a trailing dot', host: `localhost.:${PORT}`, status: 403, error: HOST_403 },
-  { name: 'Host on the Vite port', host: 'localhost:5173', status: 403, error: HOST_403 },
+  {
+    name: 'Host on the Vite port in production',
+    host: 'localhost:5173',
+    status: 403,
+    error: HOST_403,
+  },
   { name: 'Host on the default port', host: 'localhost:4747', status: 403, error: HOST_403 },
   { name: 'Host without a port', host: 'localhost', status: 403, error: HOST_403 },
   {
@@ -120,6 +125,72 @@ const hostCases: Case[] = [
     host: `evil.test:${PORT}`,
     status: 403,
     error: HOST_403,
+  },
+]
+
+// Vite's own host check lets file:*, *-extension:*, any IP and localhost:<anything> through, so
+// the proxied Host must still match exactly here.
+const devHostCases: Case[] = [
+  {
+    name: 'Host localhost:5173 (through the Vite proxy)',
+    app: dev,
+    host: 'localhost:5173',
+    status: 200,
+  },
+  { name: 'Host 127.0.0.1:5173', app: dev, host: '127.0.0.1:5173', status: 200 },
+  { name: 'our own Host still works', app: dev, status: 200 },
+  {
+    name: 'POST through the Vite proxy',
+    app: dev,
+    ...RECHECK,
+    host: 'localhost:5173',
+    headers: { ...JSON_CT, origin: 'http://localhost:5173', 'sec-fetch-site': 'same-origin' },
+    status: 200,
+  },
+  { name: 'another port', app: dev, host: 'localhost:5174', status: 403, error: HOST_403 },
+  {
+    name: 'Host file:5173 (Vite allows it)',
+    app: dev,
+    host: 'file:5173',
+    status: 403,
+    error: HOST_403,
+  },
+  {
+    name: 'Host x-extension:5173 (Vite allows it)',
+    app: dev,
+    host: 'attacker-extension:5173',
+    status: 403,
+    error: HOST_403,
+  },
+  {
+    name: 'Host localhost:5173.evil.test (Vite reads only up to the colon)',
+    app: dev,
+    host: 'localhost:5173.evil.test',
+    status: 403,
+    error: HOST_403,
+  },
+  { name: 'Host [::1]:5173', app: dev, host: '[::1]:5173', status: 403, error: HOST_403 },
+  { name: 'Host 0.0.0.0:5173', app: dev, host: '0.0.0.0:5173', status: 403, error: HOST_403 },
+  {
+    name: 'a Vite Host with a foreign Origin',
+    app: dev,
+    ...RECHECK,
+    host: 'localhost:5173',
+    headers: { ...JSON_CT, origin: 'http://localhost:3000' },
+    status: 403,
+    error: ORIGIN_403,
+  },
+  {
+    name: 'a Vite Host with a cross-site fetch',
+    app: dev,
+    host: 'localhost:5173',
+    headers: {
+      'sec-fetch-site': 'cross-site',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-dest': 'empty',
+    },
+    status: 403,
+    error: SITE_403,
   },
 ]
 
@@ -375,6 +446,7 @@ const contentTypeCases: Case[] = [
 describe('guard', () => {
   describe.each([
     ['Host (DNS rebinding)', hostCases],
+    ['Host in dev (Vite proxy)', devHostCases],
     ['Origin', originCases],
     ['Sec-Fetch-Site', fetchMetadataCases],
     ['Content-Type on unsafe methods', contentTypeCases],

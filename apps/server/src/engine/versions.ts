@@ -1,10 +1,10 @@
-/** First yt-dlp release with --js-runtimes (EJS solver). We always pass that flag. */
-export const YTDLP_MIN_RELEASE = '2025-11-12'
-export const YTDLP_STALE_AFTER_DAYS = 60
-export const FFMPEG_MIN_MAJOR = 8
-/** yt-dlp's MIN_SUPPORTED_VERSION for each runtime (yt_dlp/utils/_jsruntime.py). */
-export const DENO_MIN_VERSION = [2, 3, 0] as const
-export const NODE_MIN_VERSION = [22, 0, 0] as const
+import {
+  DENO_MIN_VERSION,
+  FFMPEG_MIN_MAJOR,
+  NODE_MIN_VERSION,
+  YTDLP_MIN_RELEASE,
+  YTDLP_STALE_AFTER_DAYS,
+} from '@dj-scraper/shared'
 
 const DAY_MS = 86_400_000
 

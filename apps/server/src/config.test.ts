@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ConfigError, DEV_ORIGINS, loadConfig } from './config.ts'
+import { ConfigError, loadConfig } from './config.ts'
 
 /** The ConfigError loadConfig throws, or a failure if it doesn't throw one. */
 function configError(env: NodeJS.ProcessEnv, argv: readonly string[] = []): ConfigError {
@@ -96,11 +96,5 @@ describe('loadConfig', () => {
   it('reports every invalid variable at once', () => {
     const error = configError({ PORT: 'abc', YTDLP_PATH: 'yt-dlp', FFMPEG_PATH: 'ffmpeg' })
     for (const name of ['PORT', 'YTDLP_PATH', 'FFMPEG_PATH']) expect(error.message).toContain(name)
-  })
-})
-
-describe('DEV_ORIGINS', () => {
-  it('is the Vite dev server on port 5173, under both loopback names', () => {
-    expect(DEV_ORIGINS).toEqual(['http://localhost:5173', 'http://127.0.0.1:5173'])
   })
 })

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { HealthSchema } from '@dj-scraper/shared'
+import { HealthSchema, healthProblems } from '@dj-scraper/shared'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   checkExecutable,
@@ -102,6 +102,17 @@ const recorded = {
   ffmpeg: exited(fixture('ffmpeg-version-8.0-brew.txt')),
   ffprobe: exited(fixture('ffprobe-version-8.0-brew.txt')),
   deno: exited(fixture('deno-version-2.9.7.txt')),
+}
+
+/** Runs `fn` as if this process were Node `version`: checkJsRuntimes reads process.versions.node. */
+async function asNode<T>(version: string, fn: () => Promise<T>): Promise<T> {
+  const original = Object.getOwnPropertyDescriptor(process.versions, 'node')
+  Object.defineProperty(process.versions, 'node', { ...original, value: version })
+  try {
+    return await fn()
+  } finally {
+    if (original) Object.defineProperty(process.versions, 'node', original)
+  }
 }
 
 describe('pathDirs', () => {
@@ -699,5 +710,100 @@ describe('checkHealth', () => {
     const health = await checkHealth({ PATH: bin }, NOW, { run: slowRun, timeoutMs: 1_000 })
     expect(maxInFlight).toBe(4)
     expect(health.ok).toBe(true)
+  })
+
+  // The API reports `ok`; the boot log and the UI list healthProblems. They must never disagree
+  // about whether the engine can run.
+  describe('agrees with healthProblems', () => {
+    /** 104 days after the recorded yt-dlp 2026.08.19, so it is stale. */
+    const LATER = new Date('2026-12-01T00:00:00Z')
+    const lame = 'configuration: --enable-libmp3lame\n'
+    type EngineState = {
+      tools?: readonly string[]
+      answers?: Record<string, Answer>
+      now?: Date
+      /** Pretend our own Node is this version. */
+      node?: string
+    }
+
+    it.each<[string, EngineState, boolean, string[]]>([
+      ['all tools are ok', {}, true, []],
+      ['yt-dlp is merely stale', { now: LATER }, true, ['warning yt-dlp']],
+      [
+        'yt-dlp is below the minimum release',
+        { answers: { 'yt-dlp': exited('2025.10.22\n') } },
+        false,
+        ['error yt-dlp'],
+      ],
+      [
+        'yt-dlp fails',
+        { answers: { 'yt-dlp': exited('', { exitCode: 1 }) } },
+        false,
+        ['error yt-dlp'],
+      ],
+      [
+        'nothing is installed',
+        { tools: [] },
+        false,
+        ['error yt-dlp', 'error ffmpeg', 'error ffprobe'],
+      ],
+      ['ffprobe is missing', { tools: ['yt-dlp', 'ffmpeg'] }, false, ['error ffprobe']],
+      [
+        'ffmpeg is older than 8',
+        { answers: { ffmpeg: exited(`ffmpeg version 7.1.1\n${lame}`) } },
+        false,
+        ['error ffmpeg'],
+      ],
+      [
+        'ffmpeg’s major is unknown',
+        { answers: { ffmpeg: exited(`ffmpeg version custom-build\n${lame}`) } },
+        false,
+        ['error ffmpeg'],
+      ],
+      [
+        'ffprobe’s major is unknown',
+        { answers: { ffprobe: exited('ffprobe version custom-build\n') } },
+        false,
+        ['error ffprobe'],
+      ],
+      [
+        'ffmpeg has no libmp3lame',
+        { answers: { ffmpeg: exited('ffmpeg version 8.0\n') } },
+        true,
+        ['warning ffmpeg'],
+      ],
+      [
+        'yt-dlp is stale and ffmpeg has no libmp3lame',
+        { now: LATER, answers: { ffmpeg: exited('ffmpeg version 8.0\n') } },
+        true,
+        ['warning yt-dlp', 'warning ffmpeg'],
+      ],
+      [
+        'there is no supported JS runtime',
+        {
+          tools: [...allTools, 'deno'],
+          answers: { deno: exited('deno 2.2.12 (stable, release, aarch64-apple-darwin)\n') },
+          node: '20.19.0',
+        },
+        false,
+        ['error js-runtime'],
+      ],
+      [
+        'deno is supported but our Node is too old',
+        { tools: [...allTools, 'deno'], node: '20.19.0' },
+        true,
+        [],
+      ],
+    ])('when %s', async (_label, state, ok, problems) => {
+      const bin = await binDir(unique('health/agree'), state.tools ?? allTools)
+      const { probe } = stubProbe({ ...recorded, ...state.answers })
+      const check = () => checkHealth({ PATH: bin }, state.now ?? NOW, probe)
+      const health = state.node === undefined ? await check() : await asNode(state.node, check)
+
+      const found = healthProblems(health)
+      expect(found.map(({ severity, tool }) => `${severity} ${tool}`)).toEqual(problems)
+      expect(health.ok).toBe(ok)
+      expect(health.ok).toBe(!found.some((problem) => problem.severity === 'error'))
+    })
   })
 })

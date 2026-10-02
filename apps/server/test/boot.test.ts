@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { rm } from 'node:fs/promises'
+import { get } from 'node:http'
 import path from 'node:path'
 import { ApiErrorBodySchema, HealthSchema } from '@dj-scraper/shared'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
@@ -93,6 +94,23 @@ function boot(env: NodeJS.ProcessEnv, args: readonly string[] = []) {
   return { done, lines, waitForLine, stop }
 }
 
+/** GET /api/health with a chosen Host header, which fetch can't set. Resolves with the status. */
+function statusWithHost(port: number, host: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const options = {
+      host: '127.0.0.1',
+      port,
+      path: '/api/health',
+      headers: { host },
+      agent: false,
+    }
+    get(options, (res) => {
+      res.resume()
+      resolve(res.statusCode ?? 0)
+    }).on('error', reject)
+  })
+}
+
 const listening = (port: number, dev = false) =>
   new RegExp(
     `^\\[server\\] DJ Scraper on http://127\\.0\\.0\\.1:${port}${dev ? ' \\(dev\\)' : ''}$`,
@@ -126,6 +144,8 @@ describe('server boot', () => {
       headers: { origin: 'http://localhost:5173' },
     })
     expect(ApiErrorBodySchema.parse(await vite.json()).error.code).toBe('forbidden')
+    // So is the Host the Vite proxy forwards.
+    expect(await statusWithHost(port, 'localhost:5173')).toBe(403)
 
     // fetch keeps the connection alive; shutdown must not wait for it.
     const result = await server.stop()
@@ -145,7 +165,7 @@ describe('server boot', () => {
 
     const stale = await server.waitForLine('stderr', /yt-dlp 2025\.11\.12/)
     expect(stale).toMatch(
-      /^\[server\] yt-dlp 2025\.11\.12 is \d+ days old \(over 60\)\. If YouTube fails, update it or use a nightly build\.$/,
+      /^\[server\] yt-dlp 2025\.11\.12 is \d+ days old \(over 60\)\. If YouTube fails, run `brew upgrade yt-dlp` or point YTDLP_PATH at a nightly build\.$/,
     )
     expect(await server.waitForLine('stderr', /ffprobe/)).toBe(
       '[server] ffprobe is not on PATH. Run `brew install ffmpeg` or set FFMPEG_PATH.',
@@ -164,7 +184,7 @@ describe('server boot', () => {
     expect(server.lines.stderr).toHaveLength(2)
   })
 
-  it('allows the Vite dev origin with --dev and says so in the log line', async () => {
+  it('allows the Vite dev server with --dev and says so in the log line', async () => {
     const [bin, port] = await Promise.all([fakeEngine(), freePort()])
     const server = boot({ PATH: bin, PORT: String(port) }, ['--dev'])
     await server.waitForLine('stdout', listening(port, true))
@@ -173,6 +193,9 @@ describe('server boot', () => {
       headers: { origin: 'http://localhost:5173' },
     })
     expect(res.status).toBe(200)
+    // Vite's proxy forwards the browser's Host unchanged; only the exact Vite hosts pass.
+    expect(await statusWithHost(port, 'localhost:5173')).toBe(200)
+    expect(await statusWithHost(port, 'file:5173')).toBe(403)
     expect(await server.stop()).toMatchObject({ exitCode: 0 })
   })
 

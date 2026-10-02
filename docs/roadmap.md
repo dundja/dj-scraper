@@ -5,7 +5,7 @@ Work top to bottom. Tick items (`- [x]`) as they land and add discovered work as
 ## Phase 0 — Scaffold
 Done when `pnpm dev` shows the app shell with live engine status, and `pnpm check && pnpm typecheck && pnpm test` pass.
 
-- [ ] Root workspace: `package.json` (scripts: dev, build, start, check, check:fix, typecheck, test, test:e2e, smoke), `pnpm-workspace.yaml`, `tsconfig.base.json` (strict), `biome.json`, pinned `packageManager` and Node engine
+- [x] Root workspace: `package.json` (scripts: dev, build, start, check, check:fix, typecheck, test, test:e2e, smoke), `pnpm-workspace.yaml`, `tsconfig.base.json` (strict), `biome.json`, pinned `packageManager` and Node engine
 - [ ] `packages/shared`: Zod + first schemas (Platform, Track, Collection, ResolveResult, ErrorCode), consumed as TS source
 - [ ] `apps/server`: Hono on `127.0.0.1:4747`, Host/Origin guard, `GET /api/health` (yt-dlp/ffmpeg/ffprobe found? versions? JS runtime?), watch mode for dev
 - [ ] `apps/web`: Vite + React + TanStack Router (file routes) + Query + Tailwind v4 + shadcn/ui; dark app shell showing engine status from `/api/health`
@@ -24,6 +24,7 @@ Done when `pnpm smoke <url>` prints a normalized result for YouTube and SoundClo
 - [ ] Map yt-dlp errors to `ErrorCode` (unavailable, private, geo-blocked, age-restricted, bot check, rate-limited, unsupported, …) with fixtures
 - [ ] `POST /api/resolve`, including the ambiguous `watch?v=…&list=…` case and capped mixes, plus the `pnpm smoke <url>` script
 - [ ] `test/fake-yt-dlp.mjs` that replays fixtures for integration and e2e tests
+- [ ] `.gitignore` ignores `*.log`, which would drop the planned `<case>.log` fixtures: un-ignore `apps/server/test/fixtures/**/*.log`
 
 ## Phase 2 — Download pipeline
 Done when the API downloads a selected set of tracks into a folder with live progress, cancel and retry, all tested against the fake engine.

@@ -72,3 +72,29 @@ We also want user-edited artist/title and clean-up rules.
 - Partial files never reach the user's folder, and cancel is simply kill + delete the job dir.
 - Naming and tagging are our own pure, testable logic.
 - Moving across volumes (USB drives) needs copy + unlink.
+
+## ADR-007 — Toolchain: pnpm 12, TypeScript 7, TypeScript that type stripping can run
+*2026-10-02 · accepted*
+
+**Context.** Phase 0 scaffolds on the current releases:
+- pnpm 12.8, a Rust rewrite whose settings live in `pnpm-workspace.yaml`
+- TypeScript 7.0, a native compiler with no JS API until 7.1
+- Biome 2.5
+- Node 24 LTS (Node 26 becomes LTS on 2026-10-28)
+
+ADR-005 left open whether the server runs bundled or on Node's native TypeScript support.
+
+**Decision.**
+- Pin pnpm 12.8.1 in `packageManager`. Enforce Node 24 with `devEngines.runtime` (`^24.11.0`, `onFail: "error"`), because pnpm 12 ignores a root `engines` mismatch; `engines` stays as documentation.
+- Use TypeScript 7 (`~7.0.2`, from the pnpm catalog) for typechecking only. Write source that Node's type stripping can run as is: `.ts` import extensions, `import type`, `erasableSyntaxOnly`. This keeps both server options from ADR-005 open.
+- Root scripts delegate to same-named package scripts through `pnpm -r` and `--filter`. No Turborepo or Nx: three packages don't need a task runner.
+- Biome style: single quotes, no semicolons, 100 columns. `any`, unused imports and variables, non-null assertions, value imports of types and relative imports without an extension are errors, not warnings. Generated code (`routeTree.gen.ts`, shadcn/ui components) isn't linted.
+
+**Rejected.**
+- *TypeScript 6.* It works with the same configs, but 7 is the current stable and faster. Falling back stays cheap.
+- *pnpm 11.* It uses the same files and worked with the old Homebrew pnpm 10.17, but 12 is stable and is Homebrew's default.
+
+**Consequences.**
+- No tool may depend on the TypeScript JS API (typescript-eslint, vite-plugin-checker, vue-tsc). If one becomes necessary, alias `typescript` to `npm:@typescript/typescript6` and install TS 7 as `@typescript/native`.
+- Homebrew pnpm 10.17 can't switch to the pinned 12.x on macOS (ENOEXEC). `brew upgrade pnpm` fixes it.
+- Moving to Node 26 means changing `.nvmrc`, `engines`, `devEngines` and `@types/node` together.

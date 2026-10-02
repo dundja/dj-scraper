@@ -2,7 +2,7 @@
 
 A local web app for DJs. Paste a YouTube or SoundCloud link (track or playlist), review the metadata, pick tracks, and download them as DJ-ready audio files into a folder you choose. It runs only on this machine: a Vite/React UI at localhost plus a Node server that drives yt-dlp and ffmpeg.
 
-**Status:** pre-implementation. The docs and agent setup exist; the code doesn't yet. The current phase and next items are in `docs/roadmap.md`.
+**Status:** scaffolding (roadmap Phase 0). The root workspace exists; the packages don't yet. The current phase and next items are in `docs/roadmap.md`.
 
 ## Where things are explained
 | Need | Read |
@@ -15,12 +15,13 @@ A local web app for DJs. Paste a YouTube or SoundCloud link (track or playlist),
 | Package conventions | `apps/web/CLAUDE.md`, `apps/server/CLAUDE.md`, `packages/shared/CLAUDE.md` |
 
 ## Stack
-- pnpm workspaces · Node 24 LTS · TypeScript (strict, ESM)
+- pnpm 12 workspaces · Node 24 LTS · TypeScript 7 (strict, ESM, typecheck only)
 - `apps/web`: Vite, React 19, TanStack Router + Query, Tailwind CSS v4, shadcn/ui
 - `apps/server`: Hono on Node (`127.0.0.1:4747`), SSE for live progress
 - `packages/shared`: Zod schemas = the API contract
 - Engine: yt-dlp + ffmpeg/ffprobe as child processes (installed via Homebrew in dev)
 - Tooling: Biome (lint + format), Vitest, Playwright
+- TypeScript must run as is under Vite, Vitest and Node's type stripping. Use `.ts` in relative imports and `import type` for types; no enums, namespaces or parameter properties. See `docs/architecture.md` > Workspace & tooling.
 
 ## Commands
 These scripts are created in roadmap Phase 0. Keep this list true.
@@ -32,12 +33,13 @@ pnpm check        # Biome lint + format check (check:fix applies fixes)
 pnpm typecheck    # tsc across the workspace
 pnpm test         # Vitest unit + integration, no network
 pnpm test:e2e     # Playwright against the fake engine
-pnpm smoke <url>  # live resolve against real YouTube/SoundCloud (network)
+pnpm smoke '<url>' # live resolve against real YouTube/SoundCloud (network)
 ```
-To scope a script to one package: `pnpm --filter @dj-scraper/<web|server|shared> <script>`.
+To scope a script to one package: `pnpm --filter @dj-scraper/<web|server|shared> <script>`. Biome is scoped by path instead: `pnpm check apps/web`.
 
 ## Layout
 ```
+./                 package.json, pnpm-workspace.yaml, tsconfig.base.json, biome.json
 apps/web/          React SPA
 apps/server/       Hono API, download queue, yt-dlp/ffmpeg engine
 packages/shared/   Zod schemas + pure helpers used by both

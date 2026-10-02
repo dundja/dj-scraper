@@ -33,6 +33,25 @@ Config comes from env, validated with Zod at boot:
 - `YTDLP_PATH`, `FFMPEG_PATH`
 - `DJS_DATA_DIR`, which overrides the app data dir (tests use it)
 
+## Workspace & tooling
+The reasons are in ADR-007.
+- **Scripts.** Each root script delegates to the package scripts of the same name.
+  - `dev`, `build`, `typecheck` and `test` run in every package that defines them (`pnpm -r --if-present run …`). `build` runs in dependency order.
+  - `start` and `smoke` run in `@dj-scraper/server`, and `test:e2e` runs in `@dj-scraper/web`. Each fails if its package doesn't exist.
+  - Biome (`check`, `check:fix`) runs from the root with the root `biome.json`. Scope it by path, not with `--filter`: `pnpm check apps/web`.
+  - Generated code isn't linted: `routeTree.gen.ts` is skipped entirely, and `apps/web/src/components/ui/` (shadcn/ui) is formatted but not linted. Tool-owned `.claude/settings.json` and `.mcp.json` are skipped.
+- **pnpm.**
+  - The version is pinned in `packageManager`.
+  - Settings live in `pnpm-workspace.yaml`; since pnpm 11, `.npmrc` holds only auth.
+  - Dependency versions shared across packages go in its `catalog`, and packages reference them as `"catalog:"`.
+  - A dependency that runs an install script needs an `allowBuilds` entry, or `pnpm install` fails with `ERR_PNPM_IGNORED_BUILDS`.
+  - `devEngines.runtime` makes pnpm refuse any Node version outside `^24.11.0` (the Node 24 LTS line).
+- **TypeScript.** Every package extends `tsconfig.base.json` and is checked with `tsc` (TS 7); tsc never emits. The source must run unchanged under Vite, Vitest and Node's type stripping:
+  - relative imports end in `.ts`/`.tsx` (Biome's `useImportExtensions`; `check:fix` adds them)
+  - type-only imports use `import type` (`verbatimModuleSyntax`)
+  - no enums, namespaces or constructor parameter properties (`erasableSyntaxOnly`); use `as const` objects or `z.enum` instead
+  - globals are opt-in per package: the server adds `types: ["node"]`, and the web adds `lib: ["es2024", "dom"]` and `types: ["vite/client"]`. `packages/shared` gets none, so Node and DOM globals, including `URL` and `console`, are type errors there. Declare the few WHATWG globals it needs in a local `.d.ts`.
+
 ## Server modules (`apps/server/src`)
 | Module | Responsibility |
 |---|---|
@@ -198,6 +217,6 @@ App data dir: `~/Library/Application Support/DJ Scraper/` on macOS.
 | Unit | Vitest | shared helpers and schemas, argv builders, parsers, error mapping, finalize naming/tagging logic, queue state machine, hooks/components | never |
 | Integration | Vitest | real server + `test/fake-yt-dlp.mjs` replaying fixtures: spawn, progress, cancel, errors, finalize | never |
 | E2E | Playwright | UI flows against the server + fake engine | never |
-| Smoke | `pnpm smoke <url>` | real yt-dlp against live YouTube/SoundCloud | yes, run by hand |
+| Smoke | `pnpm smoke '<url>'` | real yt-dlp against live YouTube/SoundCloud | yes, run by hand |
 
 Fixtures live in `apps/server/test/fixtures/<platform>/`. Each is recorded from a real run, with the yt-dlp version and date noted.

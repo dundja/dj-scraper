@@ -1,0 +1,119 @@
+{
+  "_type": "playlist",
+  "id": "9615865",
+  "title": "The Royal Concept (All)",
+  "entries": [
+    {
+      "ie_key": "Soundcloud",
+      "id": "607075623",
+      "title": "Kick It",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/kick-it-main",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "597335928",
+      "title": "Up All Night",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/up-all-night-4",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "id": "300048546",
+      "title": "Goldrushed [2013 Album]",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/sets/goldrushed-2013-album",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "88359828",
+      "title": "ENTERTAINMENT STEM BV'S",
+      "_type": "url",
+      "url": "https://soundcloud.com/phoenix/entertainment-stem-bvs",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "153528495",
+      "title": "MRTN Feat. Deer -  Illusion",
+      "_type": "url",
+      "url": "https://soundcloud.com/mrtnoriginal/mrtn-feat-oh-deer-illusion",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "149905846",
+      "title": "Cabin Down Below (Mix 6)",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/cabin-down-below-mix-6-1",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "149905575",
+      "title": "Cabin Down Below (Mix 6)",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/cabin-down-below-mix-6",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "149906096",
+      "title": "Cabin Down Below (feat. Kenny G)",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/cabin-down-below-mix-6-2",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "109919787",
+      "title": "Shut The World",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/shut-the-world",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "47127629",
+      "title": "In The End",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/in-the-end-mastered",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "122071563",
+      "title": "The Royal Concept - Goldrushed (Beat Mafia Remix)",
+      "_type": "url",
+      "url": "https://soundcloud.com/beatmafia/goldrushed_beat_mafia_remix",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "ie_key": "Soundcloud",
+      "id": "112051532",
+      "title": "Radio",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/radio-1",
+      "__x_forwarded_for_ip": null
+    }
+  ],
+  "webpage_url": "https://soundcloud.com/the-concept-band",
+  "original_url": "https://soundcloud.com/the-concept-band",
+  "webpage_url_basename": "the-concept-band",
+  "webpage_url_domain": "soundcloud.com",
+  "extractor": "soundcloud:user",
+  "extractor_key": "SoundcloudUser",
+  "release_year": null,
+  "requested_entries": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  "playlist_count": null,
+  "epoch": 1790956457,
+  "__files_to_move": {},
+  "_version": {
+    "version": "2026.08.19",
+    "current_git_head": null,
+    "release_git_head": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+    "repository": "yt-dlp/yt-dlp"
+  }
+}

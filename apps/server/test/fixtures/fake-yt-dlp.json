@@ -1,0 +1,303 @@
+{
+  "rules": [
+    {
+      "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      "stdout": "youtube/video.json"
+    },
+    {
+      "url": "https://music.youtube.com/watch?v=XNEnEBrHws8",
+      "stdout": "youtube/music-track.json"
+    },
+    {
+      "url": "https://www.youtube.com/playlist?list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0",
+      "stdout": "youtube/playlist.json"
+    },
+    {
+      "url": "https://www.youtube.com/playlist?list=PLzH6n4zXuckpfMu_4Ff8E7Z1behQks5ba",
+      "stdout": "youtube/playlist-capped.json",
+      "note": "Recorded with -I 1:4: only rows 1-4 of 11 exist, so any wider -I still returns 4."
+    },
+    {
+      "url": "https://www.youtube.com/playlist?list=PL4lCao7KL_QFodcLWhDpGCYnngnHtQ-Xf",
+      "stdout": "youtube/playlist-empty.json"
+    },
+    {
+      "url": "https://www.youtube.com/playlist?list=PLYwq8WOe86_xGmR7FrcJq8Sb7VW8K3Tt2",
+      "stdout": "youtube/playlist-unavailable-entries.json",
+      "note": "A window (rows 49-71 of 162): -I selects by those real indices."
+    },
+    {
+      "url": "https://music.youtube.com/browse/MPREb_gTAcphH99wE",
+      "stdout": "youtube/album.json"
+    },
+    {
+      "url": "https://www.youtube.com/playlist?list=OLAK5uy_l1m0thk3g31NmIIz_vMIbWtyv7eZixlH0",
+      "stdout": "youtube/album-olak.json"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=gHKT4uU8Zng&list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0",
+      "playlist": "no",
+      "stdout": "youtube/watch-list-track.json"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=gHKT4uU8Zng&list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0",
+      "playlist": "yes",
+      "stdout": "youtube/watch-list-playlist.json"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ",
+      "playlist": "yes",
+      "stdout": "youtube/mix.json",
+      "note": "51 rows (recorded with -I 1:51): one more than the mix cap, so it resolves truncated."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ",
+      "playlist": "no",
+      "stdout": "youtube/mix-track.json",
+      "note": "The seed video alone: what auto mode looks up before offering the mix."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw&list=RDjNQXAC9IVRw",
+      "playlist": "yes",
+      "stdout": "youtube/mix-unrecognized.json",
+      "stderr": "errors/youtube-mix-unrecognized.log"
+    },
+    {
+      "url": "https://www.youtube.com/@NoCopyrightSounds/videos",
+      "stdout": "youtube/channel-videos.json"
+    },
+    {
+      "url": "https://www.youtube.com/@NoCopyrightSounds",
+      "stdout": "youtube/channel-root.json"
+    },
+    {
+      "url": "https://soundcloud.com/ethmusic/lostin-powers-she-so-heavy",
+      "stdout": "soundcloud/track.json"
+    },
+    {
+      "url": "https://soundcloud.com/jaimemf/youtube-dl-test-video-a-y-baw/s-8Pjrp",
+      "stdout": "soundcloud/track-secret.json"
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/world-on-fire-1",
+      "args": [["--extractor-args", "soundcloud:formats=hls_aac"]],
+      "stderr": "errors/soundcloud-no-formats.log",
+      "exit": 1
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/world-on-fire-1",
+      "args": ["--no-quiet", ["--match-filters", "format_id!*=preview"]],
+      "stdout": "errors/preview-filter.log",
+      "note": "Only --no-quiet prints the filter message (on stdout); quiet runs print nothing."
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/world-on-fire-1",
+      "args": [["-f", "ba[format_id!*=preview]"]],
+      "stderr": "errors/preview-format-unavailable.log",
+      "exit": 1
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/world-on-fire-1",
+      "stdout": "soundcloud/track-preview.json"
+    },
+    {
+      "url": "https://on.soundcloud.com/9TqpUbrnArHjKNAq6",
+      "stdout": "soundcloud/track-short-link.json"
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/sets/the-royal-concept-ep",
+      "args": [["-I", "1:3"]],
+      "stdout": "soundcloud/set-capped.json"
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/sets/the-royal-concept-ep",
+      "stdout": "soundcloud/set.json"
+    },
+    {
+      "url": "https://soundcloud.com/leviryan/sets/out-of-spite",
+      "stdout": "soundcloud/album-set.json"
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band",
+      "stdout": "soundcloud/user.json",
+      "note": "Recorded with -I 1:12."
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/tracks",
+      "stdout": "soundcloud/user-tracks.json"
+    },
+    {
+      "url": "https://soundcloud.com/leviryan/likes",
+      "stdout": "soundcloud/user-likes.json"
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/sets",
+      "stdout": "soundcloud/user-sets.json"
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/reposts",
+      "stdout": "soundcloud/user-reposts.json"
+    },
+    {
+      "url": "https://api-v2.soundcloud.com/tracks/47127631",
+      "args": [["--extractor-args", "soundcloud:formats=none"], "--ignore-no-formats-error"],
+      "stdout": "soundcloud/entry-metadata-only.json",
+      "stderr": "errors/soundcloud-metadata-only.log"
+    },
+    {
+      "url": "https://api-v2.soundcloud.com/tracks/47127631",
+      "stdout": "soundcloud/entry.json"
+    },
+    {
+      "url": "https://example.com/",
+      "stderr": "errors/unsupported.log",
+      "exit": 1
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=aaaaaaaaaa0",
+      "stderr": "errors/youtube-unavailable.log",
+      "exit": 1
+    },
+    {
+      "url": "https://youtube.com/watch?v=Cr381pDsSsA",
+      "stderr": "errors/youtube-removed.log",
+      "exit": 1
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=bM7SZ5SBzyY",
+      "stderr": "errors/youtube-private.log",
+      "exit": 1
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=Tq92D6wQ1mg",
+      "stderr": "errors/youtube-age-restricted.log",
+      "exit": 1
+    },
+    {
+      "url": "https://www.youtube.com/playlist?list=PLaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "stderr": "errors/youtube-playlist-missing.log",
+      "exit": 1
+    },
+    {
+      "url": "https://www.youtube.com/playlist?list=RDdQw4w9WgXcQ",
+      "stderr": "errors/youtube-mix-playlist-url.log",
+      "exit": 1,
+      "note": "The server resolves this mix from its seed video's watch URL instead; only a direct call passes it."
+    },
+    {
+      "url": "https://soundcloud.com/ethmusic/this-track-does-not-exist-dj-scraper",
+      "stderr": "errors/soundcloud-404.log",
+      "exit": 1
+    },
+    {
+      "url": "https://soundcloud.com/dj-scraper-no-such-user-8f3k2",
+      "stderr": "errors/soundcloud-user-missing.log",
+      "exit": 1
+    },
+    {
+      "url": "https://soundcloud.com/caravan-palace-official/mad",
+      "stderr": "errors/soundcloud-geo-blocked.log",
+      "exit": 1
+    },
+    {
+      "url": "https://soundcloud.com/the80m/the-following",
+      "args": [["-f", "download"]],
+      "stderr": "errors/soundcloud-401.log",
+      "exit": 1
+    },
+    {
+      "url": "http://10.255.255.1/x",
+      "stderr": "errors/network-timeout.log",
+      "exit": 1
+    },
+    {
+      "url": "https://nonexistent.invalid/",
+      "stderr": "errors/dns.log",
+      "exit": 1
+    },
+    {
+      "url": "https://example.invalid/",
+      "args": ["--no-such-option"],
+      "stderr": "errors/bad-option.log",
+      "exit": 2,
+      "note": "An option this yt-dlp does not know (too old for our argv): optparse prints usage and exits 2."
+    },
+    {
+      "url": "http://127.0.0.1:9/x",
+      "stderr": "errors/connection-refused.log",
+      "exit": 1
+    },
+    {
+      "url": "notaurl",
+      "stderr": "errors/invalid-url.log",
+      "exit": 1,
+      "note": "classifyUrl refuses it, so only a direct call passes it to yt-dlp."
+    },
+    {
+      "url": "https://music.amazon.com/albums/B0000000000",
+      "stderr": "errors/drm.log",
+      "exit": 1,
+      "note": "classifyUrl refuses Amazon Music as out of scope, so only a direct call passes it to yt-dlp."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=GEOBLOCKED1",
+      "stderr": "errors/youtube-geo-blocked.log",
+      "exit": 1,
+      "note": "Synthetic log, made-up URL."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=COPYRIGHTGE",
+      "stderr": "errors/youtube-copyright-geo.log",
+      "exit": 1,
+      "note": "Synthetic log, made-up URL: a label's copyright block in this country."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=BOTCHECK001",
+      "stderr": "errors/youtube-bot-check.log",
+      "exit": 1,
+      "note": "Synthetic log, made-up URL."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=RATELIMITED",
+      "stderr": "errors/youtube-rate-limited.log",
+      "exit": 1,
+      "note": "Synthetic log, made-up URL."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=CONTENTUNAV",
+      "stderr": "errors/youtube-content-unavailable.log",
+      "exit": 1,
+      "note": "Synthetic log, made-up URL."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=MEMBERSONLY",
+      "stderr": "errors/youtube-members-only.log",
+      "exit": 1,
+      "note": "Synthetic log, made-up URL."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=MEMBERSLVL1",
+      "stderr": "errors/youtube-members-only-level.log",
+      "exit": 1,
+      "note": "Synthetic log, made-up URL."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=PLAYERBROKE",
+      "stderr": "errors/unknown.log",
+      "exit": 1,
+      "note": "Synthetic log, made-up URL: an error no ErrorCode pattern matches."
+    },
+    {
+      "url": "https://soundcloud.com/dj-scraper-fake/rate-limited-streams",
+      "stderr": "errors/soundcloud-429.log",
+      "exit": 1,
+      "note": "Synthetic log, made-up URL: 429 on the stream-URL requests, after 3 retries."
+    },
+    {
+      "url": "https://soundcloud.com/dj-scraper-fake/rate-limited-info",
+      "stderr": "errors/soundcloud-429-info.log",
+      "exit": 1,
+      "note": "Synthetic log, made-up URL: 429 on the first (info JSON) request."
+    }
+  ]
+}

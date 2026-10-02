@@ -1,0 +1,7 @@
+[soundcloud] Extracting URL: https://soundcloud.com/the-concept-band/world-on-fire-1
+[soundcloud] the-concept-band/world-on-fire-1: Downloading info JSON
+[soundcloud] 75206121: Downloading hls_mp3 format info JSON
+[soundcloud] 75206121: Downloading http_mp3 format info JSON
+[soundcloud] 75206121: Checking thumbnail extension
+[info] 75206121: Downloading 1 format(s): http_mp3_0_0_preview
+[download] World On Fire (Re-Mastered) does not pass filter (format_id!*=preview), skipping ..

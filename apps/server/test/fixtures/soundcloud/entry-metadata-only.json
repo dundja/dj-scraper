@@ -1,0 +1,79 @@
+{
+  "uploader": "The Royal Concept",
+  "uploader_id": "9615865",
+  "uploader_url": "https://soundcloud.com/the-concept-band",
+  "timestamp": 1337635207,
+  "title": "Knocked Up",
+  "track": "Knocked Up",
+  "description": "The Royal Concept from Stockholm\r\nFilip / David / Povel / Magnus\r\nwww.theroyalconceptband.com",
+  "duration": 221.872,
+  "webpage_url": "https://soundcloud.com/the-concept-band/knocked-up-mastered",
+  "license": "all-rights-reserved",
+  "view_count": 98154,
+  "like_count": 1248,
+  "comment_count": 35,
+  "repost_count": 204,
+  "modified_timestamp": 1470149455,
+  "genres": ["Alternative Pop"],
+  "id": "47127631",
+  "thumbnails": [
+    {
+      "id": "mini",
+      "url": "https://i1.sndcdn.com/artworks-000043574646-iq6flj-mini.jpg",
+      "width": 16,
+      "height": 16,
+      "resolution": "16x16"
+    },
+    {
+      "id": "t300x300",
+      "url": "https://i1.sndcdn.com/artworks-000043574646-iq6flj-t300x300.jpg",
+      "width": 300,
+      "height": 300,
+      "resolution": "300x300"
+    },
+    {
+      "id": "crop",
+      "url": "https://i1.sndcdn.com/artworks-000043574646-iq6flj-crop.jpg",
+      "width": 400,
+      "height": 400,
+      "resolution": "400x400"
+    },
+    {
+      "id": "t500x500",
+      "url": "https://i1.sndcdn.com/artworks-000043574646-iq6flj-t500x500.jpg",
+      "width": 500,
+      "height": 500,
+      "resolution": "500x500"
+    },
+    {
+      "id": "original",
+      "url": "https://i1.sndcdn.com/artworks-000043574646-iq6flj-original.jpg",
+      "preference": 10
+    }
+  ],
+  "formats": [],
+  "original_url": "https://api-v2.soundcloud.com/tracks/47127631",
+  "webpage_url_basename": "knocked-up-mastered",
+  "webpage_url_domain": "soundcloud.com",
+  "extractor": "soundcloud",
+  "extractor_key": "Soundcloud",
+  "playlist": null,
+  "playlist_index": null,
+  "thumbnail": "https://i1.sndcdn.com/artworks-000043574646-iq6flj-original.jpg",
+  "display_id": "47127631",
+  "fulltitle": "Knocked Up",
+  "duration_string": "3:41",
+  "upload_date": "20120521",
+  "modified_date": "20160802",
+  "release_year": null,
+  "genre": "Alternative Pop",
+  "_has_drm": null,
+  "epoch": 1790957243,
+  "_type": "video",
+  "_version": {
+    "version": "2026.08.19",
+    "current_git_head": null,
+    "release_git_head": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+    "repository": "yt-dlp/yt-dlp"
+  }
+}

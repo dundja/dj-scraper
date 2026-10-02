@@ -1,0 +1,1 @@
+ERROR: [soundcloud] 47127631: Unable to download JSON metadata: HTTP Error 429: Too Many Requests (caused by <HTTPError 429: Too Many Requests>)

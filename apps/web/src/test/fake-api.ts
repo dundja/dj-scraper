@@ -74,6 +74,15 @@ function abortable(
   })
 }
 
+/** The parsed JSON body of a request the app sent; throws when the body isn't a string. */
+export function jsonBody(call: ApiCall | undefined): unknown {
+  if (typeof call?.body !== 'string') {
+    const got = call === undefined ? 'no request' : typeof call.body
+    throw new Error(`Expected a JSON string body, got ${got}`)
+  }
+  return JSON.parse(call.body)
+}
+
 /** A JSON reply, like the server's. */
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

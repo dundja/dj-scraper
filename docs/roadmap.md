@@ -29,7 +29,7 @@ Done when `pnpm smoke <url>` prints a normalized result for YouTube and SoundClo
 - [x] Collection header data: the platform's track count and SoundCloud's set duration when yt-dlp reports them, and `truncated` when our `-I` cap cut the list. Reconcile the 1000-entry cap with "smooth with 1,000+ tracks" (product.md). Cap is 5,000 (mixes 50), asked as `-I 1:<cap+1>`; `skippedEntries` counts non-track rows (ADR-013)
 - [x] `test/fake-yt-dlp.mjs` that replays fixtures for integration and e2e tests. Check it in with its exec bit and symlink it per test (like `test/fake-tool.sh`): endpoint security scans every newly written executable on first run, which made per-test scripts time out. Manifest `test/fixtures/fake-yt-dlp.json`, `-I` slicing, delay/hang/calls-log knobs, strict argv checks; `writeFakeYtdlp` in `test/helpers.ts`
 - [x] `.gitignore` ignores `*.log`, which would drop the planned `<case>.log` fixtures: un-ignore `apps/server/test/fixtures/**/*.log`
-- [ ] Test the web client's JSON body path (`lib/api.ts`) against `POST /api/resolve`: it is the client's first request body. (The rest of the Phase 0 sync, the `createApp` wiring and ADR numbering, was done when this branch was rebased onto `main`.)
+- [x] Test the web client's JSON body path (`lib/api.ts`) against `POST /api/resolve`: it is the client's first request body. (The rest of the Phase 0 sync, the `createApp` wiring and ADR numbering, was done when this branch was rebased onto `main`.)
 - [ ] Decide whether SoundCloud sets with `album_type: album` (see `fixtures/soundcloud/album-set.json`) get kind `album` instead of `set`
 - [ ] Collection `owner` is missing for SoundCloud user pages (yt-dlp gives only a title like "X (All)") and YouTube Music albums (null uploader): derive it
 

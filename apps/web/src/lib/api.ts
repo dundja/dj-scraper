@@ -1,4 +1,15 @@
-import { ApiErrorBodySchema, type ErrorCode, type Health, HealthSchema } from '@dj-scraper/shared'
+import {
+  ApiErrorBodySchema,
+  type ErrorCode,
+  type Health,
+  HealthSchema,
+  type ResolveEntriesRequestSchema,
+  type ResolveEntriesResponse,
+  ResolveEntriesResponseSchema,
+  type ResolveRequestSchema,
+  type ResolveResult,
+  ResolveResultSchema,
+} from '@dj-scraper/shared'
 import type * as z from 'zod'
 
 /**
@@ -103,4 +114,19 @@ export const api = {
   /** Probes the engine again now, e.g. after installing yt-dlp. */
   recheckHealth: (signal?: AbortSignal): Promise<Health> =>
     request('/health/recheck', HealthSchema, { method: 'POST', signal }),
+  /**
+   * What a pasted URL is: a track, a collection, or `ambiguous` for `watch?v=…&list=…` in `auto`
+   * mode. Leave `mode` out for `auto`: the body omits it and the server defaults it.
+   */
+  resolve: (
+    body: z.input<typeof ResolveRequestSchema>,
+    signal?: AbortSignal,
+  ): Promise<ResolveResult> =>
+    request('/resolve', ResolveResultSchema, { method: 'POST', body, signal }),
+  /** Full Tracks for the partial collection rows in view; each row succeeds or fails on its own. */
+  resolveEntries: (
+    body: z.input<typeof ResolveEntriesRequestSchema>,
+    signal?: AbortSignal,
+  ): Promise<ResolveEntriesResponse> =>
+    request('/resolve/entries', ResolveEntriesResponseSchema, { method: 'POST', body, signal }),
 }

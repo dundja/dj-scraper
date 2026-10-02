@@ -15,6 +15,9 @@ export const ErrorCodeSchema = z.enum([
   'engine_missing',
   'postprocess_failed',
   'canceled',
+  'invalid_request',
+  'forbidden',
+  'not_found',
   'unknown',
 ])
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>

@@ -48,6 +48,9 @@ describe('ErrorCodeSchema', () => {
       | 'engine_missing'
       | 'postprocess_failed'
       | 'canceled'
+      | 'invalid_request'
+      | 'forbidden'
+      | 'not_found'
       | 'unknown'
     >()
   })

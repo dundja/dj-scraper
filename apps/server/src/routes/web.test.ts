@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../app.ts'
 import type { HealthCheck } from '../engine/health.ts'
 import { SECURITY_HEADERS } from '../http/security-headers.ts'
+import { UNUSED_RESOLVE_DEPS } from '../resolve/unused.ts'
 import { hasBuiltUi, NO_UI_MESSAGE } from './web.ts'
 
 const PORT = 4747
@@ -63,7 +64,7 @@ afterAll(async () => {
 })
 
 const appFor = (webRoot: string | undefined) =>
-  createApp({ port: PORT, health: stubHealth, webRoot })
+  createApp({ port: PORT, health: stubHealth, webRoot, ...UNUSED_RESOLVE_DEPS })
 
 /** app.request sends no Host, so add ours (absolute URL, since the guard checks the URL too). */
 const send = (target: string, init: RequestInit = {}, app = appFor(dist)) => {

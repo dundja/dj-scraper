@@ -12,7 +12,7 @@ Verified 2026-10-01 against yt-dlp **2026.08.19** (README, wiki, source, issues)
 - **JS runtime:** YouTube needs one (EJS), and only deno is enabled by default. Always add our own Node as a fallback with `--js-runtimes node:<process.execPath>` (Node ≥ 22); deno keeps priority when present.
 - **Updating:**
   - Brew installs refuse `-U`; use `brew upgrade yt-dlp`.
-  - Stable can lag for weeks, while YouTube fixes land in **nightly** within hours to days. When stable is broken, point `YTDLP_PATH` at the nightly `yt-dlp_macos` binary.
+  - Stable can lag for weeks, while YouTube fixes land in **nightly** within hours to days. When stable is broken, point `YTDLP_PATH` at an unpacked nightly `yt-dlp_macos.zip` build (the onefile `yt-dlp_macos` can take ~12 s per start; see reference.md).
 - **ffmpeg:** ffmpeg **and** ffprobe ≥ 8 are required for `-x`, tagging and artwork. Don't use the `ffmpeg-static` npm package (ffmpeg 6.1, no ffprobe).
 
 ## Base argv (every call)
@@ -22,7 +22,7 @@ Verified 2026-10-01 against yt-dlp **2026.08.19** (README, wiki, source, issues)
 <options…>
 -- <url>
 ```
-- **Spawning:** `spawn(bin, argv, { shell: false, detached: true })`. Detached gives the process its own group, which cancel needs. Call `setEncoding('utf8')` on both streams and split them into lines.
+- **Spawning:** only through `apps/server/src/engine/run.ts`: `run(bin, argv, { onStdoutLine, onStderrLine, signal, timeoutMs })`. It spawns with `shell: false, detached: true` (its own process group, which cancel needs), stops the group with SIGINT and then SIGKILL, and splits UTF-8 lines on `\n`, `\r\n` and a lone `\r`.
 - **Secrets:** never pass them in argv (it shows up in `ps`). Use `--cookies-from-browser <browser>`, or a 0600 file passed with `--config-locations`, which is still read under `--ignore-config`.
 
 ## Resolve

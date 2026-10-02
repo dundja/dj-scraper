@@ -16,7 +16,7 @@ You own test quality in DJ Scraper. Read `CLAUDE.md` and the Testing section of 
 
 ## Fixtures
 - Record them from real yt-dlp runs into `apps/server/test/fixtures/<platform>/<case>.{json,log}`, then trim to the fields we read.
-- Note the yt-dlp version and recording date for each fixture in a table in `fixtures/README.md`.
+- Note the tool version and recording date for each fixture in a table in the `README.md` of its fixture directory (`fixtures/<platform>/`, `fixtures/engine/`).
 - Never store cookies, tokens or personal data in fixtures.
 
 ## Rules

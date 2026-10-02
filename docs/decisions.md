@@ -199,6 +199,7 @@ The web enriches partial rows through `POST /api/resolve/entries`, which returns
 - **Caps.** The cap is 5,000 entries, YouTube's own playlist limit, and 50 for a mix, which never ends. Asking for one extra row makes `truncated` exact on every platform. `trackCount` is set only when the platform reports its own count.
 - **Track inside a list.** `watch?v=…&list=…` in `auto` mode is one `--no-playlist` track lookup, answered as `ambiguous` with the list's `collectionUrl` and `collectionKind` (`playlist`, `album` or `mix`), so the UI can word the question and default to the track for a mix. `mode: 'collection'` then lists it.
 - **Rewrites.** A mix's `collectionUrl` keeps its seed video, and `playlist?list=RD<video id>` is rewritten to that form. Channel roots resolve as `<channel>/videos`.
+- **Kind and owner.** A SoundCloud set whose `album_type` is album, EP, single or compilation is kind `album`, as a YouTube album is, whatever URL it came from; playlists stay `set`. When yt-dlp names no owner, it is derived only where it is certain: a SoundCloud user page's is the username in its `<username> (<Resource>)` title, and a YouTube Music album's is the artist of the `<artist> - Topic` channel all its rows share. An album by several artists gets none.
 - **DRM.** DRM services (Spotify, Apple Music, Amazon Music, Tidal, Deezer, Beatport) are refused by URL before anything is spawned (non-negotiable 7).
 - **Limits.** At most 4 resolves run at once. The timeout is 60 s for a track and 180 s for a list, and a closed browser request stops its yt-dlp.
 

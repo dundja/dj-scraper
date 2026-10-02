@@ -27,11 +27,11 @@ Done when `pnpm smoke <url>` prints a normalized result for YouTube and SoundClo
 - [x] Map yt-dlp errors to `ErrorCode` (unavailable, private, geo-blocked, age-restricted, bot check, rate-limited, unsupported, …) with fixtures. `engine/ytdlp-errors.ts`; 36 stderr fixtures, synthetic ones marked with their upstream source
 - [x] `POST /api/resolve`, including the ambiguous `watch?v=…&list=…` case and capped mixes, plus the `pnpm smoke <url>` script. Input URLs: http(s), length cap, no embedded credentials (argv shows in `ps`). Add a `readJson(c, Schema)` helper: malformed JSON or a failed Zod check → 400 `invalid_request`. `ambiguous` carries `collectionKind`; channel roots → `/videos`; `playlist?list=RD…` → seeded watch URL; embed player lists → playlist page (ADR-013). The web-client half (test `lib/api.ts`'s JSON body path with this route) is the item below
 - [x] Collection header data: the platform's track count and SoundCloud's set duration when yt-dlp reports them, and `truncated` when our `-I` cap cut the list. Reconcile the 1000-entry cap with "smooth with 1,000+ tracks" (product.md). Cap is 5,000 (mixes 50), asked as `-I 1:<cap+1>`; `skippedEntries` counts non-track rows (ADR-013)
-- [x] `test/fake-yt-dlp.mjs` that replays fixtures for integration and e2e tests. Check it in with its exec bit and symlink it per test (like `test/fake-tool.sh`): endpoint security scans every newly written executable on first run, which made per-test scripts time out. Manifest `test/fixtures/fake-yt-dlp.json`, `-I` slicing, delay/hang/calls-log knobs, strict argv checks; `writeFakeYtdlp` in `test/helpers.ts`
+- [x] `test/fake-yt-dlp.mjs` that replays fixtures for integration tests (`writeFakeYtdlp` in `test/helpers.ts`). Check it in with its exec bit and symlink it per test (like `test/fake-tool.sh`): endpoint security scans every newly written executable on first run, which made per-test scripts time out. Manifest `test/fixtures/fake-yt-dlp.json`, `-I` slicing, delay/hang/calls-log knobs, strict argv checks. `test/e2e-server.ts` still uses `fake-tool.sh`, which answers only `--version`
 - [x] `.gitignore` ignores `*.log`, which would drop the planned `<case>.log` fixtures: un-ignore `apps/server/test/fixtures/**/*.log`
-- [x] Test the web client's JSON body path (`lib/api.ts`) against `POST /api/resolve`: it is the client's first request body. (The rest of the Phase 0 sync, the `createApp` wiring and ADR numbering, was done when this branch was rebased onto `main`.)
-- [ ] Decide whether SoundCloud sets with `album_type: album` (see `fixtures/soundcloud/album-set.json`) get kind `album` instead of `set`
-- [ ] Collection `owner` is missing for SoundCloud user pages (yt-dlp gives only a title like "X (All)") and YouTube Music albums (null uploader): derive it
+- [x] Test the web client's JSON body path (`lib/api.ts`) against `POST /api/resolve`: it is the client's first request body
+- [x] Decide whether SoundCloud sets with `album_type: album` (see `fixtures/soundcloud/album-set.json`) get kind `album` instead of `set`. Yes: a set whose `album_type` is album, ep, single or compilation is kind `album`, whatever URL it came from, and playlists stay `set` (ADR-013)
+- [x] Collection `owner` is missing for SoundCloud user pages (yt-dlp gives only a title like "X (All)") and YouTube Music albums (null uploader): derive it. User pages take the username from the `<username> (<Resource>)` title, and albums the artist of the `<artist> - Topic` channel all their rows share; several artists leave it unset (ADR-013)
 
 ## Phase 2 — Download pipeline
 Done when the API downloads a selected set of tracks into a folder with live progress, cancel and retry, all tested against the fake engine.
@@ -64,6 +64,7 @@ Done when the full flow works in the browser: paste → (track: auto-download | 
 - [ ] Partial rows: request enrichment for the rows in view, cancel requests for rows scrolled away, and show placeholders while SoundCloud's budget paces a long scroll
 - [ ] Engine missing/outdated banner and friendly error states
 - [ ] Playwright e2e for both flows against the fake engine
+  - Switch `test/e2e-server.ts` to `writeFakeYtdlp` (with `FAKE_YTDLP_VERSION` set to today's version, see `todaysYtdlpVersion` in `test/helpers.ts`) so e2e can resolve.
 
 ## Phase 4 — DJ polish
 - [ ] Settings page (format, filename template, artwork, concurrency, auto-download singles, sign-ins)

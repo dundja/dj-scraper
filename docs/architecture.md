@@ -43,7 +43,7 @@ The server runs its TypeScript source directly on Node, with no build step (ADR-
 ## Workspace & tooling
 The reasons are in ADR-007.
 - **Scripts.** Each root script delegates to the package scripts of the same name.
-  - `dev`, `build`, `typecheck` and `test` run in every package that defines them (`pnpm -r --if-present run …`). `build` runs in dependency order.
+  - `dev`, `build`, `typecheck` and `test` run in every package that defines them (`pnpm -r --if-present run …`). `build` runs in dependency order, but only `apps/web` defines it so far (ADR-009).
   - `start` first runs `pnpm build`, so it never serves a stale UI, then the server's `start` (`node src/index.ts --open`). `smoke` runs in `@dj-scraper/server`, and `test:e2e` runs in `@dj-scraper/web`. Each fails if its package doesn't exist.
   - Biome (`check`, `check:fix`) runs from the root with the root `biome.json`. Scope it by path, not with `--filter`: `pnpm check apps/web`.
   - Generated code isn't linted: `routeTree.gen.ts` is skipped entirely, and `apps/web/src/components/ui/` (shadcn/ui) is formatted but not linted. Tool-owned `.claude/settings.json` and `.mcp.json` are skipped.
@@ -79,11 +79,11 @@ Rows marked *Phase 2* don't exist yet.
 | `server.ts` | `startServer`: `node:http` + Hono's request listener on `127.0.0.1`; listen errors reject; `close()` also drops open connections |
 | `app.ts` | Hono app, in this order: security headers, guard, `/api` routes, the built UI (not with `--dev`), `notFound` and `onError` |
 | `http/security-headers.ts` | anti-framing, `nosniff` and `no-referrer` headers on every response (see Security model) |
-| `routes/web.ts` | serves the built UI and the SPA fallback (see Security model) |
 | `http/guard.ts` | Host/Origin/Fetch-Metadata guard and JSON-only mutations; with `--dev` it also trusts the Vite port (see Security model) |
 | `http/errors.ts` | `ApiError`, the `ErrorCode` → HTTP status map, error and 404 handlers |
 | `http/json.ts` | `readJson(c, Schema)` (malformed JSON or a failed Zod check → 400 `invalid_request`) and the 64 KiB body limit for JSON routes |
-| `routes/*` | thin HTTP layer: validate with shared schemas → call a service → respond. `system.ts` (health, recheck) and `resolve.ts` (resolve, entries) so far |
+| `routes/*` | thin HTTP layer: validate with shared schemas → call a service → respond. `system.ts` (health, recheck) and `resolve.ts` (resolve, entries) so far, plus `web.ts` (next row) |
+| `routes/web.ts` | serves the built UI and the SPA fallback (see Security model) |
 | `engine/binaries.ts` | locate yt-dlp/ffmpeg/ffprobe and a JS runtime, probe their versions → `Health` |
 | `engine/versions.ts` | pure: version output → version, release date, major, checked against the minimums from `@dj-scraper/shared` |
 | `engine/health.ts` | cached health check (10 min, one probe at a time) |
@@ -162,8 +162,8 @@ type CollectionEntry =
 
 type Collection = {
   id: string; platform: Platform; url: string   // identified by url: id repeats across a channel's tabs
-  kind: 'playlist' | 'album' | 'set' | 'channel' | 'likes' | 'mix' | 'other'
-  title: string; owner?: string; thumbnailUrl?: string
+  kind: 'playlist' | 'album' | 'set' | 'channel' | 'likes' | 'mix' | 'other'  // SoundCloud release sets are 'album'
+  title: string; owner?: string; thumbnailUrl?: string   // owner may be derived (see Flows > Resolve)
   trackCount?: number         // the platform's own count (YouTube playlists/albums, SoundCloud sets)
   durationSec?: number        // the platform's total (SoundCloud sets)
   truncated: boolean          // our entry cap cut the list
@@ -269,6 +269,8 @@ The reasons are in ADR-013 and ADR-014.
 4. **Server: yt-dlp.** One `yt-dlp -J --flat-playlist` call (at most 4 run at once; a closed browser request stops it), normalized by `engine/ytdlp-parse.ts` and checked against `ResolveResultSchema`. A failure maps to an `ErrorCode` through `engine/ytdlp-errors.ts`.
    - YouTube flat rows carry title, duration, uploader and thumbnails, but no availability: they stay `unknown` unless their exact title is `[Private video]` or `[Deleted video]`.
    - SoundCloud set rows are bare (id + url) and user-page rows have no duration, so both arrive as `partial` rows (ADR-008). User pages also list sets: only track rows are kept, and the rest are counted in `skippedEntries`.
+   - A SoundCloud set whose `album_type` (yt-dlp's copy of SoundCloud's set type) is `album`, `ep`, `single` or `compilation` is kind `album`, like a YouTube album, whatever URL it came from. Playlists (`album_type: playlist`) stay `set`.
+   - `owner` is the list's uploader or channel. SoundCloud user pages report neither, so theirs is the username in the `<username> (<Resource>)` title (`The Royal Concept (All)` → `The Royal Concept`). YouTube Music albums have a null uploader, so theirs is the artist of the `<artist> - Topic` channel that all their rows share; an album by several artists gets no owner.
    - Artist comes from platform metadata (YouTube Music, SoundCloud label tracks), else from the title split at its first dash (`splitArtistTitle`).
    - `source` is the stream yt-dlp's `ba` would download: the last audio-only format, skipping Go+ previews and SoundCloud's login-only original. A track that only has preview formats is `unavailable` with reason `preview_only`, without a duration.
 5. **Enrichment.** The web asks `POST /api/resolve/entries` for the partial rows in view. The server looks each row up with `yt-dlp -J --flat-playlist --no-playlist -- <row url>`:
@@ -394,4 +396,4 @@ Fake engine:
 - **`test/fake-yt-dlp.mjs`:** it replays the fixtures through the manifest `fixtures/fake-yt-dlp.json`, matching by URL and playlist flag, and applies `-I` to recorded lists.
   - It exits 2 on argv that breaks our rules (no `--ignore-config`, no `--`).
   - Env knobs add a delay, a hang until SIGINT, extra rules, or a calls log.
-  - Point `YTDLP_PATH` at it for integration and e2e tests (`writeFakeYtdlp` in `test/helpers.ts`).
+  - Point `YTDLP_PATH` at it for integration tests (`writeFakeYtdlp` in `test/helpers.ts`); `test/e2e-server.ts` still uses `fake-tool.sh`, which answers only `--version`.

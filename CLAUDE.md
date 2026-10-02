@@ -27,7 +27,7 @@ A local web app for DJs. Paste a YouTube or SoundCloud link (track or playlist),
 These scripts are created in roadmap Phase 0. Keep this list true.
 ```
 pnpm dev          # web on :5173 (proxies /api) + server on :4747
-pnpm build        # build all packages
+pnpm build        # build the web UI (the server runs from source, ADR-009)
 pnpm start        # production: builds the UI, then the server serves it on :4747 and opens the browser
 pnpm check        # Biome lint + format check (check:fix applies fixes)
 pnpm typecheck    # tsc across the workspace

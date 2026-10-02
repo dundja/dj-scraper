@@ -1,3 +1,15 @@
+export { splitArtistTitle } from './artist-title.ts'
+export {
+  type ClassifiedUrl,
+  classifyUrl,
+  isYoutubeChannelId,
+  type UrlGuess,
+  type UrlKind,
+  type UrlRejection,
+  urlRejectionMessage,
+  type ValidUrl,
+  youtubeListKind,
+} from './classify.ts'
 export {
   type Collection,
   type CollectionEntry,
@@ -39,16 +51,37 @@ export {
 export { type HealthProblem, healthProblems } from './health-problems.ts'
 export { type Platform, PlatformSchema } from './platform.ts'
 export { loopbackHosts, PortSchema, SERVER_PORT, WEB_DEV_PORT } from './ports.ts'
-export { type ResolveResult, ResolveResultSchema } from './resolve.ts'
+export {
+  type AmbiguousListKind,
+  AmbiguousListKindSchema,
+  type EntryRef,
+  EntryRefSchema,
+  type EntryResult,
+  EntryResultSchema,
+  MAX_COLLECTION_ENTRIES,
+  MAX_ENTRIES_PER_REQUEST,
+  MAX_MIX_ENTRIES,
+  type ResolveEntriesRequest,
+  ResolveEntriesRequestSchema,
+  type ResolveEntriesResponse,
+  ResolveEntriesResponseSchema,
+  type ResolveMode,
+  ResolveModeSchema,
+  type ResolveRequest,
+  ResolveRequestSchema,
+  type ResolveResult,
+  ResolveResultSchema,
+} from './resolve.ts'
 export { SECURITY_HEADERS } from './security-headers.ts'
 export {
   type AudioSource,
   AudioSourceSchema,
   type Availability,
   AvailabilitySchema,
+  MAX_ID_LENGTH,
   type Track,
   TrackSchema,
   type UnavailableReason,
   UnavailableReasonSchema,
 } from './track.ts'
-export { HttpUrlSchema } from './url.ts'
+export { HttpUrlSchema, MAX_URL_LENGTH } from './url.ts'

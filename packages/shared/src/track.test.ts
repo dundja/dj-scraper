@@ -8,6 +8,7 @@ import {
   AudioSourceSchema,
   type Availability,
   AvailabilitySchema,
+  MAX_ID_LENGTH,
   type Track,
   TrackSchema,
   type UnavailableReason,
@@ -208,6 +209,12 @@ describe('TrackSchema', () => {
 
   it.each(nonEmptyStringFields)('rejects an empty %s', (field) => {
     expect(issuePaths(TrackSchema, { ...youtubeTrack, [field]: '' })).toEqual([[field]])
+  })
+
+  it('accepts an id of MAX_ID_LENGTH characters and rejects a longer one', () => {
+    const id = 'a'.repeat(MAX_ID_LENGTH)
+    expect(issuePaths(TrackSchema, { ...youtubeTrack, id })).toEqual([])
+    expect(issuePaths(TrackSchema, { ...youtubeTrack, id: `${id}a` })).toEqual([['id']])
   })
 
   it('reports an invalid source at its nested path', () => {

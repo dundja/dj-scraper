@@ -5,3 +5,6 @@ import * as z from 'zod'
  * only when given its own `httpProtocol` regex, so keep using it.
  */
 export const HttpUrlSchema = z.url({ protocol: z.regexes.httpProtocol })
+
+/** The longest pasted URL the server accepts. Real track and playlist links are far shorter. */
+export const MAX_URL_LENGTH = 2048

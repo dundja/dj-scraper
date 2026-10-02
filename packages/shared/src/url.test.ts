@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import type * as z from 'zod'
-import { HttpUrlSchema } from './url.ts'
+import { HttpUrlSchema, MAX_URL_LENGTH } from './url.ts'
 
 describe('HttpUrlSchema', () => {
   it.each([
@@ -61,5 +61,14 @@ describe('HttpUrlSchema', () => {
   it('infers a plain string', () => {
     expectTypeOf<z.output<typeof HttpUrlSchema>>().toEqualTypeOf<string>()
     expectTypeOf<z.input<typeof HttpUrlSchema>>().toEqualTypeOf<string>()
+  })
+})
+
+describe('MAX_URL_LENGTH', () => {
+  it('is 2048, far above any real track or playlist link', () => {
+    expect(MAX_URL_LENGTH).toBe(2048)
+    const longRealLink =
+      'https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDCLAK5uy_kmPRjHDECIcuVwnKsx2Ng7fyNgFKWNJFs&index=27&pp=8AUB&si=Xq3vB7kLmN9pQr2s'
+    expect(longRealLink.length * 10).toBeLessThan(MAX_URL_LENGTH)
   })
 })

@@ -12,7 +12,7 @@ Verified 2026-10-01 against yt-dlp **2026.08.19** (README, wiki, source, issues)
 - **JS runtime:** YouTube needs one (EJS), and only deno is enabled by default. Always add our own Node as a fallback with `--js-runtimes node:<process.execPath>` (Node ≥ 22); deno keeps priority when present.
 - **Updating:**
   - Brew installs refuse `-U`; use `brew upgrade yt-dlp`.
-  - Stable can lag for weeks, while YouTube fixes land in **nightly** within hours to days. When stable is broken, point `YTDLP_PATH` at the nightly `yt-dlp_macos` binary.
+  - Stable can lag for weeks, while YouTube fixes land in **nightly** within hours to days. When stable is broken, point `YTDLP_PATH` at an unpacked nightly `yt-dlp_macos.zip` build (the onefile `yt-dlp_macos` can take ~12 s per start; see reference.md).
 - **ffmpeg:** ffmpeg **and** ffprobe ≥ 8 are required for `-x`, tagging and artwork. Don't use the `ffmpeg-static` npm package (ffmpeg 6.1, no ffprobe).
 
 ## Base argv (every call)
@@ -22,7 +22,7 @@ Verified 2026-10-01 against yt-dlp **2026.08.19** (README, wiki, source, issues)
 <options…>
 -- <url>
 ```
-- **Spawning:** `spawn(bin, argv, { shell: false, detached: true })`. Detached gives the process its own group, which cancel needs. Call `setEncoding('utf8')` on both streams and split them into lines.
+- **Spawning:** only through `apps/server/src/engine/run.ts`: `run(bin, argv, { onStdoutLine, onStderrLine, signal, timeoutMs })`. It spawns with `shell: false, detached: true` (its own process group, which cancel needs), stops the group with SIGINT and then SIGKILL, and splits UTF-8 lines on `\n`, `\r\n` and a lone `\r`.
 - **Secrets:** never pass them in argv (it shows up in `ps`). Use `--cookies-from-browser <browser>`, or a 0600 file passed with `--config-locations`, which is still read under `--ignore-config`.
 
 ## Resolve
@@ -31,15 +31,17 @@ yt-dlp <base> -J --flat-playlist -I 1:1000 [--no-playlist | --yes-playlist] -- <
 ```
 - **Result types:**
   - `_type: "video"` is one track, with full info including `formats`.
-  - `_type: "playlist"` or `"multi_video"` is a collection. Its entries are `_type: "url"` on YouTube and `"url_transparent"` on SoundCloud.
-- **YouTube flat entries** carry id, url, title, duration, channel/uploader, thumbnails, availability and live_status. That's enough for the track table.
-- **SoundCloud set entries are bare:** id and url (plus album fields), with no title, duration, uploader or artwork. Fill rows with per-track `-J --no-playlist -- <entry url>` lookups, done lazily and a few at a time; they count against SoundCloud's API budget.
+  - `_type: "playlist"` or `"multi_video"` is a collection. Its entries are `_type: "url"` on YouTube. On SoundCloud, sets give `url_transparent` entries (with album fields) and user pages give `url` entries. Don't infer partial rows from `_type`.
+- **YouTube flat entries** carry id, url, title, duration, channel/uploader and thumbnails. That's enough for the track table.
+  - `availability` is null on every flat entry. Private and deleted videos show up only as the exact titles `[Private video]` and `[Deleted video]`, with no duration or channel and the placeholder thumbnail `https://i.ytimg.com/img/no_thumbnail.jpg` (drop it). Match those titles exactly: real titles can start with `[` too.
+- **SoundCloud set entries are bare:** id and url (plus album fields), with no title, duration, uploader or artwork. User pages (`/<user>/tracks`) give id, url and title only. Both become `partial` rows.
+  - User pages also list sets: `/<user>`, `/reposts` and `/likes` mix them in, and `/sets` and `/albums` hold only sets. A set row looks like a track row but has `ie_key: null` and a `/sets/` URL. Keep only `ie_key == "Soundcloud"` rows as entries and report how many sets were skipped. Fill them with per-track `-J --no-playlist -- <entry url>` lookups, done lazily and a few at a time; they count against SoundCloud's API budget.
 - **`watch?v=X&list=Y`:** yt-dlp returns the **playlist** by default. We answer `ambiguous`, then use `--no-playlist` for this track or `--yes-playlist` for the whole list.
 - **Mix/Radio (`list=RD…`)** keeps paging, so always cap it with `-I 1:50`.
 - **Channel root URLs** return nested tab playlists. Rewrite them to `<channel>/videos` first.
 - **Huge playlists:** for progressive listing, `--flat-playlist --lazy-playlist -j` prints one JSON object per line (no `n_entries`).
 - **SoundCloud URL types:**
-  - `/<user>` covers tracks and reposts; `/tracks`, `/albums`, `/sets`, `/reposts` and `/likes` are separate pages.
+  - `/<user>` covers tracks, sets and reposts; `/tracks`, `/albums`, `/sets`, `/reposts` and `/likes` are separate pages.
   - Secret `/s-XXXX` links and `on.soundcloud.com` short links also work.
 
 ## Download (one track per process)

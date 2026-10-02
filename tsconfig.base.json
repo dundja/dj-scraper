@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    // es2024 because packages/shared also runs in the browser; the server raises lib to es2025.
+    "target": "es2024",
+    "lib": ["es2024"],
+    // No moduleResolution here: it follows `module`, so apps/web can switch to "preserve" (bundler).
+    "module": "nodenext",
+    "moduleDetection": "force",
+    // Globals are opt-in per package (server: types node; web: lib dom + types vite/client), so shared stays environment-neutral.
+    "types": [],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Source runs as-is under Vite, Vitest and Node's type stripping: relative imports end in .ts,
+    // type-only imports use `import type`, and no enums, namespaces or parameter properties.
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "erasableSyntaxOnly": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  }
+}

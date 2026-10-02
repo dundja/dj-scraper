@@ -1,11 +1,13 @@
 # packages/shared: the API contract
 
-Zod schemas and inferred types shared by `apps/web` and `apps/server`, plus small pure helpers (e.g. `classifyUrl`, duration formatting). Every request, response and SSE event shape is defined here and nowhere else.
+Zod schemas and inferred types shared by `apps/web` and `apps/server`, plus small pure helpers and constants both sides need: `healthProblems` (engine problems in words), `allowedByFetchMetadata` (the guard's cross-site rule, also used by the Vite dev server), the engine minimums in `engine.ts`, and later `classifyUrl` and duration formatting. Every request, response and SSE event shape is defined here and nowhere else.
 
 ## Rules
 - The only runtime dependency is `zod`. No Node or DOM APIs: this code runs in the browser and on the server.
-- Naming: `export const TrackSchema = z.object({ … })` plus `export type Track = z.infer<typeof TrackSchema>`.
-- Use discriminated unions for variants: `ResolveResult` by `kind`, SSE events by `type`, errors by `code`.
+- Naming: `export const TrackSchema = z.object({ … })` plus `export type Track = z.infer<typeof TrackSchema>`. Import Zod as `import * as z from 'zod'`.
+- Layout: one file per domain area (`track.ts`, `collection.ts`, `errors.ts`, …), each re-exported from `src/index.ts`.
+- Use discriminated unions for variants: `ResolveResult` by `kind`, collection entries by `partial`, SSE events by `type`. Errors are `ErrorInfo` (`{ code, message }`); give a code its own union member only when it needs extra payload.
+- Optional fields are omitted, never `null` or `''` (both are rejected). The server's normalizers drop such values instead of failing the whole response.
 - A schema change is a contract change. Update server handlers, web usages and their tests in the same change.
-- The package is consumed as TypeScript source through the `exports` field in `package.json`, with no build step.
+- The package is consumed as TypeScript source through the `exports` field in `package.json`, with no build step. Node loads it through pnpm's workspace symlink and refuses to strip types under `node_modules`, so never enable `injectWorkspacePackages` or `--preserve-symlinks`.
 - Every helper has unit tests (`*.test.ts` next to the source).

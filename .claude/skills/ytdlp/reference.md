@@ -6,8 +6,8 @@ Supporting detail for [SKILL.md](SKILL.md), verified 2026-10-01 against yt-dlp s
 | Option | Notes |
 |---|---|
 | `brew install yt-dlp` | Python venv with yt-dlp-ejs, curl-cffi and mutagen. Depends on deno, does not include ffmpeg. Update with `brew upgrade` (`-U` is refused). |
-| `yt-dlp_macos` (GitHub release) | universal2 PyInstaller onefile, macOS 10.15+. Bundles Python, EJS, curl-cffi and mutagen, and self-updates (`-U`, `--update-to nightly`). The best candidate to ship with the app, with the version pinned. |
-| `yt-dlp_macos.zip` | Unpacked variant: faster start, no self-update. |
+| `yt-dlp_macos` (GitHub release) | universal2 PyInstaller onefile, macOS 10.15+. Bundles Python, EJS, curl-cffi and mutagen, and self-updates (`-U`, `--update-to nightly`). It unpacks itself on **every** start: about 11.7 s per start was measured on a Mac with endpoint security (CrowdStrike, Defender), and every download pays it. |
+| `yt-dlp_macos.zip` | Unpacked variant (`darwin_dir`): no self-update, and about 0.3 s per start after a slow first run. Prefer it for `YTDLP_PATH` nightlies, and as the build to ship with the app. |
 | pip / pipx / uv | Needs Python ≥ 3.10 (3.11+ recommended), so not the system Python 3.9. Install `"yt-dlp[default,curl-cffi]"`. |
 
 **Release channels.** Stable ships roughly monthly and the README calls it "often stale"; it recommends nightly. Recent YouTube fixes reached nightly in 2.5 h (#15814), ~9 h (#17456) and ~4 days (#16150). Nightlies can regress too (#17448).
@@ -50,7 +50,7 @@ SoundCloud, without login (2026 logs, #17651 and #14216):
 
 | format_id | Codec / bitrate |
 |---|---|
-| `http_mp3_1_0`, `hls_mp3_1_0` | MP3 128 kbps |
+| `http_mp3_0_0`, `hls_mp3_0_0` | MP3 128 kbps (the numeric suffix varies; match the prefix) |
 | `hls_aac_96k` | AAC 96 kbps |
 | `hls_aac_160k` | AAC 160 kbps (best without login) |
 | `hls_opus_0_0` | Opus 64 kbps |
@@ -139,3 +139,21 @@ SoundCloud, without login (2026 logs, #17651 and #14216):
   - npmjs.com/package/ffmpeg-static
 - FFmpeg source: `aiffenc.c` and `wavenc.c`
 - Format support pages from AlphaTheta/rekordbox, Serato, Native Instruments and Engine DJ
+
+## Version probes (health)
+Recorded 2026-10-02; fixtures are in `apps/server/test/fixtures/engine/`.
+- **Commands:**
+  - `yt-dlp --ignore-config --no-update --version` prints only `__version__`. Stable is `YYYY.MM.DD`, a same-day re-release `YYYY.MM.DD.N`, nightly and master `YYYY.MM.DD.HHMMSS`. A git checkout prints the last stable version. The first three parts are the release day.
+  - `ffmpeg -version` / `ffprobe -version` print `<prog> version <FFMPEG_VERSION>` on stdout. The version is a release (`8.0`, `9.0.2`), `git describe` output (`N-127085-g…`, `n8.0-12-g…`) or `git-YYYY-MM-DD-hash`, plus an optional `-<extra>` (`-tessus`, `-static`, `-3ubuntu5`). For git builds, the major is libavformat's major minus 54. ffmpeg 8 also prints `Exiting with exit code 0` after it.
+  - `deno --version` prints `deno X.Y.Z (…)`.
+- **Timing:** yt-dlp `--version` takes about 0.43 s (brew), ffmpeg/ffprobe about 0.06 s, deno about 0.01 s.
+- **Minimums:**
+  - yt-dlp 2025.11.12, the first release with `--js-runtimes`. Older builds reject the option, so every real call would fail.
+  - deno 2.3.0 and Node 22, from yt-dlp's `_jsruntime.py`.
+  - ffmpeg and ffprobe 8.
+- **`--js-runtimes`:** a bad `--js-runtimes node:/bad/path` is dropped silently. Always pass `process.execPath`, never a configurable string.
+- **`--ffmpeg-location`:**
+  - It takes the ffmpeg binary or a directory.
+  - Given a binary, yt-dlp looks for ffprobe only beside it (`ffmpeg-8` → `ffprobe-8`, else `ffprobe`), never on PATH.
+  - Pass it only when `FFMPEG_PATH` is set; otherwise yt-dlp searches PATH as we do.
+- **`-v` without a URL** exits 2. For the `[debug] JS runtimes: …` header, add `--list-impersonate-targets` (exits 0). It's for diagnostics only; the format isn't stable.

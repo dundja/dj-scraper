@@ -6,6 +6,7 @@ dist/
 build/
 *.tsbuildinfo
 .vite/
+.tanstack/
 
 # Tests
 coverage/

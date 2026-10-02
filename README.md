@@ -2,20 +2,19 @@
 
 Paste a YouTube or SoundCloud link (a single track or a whole playlist) and pick what you want. You get DJ-ready audio files (MP3 320, AIFF, M4A, …) with tags and artwork, in the folder you choose. Runs locally on your Mac; nothing is hosted.
 
-> **Status:** planning and agent setup done, implementation starting. See [docs/roadmap.md](docs/roadmap.md).
+> **Status:** scaffolding (roadmap Phase 0). `pnpm dev` runs the local server and a dark app shell that shows whether yt-dlp and ffmpeg are ready. Pasting links and downloading come in later phases. See [docs/roadmap.md](docs/roadmap.md).
 
 ## Prerequisites (macOS)
-- **Node.js 24 LTS**: `nvm install` (reads `.nvmrc`). Also **pnpm**: `brew install pnpm`.
+- **Node.js 24 LTS**: `nvm install` (reads `.nvmrc`). Also **pnpm 12**: `brew install pnpm`. The repo pins its exact pnpm version, and older Homebrew pnpm (e.g. 10.17) can't switch to it, so run `brew upgrade pnpm` if pnpm commands fail with `ENOEXEC`.
 - **yt-dlp**: `brew install yt-dlp`. This also installs deno, which YouTube extraction needs.
 - **ffmpeg + ffprobe 8+**: `brew install ffmpeg`.
 
-Keep yt-dlp current, because YouTube changes break old versions: `brew upgrade yt-dlp`. If the stable release is broken, download the nightly `yt-dlp_macos` from [yt-dlp-nightly-builds](https://github.com/yt-dlp/yt-dlp-nightly-builds/releases) and point `YTDLP_PATH` at it.
+Keep yt-dlp current, because YouTube changes break old versions: `brew upgrade yt-dlp`. If the stable release is broken, download the nightly `yt-dlp_macos.zip` from [yt-dlp-nightly-builds](https://github.com/yt-dlp/yt-dlp-nightly-builds/releases), unpack it and point `YTDLP_PATH` at the `yt-dlp_macos` inside (the single-file download starts much slower).
 
 ## Getting started
-Available once roadmap Phase 0 is done:
 ```bash
 pnpm install
-pnpm dev        # http://localhost:5173
+pnpm dev        # http://localhost:5173 (the UI) + the local server on 127.0.0.1:4747
 ```
 
 ## Docs

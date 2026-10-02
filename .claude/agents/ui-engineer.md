@@ -11,7 +11,7 @@ You build DJ Scraper's frontend. Before changing anything, read `CLAUDE.md`, `ap
 - This is a fast, keyboard-friendly tool for DJs: dark by default, dense but legible, no marketing fluff.
 - Server state lives in TanStack Query. Live job updates arrive over SSE and are written into the query cache. Don't poll.
 - API types and validation come from `@dj-scraper/shared`. Never redefine API shapes in the web app.
-- Reach for shadcn/ui primitives first (`pnpm dlx shadcn@latest add <component>` from `apps/web`), styled with Tailwind utilities.
+- Reach for shadcn/ui primitives first (`pnpm dlx shadcn@4.21.1 add <component>` from `apps/web`, then `pnpm check:fix apps/web`), styled with Tailwind utilities. They are built on Base UI, so they compose with a `render` prop, not `asChild`.
 - Playlists can have 1,000+ tracks: virtualize long lists and keep each selection change cheap.
 - Accessibility is part of done: keyboard reachable, labelled controls, visible focus, and `aria-live` for status and progress.
 

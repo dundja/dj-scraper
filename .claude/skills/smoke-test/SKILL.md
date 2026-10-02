@@ -10,7 +10,7 @@ Input: `$ARGUMENTS`. These are the URLs to check (default: the sample set below)
 
 1. **Engine.** Run `yt-dlp --version` and warn if the date-based version is more than ~60 days old. Also run `ffmpeg -version | head -1`, `ffprobe -version | head -1` and `command -v deno`. Deno is YouTube's JS runtime; we also pass Node as a fallback.
 2. **Resolve each URL.**
-   - Once `apps/server` has the smoke script: `pnpm smoke <url>` prints the normalized `ResolveResult`.
+   - Once `apps/server` has the smoke script: `pnpm smoke '<url>'` prints the normalized `ResolveResult`.
    - Until then, call yt-dlp directly:
      ```
      yt-dlp --ignore-config --no-update --js-runtimes node:"$(command -v node)" -J --flat-playlist -I 1:20 -- <url> \

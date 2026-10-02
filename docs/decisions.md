@@ -72,3 +72,97 @@ We also want user-edited artist/title and clean-up rules.
 - Partial files never reach the user's folder, and cancel is simply kill + delete the job dir.
 - Naming and tagging are our own pure, testable logic.
 - Moving across volumes (USB drives) needs copy + unlink.
+
+## ADR-007 — Toolchain: pnpm 12, TypeScript 7, TypeScript that type stripping can run
+*2026-10-02 · accepted*
+
+**Context.** Phase 0 scaffolds on the current releases:
+- pnpm 12.8, a Rust rewrite whose settings live in `pnpm-workspace.yaml`
+- TypeScript 7.0, a native compiler with no JS API until 7.1
+- Biome 2.5
+- Node 24 LTS (Node 26 becomes LTS on 2026-10-28)
+
+ADR-005 left open whether the server runs bundled or on Node's native TypeScript support.
+
+**Decision.**
+- Pin pnpm 12.8.1 in `packageManager`. Enforce Node 24 with `devEngines.runtime` (`^24.11.0`, `onFail: "error"`), because pnpm 12 ignores a root `engines` mismatch; `engines` stays as documentation.
+- Use TypeScript 7 (`~7.0.2`, from the pnpm catalog) for typechecking only. Write source that Node's type stripping can run as is: `.ts` import extensions, `import type`, `erasableSyntaxOnly`. This keeps both server options from ADR-005 open.
+- Root scripts delegate to same-named package scripts through `pnpm -r` and `--filter`. No Turborepo or Nx: three packages don't need a task runner.
+- Biome style: single quotes, no semicolons, 100 columns. `any`, unused imports and variables, non-null assertions, value imports of types and relative imports without an extension are errors, not warnings. Generated code (`routeTree.gen.ts`, shadcn/ui components) isn't linted.
+
+**Rejected.**
+- *TypeScript 6.* It works with the same configs, but 7 is the current stable and faster. Falling back stays cheap.
+- *pnpm 11.* It uses the same files and worked with the old Homebrew pnpm 10.17, but 12 is stable and is Homebrew's default.
+
+**Consequences.**
+- No tool may depend on the TypeScript JS API (typescript-eslint, vite-plugin-checker, vue-tsc). If one becomes necessary, alias `typescript` to `npm:@typescript/typescript6` and install TS 7 as `@typescript/native`.
+- Homebrew pnpm 10.17 can't switch to the pinned 12.x on macOS (ENOEXEC). `brew upgrade pnpm` fixes it.
+- Moving to Node 26 means changing `.nvmrc`, `engines`, `devEngines` and `@types/node` together.
+
+## ADR-008 — Collection rows can be partial
+*2026-10-02 · accepted*
+
+**Context.** `yt-dlp --flat-playlist` lists SoundCloud set entries as id + url only, sometimes with an API URL instead of the page URL. SoundCloud user pages give id, url and title. The product lists sets instantly and fills rows in as they load. Inventing titles (e.g. from URL slugs) would put made-up metadata into the contract.
+
+**Decision.** `Collection.entries` holds `CollectionEntry`, a discriminated union on a required `partial` flag:
+- `partial: false` is a full `Track`, whose title is required.
+- `partial: true` has the same fields, but the title is optional.
+
+The web enriches partial rows through `POST /api/resolve/entries`, which returns full `Track`s, and merges them by platform + id. `Track` stays strict everywhere else (single-track results, `ambiguous`, enrichment results).
+
+**Rejected.** *Optional `Track.title` everywhere* weakens every consumer to serve one case. *A missing title as the enrichment signal* fails for SoundCloud user pages, whose rows have titles but no duration or artwork.
+
+**Consequences.** The UI shows a placeholder until a row is enriched. A row's `url` isn't a stable key before enrichment. The server marks a row partial only when a per-track lookup can supply what the flat listing lacks (SoundCloud set and user-page rows). YouTube flat rows are never partial: `[Private video]`/`[Deleted video]` rows are full rows with `availability: 'unavailable'`, and a missing artist or duration doesn't make a row partial.
+
+## ADR-009 — The server runs its TypeScript source on Node, with no build step
+*2026-10-02 · accepted · settles the open question in ADR-005*
+
+**Context.** ADR-005 left open whether the server ships bundled or runs on Node's native TypeScript support. Node 24.12 strips types without a flag or warning. Our source follows the conventions in ADR-007 (`.ts` imports, `import type`, erasable syntax only). `@dj-scraper/shared` loads as source through pnpm's workspace symlink.
+
+**Decision.**
+- Dev: `node --watch src/index.ts --dev`. It restarts on edits to the server and to `packages/shared`.
+- Prod: `node src/index.ts`.
+- `tsc` only typechecks, and `pnpm build` builds only the web app.
+- Dev-only behavior (allowing the Vite origin) is switched on by the `--dev` flag, not by `NODE_ENV`, so it works the same on every OS.
+
+**Rejected.** *Bundling the server (tsdown/esbuild)* adds a build step and source maps for no gain while the app runs from the repo. *tsx* adds a dependency (and esbuild's install script) for what Node now does itself.
+
+**Consequences.**
+- No `dist/` for the server, and stack traces point at the real source.
+- Node refuses to strip types under `node_modules`, so the server must run from the repo with pnpm's symlinked workspace, not from a `pnpm deploy` copy or with `--preserve-symlinks`.
+- A desktop wrapper (Phase 5) will need a bundle step then.
+- `node --watch` waits for the old process on every restart, so shutdown is idempotent and has a hard deadline.
+
+## ADR-010 — Web UI kit: shadcn/ui on Base UI with the Nova preset, dark only for now
+*2026-10-02 · accepted (chosen by the assistant; reversible)*
+
+**Context.** shadcn 4.x builds its components on one of three primitive libraries (`base` for Base UI, `radix`, `aria` for React Aria) and offers style presets (nova, vega, maia, lyra, mira, …). Its default (`init -d`) is `base-nova`. The app runs offline on localhost, so fonts and assets must ship with it.
+
+**Decision.**
+- shadcn/ui with Base UI (`@base-ui/react`) and the Nova preset (compact, Lucide icons, the Geist font bundled from `@fontsource-variable/geist`). Components come from the CLI (`pnpm dlx shadcn@4.21.1 add <name>` in `apps/web`) and are never patched by hand. They import `cn` from shadcn's `cn` package, which replaces clsx and tailwind-merge.
+- Dark only: `<html class="dark">` and `color-scheme: dark`. shadcn's light tokens stay in `src/styles.css` for a later light theme.
+- `@/*` is the alias for `src`, because shadcn's generated imports need it.
+
+**Rejected.** *Radix*, shadcn's previous default: it works just as well, but upstream momentum has moved to Base UI. *Web fonts from a CDN*: the app must work offline.
+
+**Consequences.** Base UI composes through a `render` prop instead of Radix's `asChild`, so check a generated component's API before using it. Switching libraries later means re-adding the components. `shadcn` itself is a dependency because the CSS imports its `shadcn/tailwind.css`.
+
+## ADR-011 — The dev proxy keeps the browser's Host, and `--dev` trusts the Vite port
+*2026-10-02 · accepted · replaces the Security model's earlier `changeOrigin: true` rule*
+
+**Context.** The Security model used to require Vite's `/api` proxy to use `changeOrigin: true`, so requests reached the server with `Host: 127.0.0.1:4747`, and it relied on Vite's own host check against DNS rebinding. An attack run against `pnpm dev` (raw sockets plus Chromium, Chrome, WebKit and Firefox) found two gaps:
+- Vite's host check is looser than our guard. It lets through a missing Host, any IP literal, `file:*`, `*-extension:*` and `localhost:<anything>`, and `file` or `x-extension` resolve through the DHCP search domain. Because `changeOrigin` hid the browser's Host, a rebinding page at `http://file:5173` could read `GET /api/health`.
+- Vite served the page with no anti-framing headers, so any site could frame `localhost:5173` and turn one click on "Check again" into `POST /api/health/recheck` 200.
+
+**Decision.**
+- The proxy keeps the browser's Host (`changeOrigin: false`). With `--dev` the server's guard also accepts the Vite port: `localhost:5173` and `127.0.0.1:5173`, as Host and as origin. Our exact Host check is then the one DNS-rebinding defense in dev and in production.
+- Vite sends `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY` (`server.headers`).
+- A dev-server plugin (`apps/web/dev-guard.ts`) applies the guard's rules to every request Vite answers, not just `/api`. It checks the exact Host, using `loopbackHosts` from `packages/shared`, and the Fetch Metadata rule, `allowedByFetchMetadata`. Vite's `/__open-in-editor` is stricter: only a same-origin request or a client without Fetch Metadata may call it, so even a link from another site can't open files in the editor.
+- `apps/web/vite-config.test.ts` pins these settings: the proxy's `changeOrigin: false`, `cors: false`, `strictPort`, the frame headers, and the dev guard registered ahead of Vite's middlewares.
+
+**Rejected.** *Keep `changeOrigin: true` and add a proxy `bypass` that allows only the Vite hosts.* That would put the Host check for `/api` into config, outside the guard's tests. With `changeOrigin: false`, the guard's own exact check covers proxied requests, and the dev guard's Host check covers what Vite serves itself.
+
+**Consequences.**
+- With `--dev`, the server also accepts `Host: localhost:5173` on direct connections. That's harmless: a browser sends that Host only to port 5173, which is Vite.
+- A foreign Host such as `file:5173` gets 403 from the dev guard for every page, module and endpoint Vite serves, and from the server's guard for `/api`. Visiting `http://[::1]:5173` directly is refused too; use `localhost:5173`.
+- Production is unchanged: without `--dev`, nothing on port 5173 is trusted.

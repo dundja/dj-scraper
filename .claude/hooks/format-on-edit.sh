@@ -17,8 +17,11 @@ case "$file" in
   *) exit 0 ;;
 esac
 
-biome="${CLAUDE_PROJECT_DIR:-$PWD}/node_modules/.bin/biome"
+# Biome finds biome.json from the working directory, not from the file's path.
+cd "${CLAUDE_PROJECT_DIR:-$PWD}" || exit 0
+biome="node_modules/.bin/biome"
 [[ -x "$biome" ]] || exit 0
 
-"$biome" format --write --no-errors-on-unmatched "$file" >/dev/null 2>&1 || true
+# Format and sort imports; lint fixes stay with `pnpm check:fix` so a half-done edit isn't "fixed".
+"$biome" check --write --linter-enabled=false --no-errors-on-unmatched "$file" >/dev/null 2>&1 || true
 exit 0

@@ -25,13 +25,15 @@ Filesystem: <target folder>/<Artist - Title>.<ext>
 ## Runtime & ports
 | Mode | Command | What runs |
 |---|---|---|
-| dev | `pnpm dev` | Vite on `localhost:5173` (HMR), proxying `/api` to the server on `127.0.0.1:4747` (watch mode) |
-| prod | `pnpm start` | the server on `127.0.0.1:4747`, serving the built SPA and `/api`; opens the browser |
+| dev | `pnpm dev` | Vite on `localhost:5173` (HMR), proxying `/api` to the server on `127.0.0.1:4747` (`node --watch src/index.ts --dev`) |
+| prod | `pnpm start` | the server on `127.0.0.1:4747` (`node src/index.ts`), serving the built SPA and `/api`; opens the browser |
 
-Config comes from env, validated with Zod at boot:
-- `PORT` (default 4747)
-- `YTDLP_PATH`, `FFMPEG_PATH`
-- `DJS_DATA_DIR`, which overrides the app data dir (tests use it)
+The server runs its TypeScript source directly on Node, with no build step (ADR-009). Config comes from env, validated with Zod at boot (`config.ts`):
+- `PORT`: default 4747, allowed 1024–65535. Browsers drop default ports such as 80 from `Host`, which the guard would then reject.
+- `YTDLP_PATH`: an absolute path to the yt-dlp binary.
+- `FFMPEG_PATH`: an absolute path to the ffmpeg binary, or to a directory holding ffmpeg and ffprobe, as with `--ffmpeg-location`.
+- `DJS_DATA_DIR` (planned), which overrides the app data dir (tests use it).
+- An empty variable counts as unset. The `--dev` flag (set by `pnpm dev`) also allows the Vite dev origin.
 
 ## Workspace & tooling
 The reasons are in ADR-007.
@@ -55,10 +57,16 @@ The reasons are in ADR-007.
 ## Server modules (`apps/server/src`)
 | Module | Responsibility |
 |---|---|
-| `index.ts` | boot, config, graceful shutdown (cancel jobs, kill process groups) |
-| `app.ts` | Hono app: security middleware, error handler, routes |
+| `index.ts` | boot, engine check at startup (logged warnings), graceful shutdown (cancel jobs, kill process groups) |
+| `config.ts` | env + `--dev` → `Config`, Zod-validated |
+| `server.ts` | `startServer`: `node:http` + Hono's request listener on `127.0.0.1`; listen errors reject; `close()` also drops open connections |
+| `app.ts` | Hono app: guard first, then routes, `notFound` and `onError` |
+| `http/guard.ts` | Host/Origin/Fetch-Metadata guard and JSON-only mutations (see Security model) |
+| `http/errors.ts` | `ApiError`, the `ErrorCode` → HTTP status map, error and 404 handlers |
 | `routes/*` | thin HTTP layer: validate with shared schemas → call a service → respond |
-| `engine/binaries.ts` | locate yt-dlp/ffmpeg/ffprobe and a JS runtime; read versions |
+| `engine/binaries.ts` | locate yt-dlp/ffmpeg/ffprobe and a JS runtime, probe their versions → `Health` |
+| `engine/versions.ts` | pure: version output → version, release date, major; the minimums |
+| `engine/health.ts` | cached health check (10 min, one probe at a time) and boot warnings |
 | `engine/run.ts` | the **only** place that spawns processes: argv only, detached process group, line streaming, abort, timeout |
 | `engine/ytdlp-args.ts` | pure: (url, options) → argv |
 | `engine/ytdlp-parse.ts` | pure: info JSON → Track/Collection, `DL`/`PP`/`DONE` lines → events, stderr → `ErrorCode` |
@@ -69,11 +77,12 @@ The reasons are in ADR-007.
 | `fs/` | native folder picker (macOS `osascript` "choose folder"), path safety, filename sanitizing |
 
 ## API (v1)
-JSON bodies are validated with the shared schemas. Errors use the shape `{ error: { code: ErrorCode, message } }` with a matching HTTP status.
+JSON bodies are validated with the shared schemas. Errors use the shape `{ error: { code: ErrorCode, message } }` (`ApiErrorBody`) with the status from `http/errors.ts`: 400 `invalid_url`/`invalid_request`, 403 `forbidden`, 404 `not_found`, 409 `canceled`, 415 `invalid_request` for a non-JSON mutation, 422 `unsupported_url` and content the platform refuses (`unavailable`, `private`, `geo_blocked`, `age_restricted`, `login_required`, `bot_check`, `preview_only`), 429 `rate_limited`, 502 `network`, 503 `engine_missing`, 500 `postprocess_failed`/`unknown`.
 
 | Route | Request | Response |
 |---|---|---|
-| `GET /api/health` | – | `Health`: path and version of yt-dlp, ffmpeg and ffprobe (or missing), JS runtime, yt-dlp age in days |
+| `GET /api/health` | – | `Health` (cached up to 10 min): per tool `ok`/`missing`/`error` with path, version and minimum checks, yt-dlp age, JS runtimes, overall `ok` |
+| `POST /api/health/recheck` | – | `Health`, probed now (e.g. after installing yt-dlp) |
 | `POST /api/resolve` | `{ url, mode?: 'auto' \| 'track' \| 'collection' }` | `ResolveResult` |
 | `POST /api/resolve/entries` | `{ urls: string[] }` | `Track[]` (lazy enrichment, e.g. bare SoundCloud set entries) |
 | `POST /api/downloads` | `{ items: TrackRef[], folder, options: DownloadOptions }` | `{ batchId, jobs: Job[] }` |
@@ -126,10 +135,23 @@ type ResolveResult =
 type ErrorCode =
   | 'invalid_url' | 'unsupported_url' | 'unavailable' | 'private' | 'geo_blocked'
   | 'age_restricted' | 'login_required' | 'bot_check' | 'rate_limited' | 'preview_only'
-  | 'network' | 'engine_missing' | 'postprocess_failed' | 'canceled' | 'unknown'
+  | 'network' | 'engine_missing' | 'postprocess_failed' | 'canceled'
+  | 'invalid_request' | 'forbidden' | 'not_found' | 'unknown'
 
 type ErrorInfo = { code: ErrorCode; message: string }
 type ApiErrorBody = { error: ErrorInfo }      // body of every API error response
+
+// GET /api/health (see health.ts for the per-tool fields)
+type ToolHealth<Ok> = ({ status: 'ok'; path: string; source: 'env' | 'path'; version: string } & Ok)
+  | { status: 'missing'; message: string }
+  | { status: 'error'; path: string; source: 'env' | 'path'; message: string }
+type Health = {
+  ok: boolean; checkedAt: string
+  ytdlp: ToolHealth<{ releaseDate: string; ageDays: number; stale: boolean; meetsMinimum: boolean }>
+  ffmpeg: ToolHealth<{ major?: number; meetsMinimum: boolean; mp3: boolean }>
+  ffprobe: ToolHealth<{ major?: number; meetsMinimum: boolean }>
+  jsRuntimes: { name: 'deno' | 'node'; path: string; version: string; supported: boolean }[]
+}
 ```
 
 ```ts
@@ -197,10 +219,12 @@ A job settles exactly once per attempt.
 ## Security model (local server)
 The server can spawn processes and write files, so other websites must not be able to drive it.
 - **Bind and Host.** Bind `127.0.0.1` only. Reject any request whose `Host` isn't `localhost:<port>` or `127.0.0.1:<port>`; this stops DNS rebinding.
-- **State-changing routes:**
-  - They require `Content-Type: application/json`, which forces a CORS preflight that we never approve.
-  - When an `Origin` is present, it must be our own (plus the Vite dev origin in dev).
-  - The server never sends CORS headers.
+- **The guard** (`http/guard.ts`) runs first on every request, API and static alike, and answers 403 `forbidden` unless:
+  - `Host` matches exactly, lowercased. The request URL's host must match too, because Node builds the URL from an absolute-form request target. Duplicate Host headers never match.
+  - `Origin`, when present, is our own on **every** method. The Vite dev origin is also accepted with `--dev`. This check is what stops Safari, which sends a cross-site no-cors POST with a typed Blob body as `application/json` without a preflight.
+  - `Sec-Fetch-Site`, when present, is `same-origin` or `none`. The one exception is a top-level navigation GET, so a link to the app still works. This blocks cross-site `<img>`, `<iframe>` and `sendBeacon`. Other localhost ports count as `same-site` and are refused too.
+- **State-changing routes.** Every method except GET, HEAD and OPTIONS requires `Content-Type: application/json` (415 `invalid_request` otherwise), which forces a CORS preflight that we never approve. Bodyless mutations (cancel, retry) send the header too. Re-checking the engine is a POST for the same reason.
+- **No CORS headers**, ever. The Vite dev server must not add them either: the proxy needs `changeOrigin: true` (so `Host` arrives as `127.0.0.1:4747`), `cors: false` and `strictPort: true`, and its own host check must stay on (no `allowedHosts: true`, `--host` or https).
 - **Processes.** Argv arrays only (`shell: false`), with `--ignore-config`. The URL is validated (http/https, length cap) and passed after `--`.
 - **Paths.** yt-dlp writes only into the job's temp dir. Finalize resolves the final path, asserts it is inside the target folder, and sanitizes the filename for macOS and Windows.
 - **Secrets:**
@@ -217,6 +241,15 @@ App data dir: `~/Library/Application Support/DJ Scraper/` on macOS.
 
 ## Engine binaries
 - **Lookup order:** `YTDLP_PATH` / `FFMPEG_PATH`, then `PATH` (Homebrew). `/api/health` reports what it found.
+  - A set override never falls back to `PATH`, so a broken override shows up as an error instead of being silently ignored.
+  - ffprobe is looked up beside an `FFMPEG_PATH` binary, as yt-dlp's `--ffmpeg-location` does.
+  - The PATH search uses only absolute entries and regular, executable files, and spawns nothing.
+- **Minimums:**
+  - yt-dlp 2025.11.12, the first release with `--js-runtimes`.
+  - ffmpeg and ffprobe 8.
+  - deno 2.3 or Node 22, for yt-dlp's EJS.
+  - Health's `ok` requires all of these. A stale yt-dlp or an ffmpeg without MP3 support is only a warning.
+- **Probes:** `--version`/`-version`, with a 30 s timeout: a onefile `yt-dlp_macos` can take about 12 s to start on a Mac with endpoint security. The probe runs at boot (its warnings are logged), the result is cached, and `POST /api/health/recheck` refreshes it.
 - **JS runtime:** YouTube needs one. Brew's yt-dlp depends on deno, and we always add `--js-runtimes node:<process.execPath>` as a fallback.
 - **Freshness:** yt-dlp versions are dates (e.g. `2026.08.19`), so its age is easy to compute. Warn past ~60 days.
   - When YouTube breaks, the fix is usually a newer yt-dlp.
@@ -231,4 +264,4 @@ App data dir: `~/Library/Application Support/DJ Scraper/` on macOS.
 | E2E | Playwright | UI flows against the server + fake engine | never |
 | Smoke | `pnpm smoke '<url>'` | real yt-dlp against live YouTube/SoundCloud | yes, run by hand |
 
-Fixtures live in `apps/server/test/fixtures/<platform>/`. Each is recorded from a real run, with the yt-dlp version and date noted.
+Fixtures live in `apps/server/test/fixtures/<platform>/` and `fixtures/engine/` (version probe output). Each is recorded from a real run, with the tool version and date noted in its directory's `README.md`. Fake engine binaries are checked in (`test/fake-tool.sh`) and symlinked per test: endpoint security scans each newly written executable on its first run.

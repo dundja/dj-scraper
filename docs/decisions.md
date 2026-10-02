@@ -113,3 +113,22 @@ The web enriches partial rows through `POST /api/resolve/entries`, which returns
 **Rejected.** *Optional `Track.title` everywhere* weakens every consumer to serve one case. *A missing title as the enrichment signal* fails for SoundCloud user pages, whose rows have titles but no duration or artwork.
 
 **Consequences.** The UI shows a placeholder until a row is enriched. A row's `url` isn't a stable key before enrichment. The server marks a row partial only when a per-track lookup can supply what the flat listing lacks (SoundCloud set and user-page rows). YouTube flat rows are never partial: `[Private video]`/`[Deleted video]` rows are full rows with `availability: 'unavailable'`, and a missing artist or duration doesn't make a row partial.
+
+## ADR-009 — The server runs its TypeScript source on Node, with no build step
+*2026-10-02 · accepted · settles the open question in ADR-005*
+
+**Context.** ADR-005 left open whether the server ships bundled or runs on Node's native TypeScript support. Node 24.12 strips types without a flag or warning. Our source follows the conventions in ADR-007 (`.ts` imports, `import type`, erasable syntax only). `@dj-scraper/shared` loads as source through pnpm's workspace symlink.
+
+**Decision.**
+- Dev: `node --watch src/index.ts --dev`. It restarts on edits to the server and to `packages/shared`.
+- Prod: `node src/index.ts`.
+- `tsc` only typechecks, and `pnpm build` builds only the web app.
+- Dev-only behavior (allowing the Vite origin) is switched on by the `--dev` flag, not by `NODE_ENV`, so it works the same on every OS.
+
+**Rejected.** *Bundling the server (tsdown/esbuild)* adds a build step and source maps for no gain while the app runs from the repo. *tsx* adds a dependency (and esbuild's install script) for what Node now does itself.
+
+**Consequences.**
+- No `dist/` for the server, and stack traces point at the real source.
+- Node refuses to strip types under `node_modules`, so the server must run from the repo with pnpm's symlinked workspace, not from a `pnpm deploy` copy or with `--preserve-symlinks`.
+- A desktop wrapper (Phase 5) will need a bundle step then.
+- `node --watch` waits for the old process on every restart, so shutdown is idempotent and has a hard deadline.

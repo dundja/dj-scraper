@@ -8,9 +8,12 @@ Done when `pnpm dev` shows the app shell with live engine status, and `pnpm chec
 - [x] Root workspace: `package.json` (scripts: dev, build, start, check, check:fix, typecheck, test, test:e2e, smoke), `pnpm-workspace.yaml`, `tsconfig.base.json` (strict), `biome.json`, pinned `packageManager` and Node engine
 - [x] `packages/shared`: Zod + first schemas (Platform, Track, Collection, ResolveResult, ErrorCode), consumed as TS source
 - [x] `apps/server`: Hono on `127.0.0.1:4747`, Host/Origin guard, `GET /api/health` (yt-dlp/ffmpeg/ffprobe found? versions? JS runtime?), watch mode for dev; add `forbidden` and `not_found` error codes for the guard and unknown routes
-- [ ] `apps/web`: Vite + React + TanStack Router (file routes) + Query + Tailwind v4 + shadcn/ui; dark app shell showing engine status from `/api/health`. Vite dev server: `strictPort`, `cors: false`, proxy `/api` with `changeOrigin: true`, ports from `@dj-scraper/shared` (see Security model); the API client sends `Content-Type: application/json` on every non-GET
-- [ ] `pnpm dev` runs both with the `/api` proxy; `pnpm start` serves the built SPA from the server
-- [ ] Vitest across packages; Playwright with one e2e (shell loads, health is OK)
+- [x] `apps/web`: Vite + React + TanStack Router (file routes) + Query + Tailwind v4 + shadcn/ui (Base UI, Nova: ADR-010); dark app shell showing engine status from `/api/health`. Vite dev server: `strictPort`, `cors: false`, anti-framing headers, the Fetch Metadata dev guard, and an `/api` proxy that keeps the browser's Host (ADR-011); ports from `@dj-scraper/shared`. The API client sends `Content-Type: application/json` on every non-GET
+- [x] `pnpm dev` runs both with the `/api` proxy (done with the `apps/web` item)
+- [ ] `pnpm start` serves the built SPA from the server: static files and the SPA fallback behind the guard, the same anti-framing headers as the dev server, and the browser opened on start. The "Server offline" and "Unexpected response" texts say `pnpm dev`; make them fit `pnpm start` too
+- [x] Vitest across packages (web: Testing Library + jsdom, done with the `apps/web` item)
+- [ ] Playwright with one e2e (shell loads, health is OK). Also cover what jsdom can't: the focus ring, popover placement in the viewport, reduced motion
+- [ ] Ctrl-C on `pnpm dev` stops both processes but ends with `ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL`, because Vite dies by SIGINT. Make Vite exit 0 on SIGINT
 - [ ] Update `CLAUDE.md` (commands, layout) to match what was built
 
 ## Phase 1 — Engine & resolve
@@ -22,7 +25,7 @@ Done when `pnpm smoke <url>` prints a normalized result for YouTube and SoundClo
 - [ ] Resolve: `yt-dlp -J --flat-playlist` → normalized Track/Collection for YouTube and SoundCloud; record fixtures (include a SoundCloud user page that mixes in sets: keep only track rows)
 - [ ] SoundCloud set entries are bare (id + url): `POST /api/resolve/entries` with lazy, throttled per-track enrichment. The response needs a per-id failure shape (removed track, 429), not a bare `Track[]`
 - [ ] Map yt-dlp errors to `ErrorCode` (unavailable, private, geo-blocked, age-restricted, bot check, rate-limited, unsupported, …) with fixtures
-- [ ] `POST /api/resolve`, including the ambiguous `watch?v=…&list=…` case and capped mixes, plus the `pnpm smoke <url>` script. Input URLs: http(s), length cap, no embedded credentials (argv shows in `ps`). Add a `readJson(c, Schema)` helper: malformed JSON or a failed Zod check → 400 `invalid_request`
+- [ ] `POST /api/resolve`, including the ambiguous `watch?v=…&list=…` case and capped mixes, plus the `pnpm smoke <url>` script. Input URLs: http(s), length cap, no embedded credentials (argv shows in `ps`). Add a `readJson(c, Schema)` helper: malformed JSON or a failed Zod check → 400 `invalid_request`. This is the web client's first request body, so test `lib/api.ts`'s JSON body path with it
 - [ ] Collection header data: the platform's track count and SoundCloud's set duration when yt-dlp reports them, and `truncated` when our `-I` cap cut the list. Reconcile the 1000-entry cap with "smooth with 1,000+ tracks" (product.md)
 - [ ] `test/fake-yt-dlp.mjs` that replays fixtures for integration and e2e tests. Check it in with its exec bit and symlink it per test (like `test/fake-tool.sh`): endpoint security scans every newly written executable on first run, which made per-test scripts time out
 - [ ] `.gitignore` ignores `*.log`, which would drop the planned `<case>.log` fixtures: un-ignore `apps/server/test/fixtures/**/*.log`
@@ -35,7 +38,7 @@ Done when the API downloads a selected set of tracks into a folder with live pro
 - [ ] Finalize: artist/title, tags (comment = source URL), AIFF + artwork via ffmpeg, filename template, sanitize, skip-if-exists, safe move (copy + unlink across volumes)
 - [ ] Job queue: concurrency limit, state machine, cancel (SIGINT to the process group → SIGKILL → delete job dir), retry, stale job dirs swept at startup. Shutdown aborts and awaits every run before closing. Engine groups survive a SIGKILLed server, so record each job's pgid and kill leftover groups at startup
 - [ ] Per-platform pacing and back-off (YouTube ~300 tracks/h without login, SoundCloud 429s); Go+ previews reported as `preview_only`
-- [ ] `GET /api/events` (SSE with heartbeat, throttled progress), `POST /api/downloads`, cancel, retry, reveal. Define `TrackRef` so a partial (not yet enriched) row can be downloaded
+- [ ] `GET /api/events` (SSE with heartbeat, throttled progress), `POST /api/downloads`, cancel, retry, reveal. A dropped SSE connection should also flip the engine chip to "Server offline": today it only notices on the next health request. Define `TrackRef` so a partial (not yet enriched) row can be downloaded
 - [ ] Settings store in the app data dir + `GET/PUT /api/settings`; native folder picker `POST /api/folders/pick`
 
 ## Phase 3 — UI

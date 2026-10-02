@@ -132,3 +132,37 @@ The web enriches partial rows through `POST /api/resolve/entries`, which returns
 - Node refuses to strip types under `node_modules`, so the server must run from the repo with pnpm's symlinked workspace, not from a `pnpm deploy` copy or with `--preserve-symlinks`.
 - A desktop wrapper (Phase 5) will need a bundle step then.
 - `node --watch` waits for the old process on every restart, so shutdown is idempotent and has a hard deadline.
+
+## ADR-010 — Web UI kit: shadcn/ui on Base UI with the Nova preset, dark only for now
+*2026-10-02 · accepted (chosen by the assistant; reversible)*
+
+**Context.** shadcn 4.x builds its components on one of three primitive libraries (`base` for Base UI, `radix`, `aria` for React Aria) and offers style presets (nova, vega, maia, lyra, mira, …). Its default (`init -d`) is `base-nova`. The app runs offline on localhost, so fonts and assets must ship with it.
+
+**Decision.**
+- shadcn/ui with Base UI (`@base-ui/react`) and the Nova preset (compact, Lucide icons, the Geist font bundled from `@fontsource-variable/geist`). Components come from the CLI (`pnpm dlx shadcn@4.21.1 add <name>` in `apps/web`) and are never patched by hand. They import `cn` from shadcn's `cn` package, which replaces clsx and tailwind-merge.
+- Dark only: `<html class="dark">` and `color-scheme: dark`. shadcn's light tokens stay in `src/styles.css` for a later light theme.
+- `@/*` is the alias for `src`, because shadcn's generated imports need it.
+
+**Rejected.** *Radix*, shadcn's previous default: it works just as well, but upstream momentum has moved to Base UI. *Web fonts from a CDN*: the app must work offline.
+
+**Consequences.** Base UI composes through a `render` prop instead of Radix's `asChild`, so check a generated component's API before using it. Switching libraries later means re-adding the components. `shadcn` itself is a dependency because the CSS imports its `shadcn/tailwind.css`.
+
+## ADR-011 — The dev proxy keeps the browser's Host, and `--dev` trusts the Vite port
+*2026-10-02 · accepted · replaces the Security model's earlier `changeOrigin: true` rule*
+
+**Context.** The Security model used to require Vite's `/api` proxy to use `changeOrigin: true`, so requests reached the server with `Host: 127.0.0.1:4747`, and it relied on Vite's own host check against DNS rebinding. An attack run against `pnpm dev` (raw sockets plus Chromium, Chrome, WebKit and Firefox) found two gaps:
+- Vite's host check is looser than our guard. It lets through a missing Host, any IP literal, `file:*`, `*-extension:*` and `localhost:<anything>`, and `file` or `x-extension` resolve through the DHCP search domain. Because `changeOrigin` hid the browser's Host, a rebinding page at `http://file:5173` could read `GET /api/health`.
+- Vite served the page with no anti-framing headers, so any site could frame `localhost:5173` and turn one click on "Check again" into `POST /api/health/recheck` 200.
+
+**Decision.**
+- The proxy keeps the browser's Host (`changeOrigin: false`). With `--dev` the server's guard also accepts the Vite port: `localhost:5173` and `127.0.0.1:5173`, as Host and as origin. Our exact Host check is then the one DNS-rebinding defense in dev and in production.
+- Vite sends `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY` (`server.headers`).
+- A dev-server plugin (`apps/web/dev-guard.ts`) applies the guard's rules to every request Vite answers, not just `/api`. It checks the exact Host, using `loopbackHosts` from `packages/shared`, and the Fetch Metadata rule, `allowedByFetchMetadata`. Vite's `/__open-in-editor` is stricter: only a same-origin request or a client without Fetch Metadata may call it, so even a link from another site can't open files in the editor.
+- `apps/web/vite-config.test.ts` pins these settings: the proxy's `changeOrigin: false`, `cors: false`, `strictPort`, the frame headers, and the dev guard registered ahead of Vite's middlewares.
+
+**Rejected.** *Keep `changeOrigin: true` and add a proxy `bypass` that allows only the Vite hosts.* That would put the Host check for `/api` into config, outside the guard's tests. With `changeOrigin: false`, the guard's own exact check covers proxied requests, and the dev guard's Host check covers what Vite serves itself.
+
+**Consequences.**
+- With `--dev`, the server also accepts `Host: localhost:5173` on direct connections. That's harmless: a browser sends that Host only to port 5173, which is Vite.
+- A foreign Host such as `file:5173` gets 403 from the dev guard for every page, module and endpoint Vite serves, and from the server's guard for `/api`. Visiting `http://[::1]:5173` directly is refused too; use `localhost:5173`.
+- Production is unchanged: without `--dev`, nothing on port 5173 is trusted.

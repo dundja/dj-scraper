@@ -20,24 +20,33 @@ Done when `pnpm dev` shows the app shell with live engine status, and `pnpm chec
 Done when `pnpm smoke <url>` prints a normalized result for YouTube and SoundCloud tracks and playlists, and the parsers are covered by fixture tests.
 
 - [x] Binary discovery (`YTDLP_PATH`/`FFMPEG_PATH` → `PATH`), versions, JS runtime check, warning when yt-dlp is more than ~60 days old (done with the `apps/server` item)
-- [ ] `classifyUrl` in shared (YouTube watch/shorts/youtu.be/music/playlist/mix/channel; SoundCloud track/set/user/likes/secret links; other) + tests
+- [x] `classifyUrl` in shared (YouTube watch/shorts/youtu.be/music/playlist/mix/channel; SoundCloud track/set/user/likes/secret links; other) + tests. Also refuses DRM hosts (incl. Amazon Music) and look-alike hosts, adds `https://` to scheme-less links, and flags secret links so they're never logged
 - [x] `engine/run.ts`: the one spawn wrapper (argv only, detached process group, line streaming on stdout and stderr, abort, timeout) (done with the `apps/server` item)
-- [ ] Resolve: `yt-dlp -J --flat-playlist` → normalized Track/Collection for YouTube and SoundCloud; record fixtures (include a SoundCloud user page that mixes in sets: keep only track rows)
-- [ ] SoundCloud set entries are bare (id + url): `POST /api/resolve/entries` with lazy, throttled per-track enrichment. The response needs a per-id failure shape (removed track, 429), not a bare `Track[]`
-- [ ] Map yt-dlp errors to `ErrorCode` (unavailable, private, geo-blocked, age-restricted, bot check, rate-limited, unsupported, …) with fixtures
-- [ ] `POST /api/resolve`, including the ambiguous `watch?v=…&list=…` case and capped mixes, plus the `pnpm smoke <url>` script. Input URLs: http(s), length cap, no embedded credentials (argv shows in `ps`). Add a `readJson(c, Schema)` helper: malformed JSON or a failed Zod check → 400 `invalid_request`. This is the web client's first request body, so test `lib/api.ts`'s JSON body path with it
-- [ ] Collection header data: the platform's track count and SoundCloud's set duration when yt-dlp reports them, and `truncated` when our `-I` cap cut the list. Reconcile the 1000-entry cap with "smooth with 1,000+ tracks" (product.md)
-- [ ] `test/fake-yt-dlp.mjs` that replays fixtures for integration and e2e tests. Check it in with its exec bit and symlink it per test (like `test/fake-tool.sh`): endpoint security scans every newly written executable on first run, which made per-test scripts time out
-- [ ] `.gitignore` ignores `*.log`, which would drop the planned `<case>.log` fixtures: un-ignore `apps/server/test/fixtures/**/*.log`
+- [x] Resolve: `yt-dlp -J --flat-playlist` → normalized Track/Collection for YouTube and SoundCloud; record fixtures (include a SoundCloud user page that mixes in sets: keep only track rows). `engine/ytdlp-parse.ts`; 29 recorded `-J` fixtures (yt-dlp 2026.08.19) scrubbed by `test/fixtures/trim.mjs`; `splitArtistTitle` in shared
+- [x] SoundCloud set entries are bare (id + url): `POST /api/resolve/entries` with lazy, throttled per-track enrichment. The response needs a per-id failure shape (removed track, 429), not a bare `Track[]`. Per-platform pacing, SoundCloud token budget, rate-limit cooldown, shared in-flight lookups, 30 min cache (ADR-014)
+- [x] Map yt-dlp errors to `ErrorCode` (unavailable, private, geo-blocked, age-restricted, bot check, rate-limited, unsupported, …) with fixtures. `engine/ytdlp-errors.ts`; 36 stderr fixtures, synthetic ones marked with their upstream source
+- [x] `POST /api/resolve`, including the ambiguous `watch?v=…&list=…` case and capped mixes, plus the `pnpm smoke <url>` script. Input URLs: http(s), length cap, no embedded credentials (argv shows in `ps`). Add a `readJson(c, Schema)` helper: malformed JSON or a failed Zod check → 400 `invalid_request`. `ambiguous` carries `collectionKind`; channel roots → `/videos`; `playlist?list=RD…` → seeded watch URL; embed player lists → playlist page (ADR-013). The web-client half (test `lib/api.ts`'s JSON body path with this route) is the item below
+- [x] Collection header data: the platform's track count and SoundCloud's set duration when yt-dlp reports them, and `truncated` when our `-I` cap cut the list. Reconcile the 1000-entry cap with "smooth with 1,000+ tracks" (product.md). Cap is 5,000 (mixes 50), asked as `-I 1:<cap+1>`; `skippedEntries` counts non-track rows (ADR-013)
+- [x] `test/fake-yt-dlp.mjs` that replays fixtures for integration and e2e tests. Check it in with its exec bit and symlink it per test (like `test/fake-tool.sh`): endpoint security scans every newly written executable on first run, which made per-test scripts time out. Manifest `test/fixtures/fake-yt-dlp.json`, `-I` slicing, delay/hang/calls-log knobs, strict argv checks; `writeFakeYtdlp` in `test/helpers.ts`
+- [x] `.gitignore` ignores `*.log`, which would drop the planned `<case>.log` fixtures: un-ignore `apps/server/test/fixtures/**/*.log`
+- [ ] Test the web client's JSON body path (`lib/api.ts`) against `POST /api/resolve`: it is the client's first request body. (The rest of the Phase 0 sync, the `createApp` wiring and ADR numbering, was done when this branch was rebased onto `main`.)
+- [ ] Decide whether SoundCloud sets with `album_type: album` (see `fixtures/soundcloud/album-set.json`) get kind `album` instead of `set`
+- [ ] Collection `owner` is missing for SoundCloud user pages (yt-dlp gives only a title like "X (All)") and YouTube Music albums (null uploader): derive it
 
 ## Phase 2 — Download pipeline
 Done when the API downloads a selected set of tracks into a folder with live progress, cancel and retry, all tested against the fake engine.
 
-- [ ] Download argv builder per format (MP3 320 CBR default, M4A copy, WAV, FLAC, original); yt-dlp writes only into a per-job temp dir
+- [ ] Download argv builder per format (MP3 320 CBR default, M4A copy, WAV, FLAC, original); yt-dlp writes only into a per-job temp dir.
+  - Decide SoundCloud format narrowing together with enrichment (ADR-014), so the source shown matches what's downloaded.
+  - Consider `--extractor-retries 1` so a 429 fails fast instead of yt-dlp retrying every format 3 times (inferred from source, unverified).
 - [ ] Parse progress (`DL`/`PP` lines, fragments for HLS, enforced "waiting" sleeps) and the final `DONE` JSON
+- [ ] Extend `test/fake-yt-dlp.mjs` to replay downloads (`DL`/`PP`/`DONE` lines, a file in the job dir); the download error logs are already recorded in `fixtures/errors/` (ffmpeg-missing, postprocess-*, interrupted)
 - [ ] Finalize: artist/title, tags (comment = source URL), AIFF + artwork via ffmpeg, filename template, sanitize, skip-if-exists, safe move (copy + unlink across volumes)
 - [ ] Job queue: concurrency limit, state machine, cancel (SIGINT to the process group → SIGKILL → delete job dir), retry, stale job dirs swept at startup. Shutdown aborts and awaits every run before closing. Engine groups survive a SIGKILLed server, so record each job's pgid and kill leftover groups at startup
-- [ ] Per-platform pacing and back-off (YouTube ~300 tracks/h without login, SoundCloud 429s); Go+ previews reported as `preview_only`
+- [ ] Per-platform pacing and back-off (YouTube ~300 tracks/h without login, SoundCloud 429s); Go+ previews reported as `preview_only`.
+  - Pause YouTube on `bot_check` too, not only on `rate_limited`: a blocked session fails every following track.
+  - Refuse a download before spawning when the resolved track is `preview_only`. yt-dlp's preview filters are silent with our quiet argv: `--match-filters` gives exit 0 and no DONE line, and `--break-match-filters` gives exit 101 (see the `ytdlp` skill).
+  - Reuse `resolve/limiter.ts` (concurrency, gap, budget).
 - [ ] `GET /api/events` (SSE with heartbeat, throttled progress), `POST /api/downloads`, cancel, retry, reveal. A dropped SSE connection should also flip the engine chip to "Server offline": today it only notices on the next health request. Define `TrackRef` so a partial (not yet enriched) row can be downloaded
 - [ ] Settings store in the app data dir + `GET/PUT /api/settings`; native folder picker `POST /api/folders/pick`
 
@@ -49,7 +58,10 @@ Done when the full flow works in the browser: paste → (track: auto-download | 
 - [ ] Collection view: header, virtualized track table, select all/none/invert, shift-click ranges, filter, unavailable rows disabled, progressive fill-in for SoundCloud sets
 - [ ] Download bar: target folder (header picker + recents), format, playlist-subfolder toggle, "Download N tracks"
 - [ ] Downloads panel: per-track and overall progress, waiting state, cancel/retry, reveal in Finder
-- [ ] "This track or the whole playlist?" prompt for watch+list URLs
+- [ ] "This track or the whole playlist?" prompt for watch+list URLs. Word it by `collectionKind`, and default to the track for a mix ("Load the mix (first 50)"). If the track lookup fails (private, age-restricted…), still offer the list with `mode: 'collection'`
+- [ ] Loading state for big lists: a 1,788-video channel took 21 s and 5,001 rows up to 56 s. If that proves annoying, stream rows with `--lazy-playlist -j` (ADR-013)
+- [ ] SoundCloud `/sets` and `/albums` user tabs resolve to empty collections (only `skippedEntries`): let the user open those sets
+- [ ] Partial rows: request enrichment for the rows in view, cancel requests for rows scrolled away, and show placeholders while SoundCloud's budget paces a long scroll
 - [ ] Engine missing/outdated banner and friendly error states
 - [ ] Playwright e2e for both flows against the fake engine
 

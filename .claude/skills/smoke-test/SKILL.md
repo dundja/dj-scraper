@@ -8,14 +8,13 @@ A live check of the engine. It uses the network, so it is never part of `pnpm te
 
 Input: `$ARGUMENTS`. These are the URLs to check (default: the sample set below). Add `--download` to also download the shortest track.
 
-1. **Engine.** Run `yt-dlp --version` and warn if the date-based version is more than ~60 days old. Also run `ffmpeg -version | head -1`, `ffprobe -version | head -1` and `command -v deno`. Deno is YouTube's JS runtime; we also pass Node as a fallback.
-2. **Resolve each URL.**
-   - Once `apps/server` has the smoke script: `pnpm smoke '<url>'` prints the normalized `ResolveResult`.
-   - Until then, call yt-dlp directly:
-     ```
-     yt-dlp --ignore-config --no-update --js-runtimes node:"$(command -v node)" -J --flat-playlist -I 1:20 -- <url> \
-       | jq '{type: ._type, title, uploader, n: (.entries // [] | length), first: (.entries // [] | .[0] | {title, duration, url})}'
-     ```
+1. **Engine.** `pnpm smoke` prints yt-dlp's version and age first, and warns when it is below the minimum or more than ~60 days old. Also run `ffmpeg -version | head -1`, `ffprobe -version | head -1` and `command -v deno`. Deno is YouTube's JS runtime; we also pass Node as a fallback.
+2. **Resolve each URL** with `pnpm smoke`, which runs the app's real resolver and prints a summary per URL (✅/❌, kind, title, artist, duration, source codec/bitrate; for lists: entries, partial rows, trackCount, truncated, skippedEntries and the first rows). It exits 1 if any URL fails.
+   - `pnpm smoke` with no URL runs the sample set below.
+   - `pnpm smoke '<url>' …` for specific URLs. Quote them: `&` in `watch?v=…&list=…` is a shell operator.
+   - `--mode track|collection` resolves a `watch?v=…&list=…` URL as its track or its whole list (default `auto` answers `ambiguous`).
+   - `--entries N` also enriches the first N partial rows, e.g. of a SoundCloud set (counts against SoundCloud's API budget).
+   - `--json` prints the full `ResolveResult` per URL on stdout (logs go to stderr), for `jq`.
 3. **Download (only with `--download`).**
    - Download the shortest sample into a scratch temp dir. Use the app's real argv, or the MP3 320 recipe from the `ytdlp` skill.
    - Inspect the result with `ffprobe -hide_banner <file>`: codec, bitrate, duration, tags and attached artwork.

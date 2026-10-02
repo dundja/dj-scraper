@@ -6,8 +6,6 @@ argument-hint: "[web|server|shared]"
 
 Quality gate for DJ Scraper. Scope: `$ARGUMENTS`. Empty means the whole repo. Otherwise run each step as `pnpm --filter @dj-scraper/$ARGUMENTS <script>`, except Biome, which is scoped by path: `pnpm check <apps/web|apps/server|packages/shared>`.
 
-If there's no root `package.json` yet, say the workspace isn't scaffolded (roadmap Phase 0) and stop.
-
 Run these in order, and fix each failure before moving on:
 1. `pnpm check`: Biome lint and format (`pnpm check:fix` applies the safe fixes).
 2. `pnpm typecheck`

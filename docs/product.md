@@ -14,7 +14,7 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud. Everythi
 | SoundCloud: tracks, sets/playlists/albums, private links with a secret token | ✅ first-class |
 | SoundCloud: a user's tracks / likes / reposts | ✅ as collections |
 | Anything else yt-dlp supports (Bandcamp, Mixcloud, Vimeo, …) | best effort, generic normalization |
-| DRM services (Spotify, Apple Music, Tidal, Deezer, Beatport streaming) | ❌ out of scope |
+| DRM services (Spotify, Apple Music, Amazon Music, Tidal, Deezer, Beatport streaming) | ❌ out of scope, refused by URL |
 
 ## Core flows
 
@@ -37,7 +37,7 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud. Everythi
   - a text filter that keeps the selection
   - a live count and total duration of what's selected
 - Unavailable entries (private, deleted, region-blocked) show greyed out with a reason and can't be selected.
-- Stays smooth with 1,000+ tracks. SoundCloud sets list instantly; titles, durations and artwork fill in as rows load.
+- Stays smooth with 1,000+ tracks. Lists of up to 5,000 rows load whole, and longer ones show their first 5,000 and say so (a mix shows its first 50). SoundCloud sets list instantly; titles, durations and artwork fill in as rows load, paced to stay within SoundCloud's request budget.
 - One click on **Download N tracks** queues them into the target folder, optionally into a subfolder named after the playlist.
 
 ### 4. Target folder

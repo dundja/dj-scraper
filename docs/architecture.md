@@ -69,9 +69,11 @@ The reasons are in ADR-007.
   - `pnpm build` makes one ~570 kB bundle (react-dom, zod, Base UI, TanStack). It loads from localhost, so there is no vendor splitting, and the chunk-size warning starts at 1 MB.
 
 ## Server modules (`apps/server/src`)
+Rows marked *Phase 2* don't exist yet.
+
 | Module | Responsibility |
 |---|---|
-| `index.ts` | boot, engine check at startup (logs shared `healthProblems`), graceful shutdown (cancel jobs, kill process groups) |
+| `index.ts` | boot, engine check at startup (logs shared `healthProblems`), graceful shutdown (kill engine process groups; cancel jobs once they exist) |
 | `config.ts` | env + `--dev`/`--open` → `Config`, Zod-validated |
 | `startup.ts` | after listening: the missing-UI warning and `--open` |
 | `server.ts` | `startServer`: `node:http` + Hono's request listener on `127.0.0.1`; listen errors reject; `close()` also drops open connections |
@@ -80,18 +82,24 @@ The reasons are in ADR-007.
 | `routes/web.ts` | serves the built UI and the SPA fallback (see Security model) |
 | `http/guard.ts` | Host/Origin/Fetch-Metadata guard and JSON-only mutations; with `--dev` it also trusts the Vite port (see Security model) |
 | `http/errors.ts` | `ApiError`, the `ErrorCode` → HTTP status map, error and 404 handlers |
-| `routes/*` | thin HTTP layer: validate with shared schemas → call a service → respond |
+| `http/json.ts` | `readJson(c, Schema)` (malformed JSON or a failed Zod check → 400 `invalid_request`) and the 64 KiB body limit for JSON routes |
+| `routes/*` | thin HTTP layer: validate with shared schemas → call a service → respond. `system.ts` (health, recheck) and `resolve.ts` (resolve, entries) so far |
 | `engine/binaries.ts` | locate yt-dlp/ffmpeg/ffprobe and a JS runtime, probe their versions → `Health` |
 | `engine/versions.ts` | pure: version output → version, release date, major, checked against the minimums from `@dj-scraper/shared` |
 | `engine/health.ts` | cached health check (10 min, one probe at a time) |
 | `engine/run.ts` | the **only** place that spawns processes: argv only, detached process group, line streaming, abort, timeout |
-| `engine/ytdlp-args.ts` | pure: (url, options) → argv |
-| `engine/ytdlp-parse.ts` | pure: info JSON → Track/Collection, `DL`/`PP`/`DONE` lines → events, stderr → `ErrorCode` |
-| `engine/finalize.ts` | after yt-dlp: artist/title + filename (pure), tags and AIFF via ffmpeg, safe move into the target folder |
-| `jobs/queue.ts` | download queue: concurrency, per-platform pacing/back-off, state machine, cancel/retry |
-| `jobs/bus.ts` | typed event emitter feeding SSE |
-| `settings/` | load/save settings JSON (Zod-validated, defaults filled on read) |
-| `fs/` | native folder picker (macOS `osascript` "choose folder"), path safety, filename sanitizing |
+| `engine/ytdlp-args.ts` | pure: (url, options) → argv; the base argv every call shares |
+| `engine/ytdlp-parse.ts` | pure: info JSON → Track/Collection, read with tolerant schemas and checked against the contract. `DL`/`PP`/`DONE` progress parsing joins it in Phase 2 |
+| `engine/ytdlp-errors.ts` | pure: yt-dlp stderr + exit code → `ErrorInfo` with a human message, from an ordered pattern table backed by fixtures |
+| `engine/finalize.ts` | *Phase 2.* After yt-dlp: artist/title + filename (pure), tags and AIFF via ffmpeg, safe move into the target folder |
+| `resolve/plan.ts` | pure: classified URL + mode → what to ask yt-dlp (URL, playlist flag, entry cap, timeout, `ambiguous` wrapping) |
+| `resolve/resolver.ts` | `POST /api/resolve`: plan → one yt-dlp call → normalize → contract check; at most 4 at a time |
+| `resolve/enricher.ts` | `POST /api/resolve/entries`: per-row lookups with per-platform pacing, SoundCloud's request budget, rate-limit cooldown and a 30 min cache |
+| `resolve/limiter.ts`, `lru.ts`, `input.ts`, `ytdlp-call.ts` | FIFO limiter (concurrency, min gap between starts, optional token-bucket budget, abortable waits, a bypass for answers from cache), TTL/LRU cache, URL checks shared by both services, one yt-dlp call → JSON or `ErrorInfo` |
+| `jobs/queue.ts` | *Phase 2.* Download queue: concurrency, per-platform pacing/back-off, state machine, cancel/retry |
+| `jobs/bus.ts` | *Phase 2.* Typed event emitter feeding SSE |
+| `settings/` | *Phase 2.* Load/save settings JSON (Zod-validated, defaults filled on read) |
+| `fs/` | *Phase 2.* Native folder picker (macOS `osascript` "choose folder"), path safety, filename sanitizing |
 
 ## Web modules (`apps/web`)
 | Module | Responsibility |
@@ -109,14 +117,14 @@ The reasons are in ADR-007.
 | `src/test/` | test helpers: fake `fetch` at the network edge, Health fixtures, render with a fresh QueryClient, the console guard |
 
 ## API (v1)
-JSON bodies are validated with the shared schemas. Errors use the shape `{ error: { code: ErrorCode, message } }` (`ApiErrorBody`) with the status from `http/errors.ts`: 400 `invalid_url`/`invalid_request`, 403 `forbidden`, 404 `not_found`, 409 `canceled`, 415 `invalid_request` for a non-JSON mutation, 422 `unsupported_url` and content the platform refuses (`unavailable`, `private`, `geo_blocked`, `age_restricted`, `login_required`, `bot_check`, `preview_only`), 429 `rate_limited`, 502 `network`, 503 `engine_missing`, 500 `postprocess_failed`/`unknown`.
+JSON bodies are validated with the shared schemas. Errors use the shape `{ error: { code: ErrorCode, message } }` (`ApiErrorBody`) with the status from `http/errors.ts`: 400 `invalid_url`/`invalid_request`, 403 `forbidden`, 404 `not_found`, 409 `canceled`, 413 `invalid_request` for a JSON body over 64 KiB, 415 `invalid_request` for a non-JSON mutation, 422 `unsupported_url` and content the platform refuses (`unavailable`, `private`, `geo_blocked`, `age_restricted`, `login_required`, `bot_check`, `preview_only`), 429 `rate_limited`, 502 `network`, 503 `engine_missing`, 500 `postprocess_failed`/`unknown`.
 
 | Route | Request | Response |
 |---|---|---|
 | `GET /api/health` | – | `Health` (cached up to 10 min): per tool `ok`/`missing`/`error` with path, version and minimum checks, yt-dlp age, JS runtimes, overall `ok` |
 | `POST /api/health/recheck` | – | `Health`, probed now (e.g. after installing yt-dlp) |
-| `POST /api/resolve` | `{ url, mode?: 'auto' \| 'track' \| 'collection' }` | `ResolveResult` |
-| `POST /api/resolve/entries` | `{ urls: string[] }` | `Track[]` (lazy enrichment, e.g. bare SoundCloud set entries) |
+| `POST /api/resolve` | `ResolveRequest`: `{ url, mode?: 'auto' \| 'track' \| 'collection' }` | `ResolveResult`. Errors: 400 `invalid_url`, 422 `unsupported_url` (DRM services, unsupported sites) and the platform's refusals, 429, 502, 503 `engine_missing` |
+| `POST /api/resolve/entries` | `ResolveEntriesRequest`: `{ entries: { platform, id, url }[] }`, 1–25 partial rows | `{ results: EntryResult[] }`, one per distinct platform + id in request order: `{ status: 'ok', platform, id, track }` or `{ status: 'error', platform, id, error }`. A failed row never fails the batch; only a missing yt-dlp fails the request (503) |
 | `POST /api/downloads` | `{ items: TrackRef[], folder, options: DownloadOptions }` | `{ batchId, jobs: Job[] }` |
 | `GET /api/downloads` | – | `Job[]` for this server session |
 | `POST /api/downloads/:id/cancel` | – | `Job` |
@@ -127,7 +135,7 @@ JSON bodies are validated with the shared schemas. Errors use the shape `{ error
 | `POST /api/folders/pick` | `{ startIn?: string }` | `{ path }` or `{ canceled: true }` |
 
 ## Domain model (`packages/shared`)
-The schemas in `packages/shared/src` are authoritative. The first block below summarizes them; the second is still a sketch for Phase 1–2.
+The schemas in `packages/shared/src` are authoritative. The first block below summarizes them; the second is still a sketch for Phase 2.
 
 ```ts
 // Implemented (packages/shared/src). Every URL field accepts http(s) only.
@@ -156,13 +164,28 @@ type Collection = {
   id: string; platform: Platform; url: string   // identified by url: id repeats across a channel's tabs
   kind: 'playlist' | 'album' | 'set' | 'channel' | 'likes' | 'mix' | 'other'
   title: string; owner?: string; thumbnailUrl?: string
+  trackCount?: number         // the platform's own count (YouTube playlists/albums, SoundCloud sets)
+  durationSec?: number        // the platform's total (SoundCloud sets)
+  truncated: boolean          // our entry cap cut the list
+  skippedEntries?: number     // rows that aren't tracks, e.g. sets on a SoundCloud user page
   entries: CollectionEntry[]
 }
 
+type ResolveRequest = { url: string; mode: 'auto' | 'track' | 'collection' }  // mode defaults to auto
 type ResolveResult =
   | { kind: 'track'; track: Track }
   | { kind: 'collection'; collection: Collection }
-  | { kind: 'ambiguous'; track: Track; collectionUrl: string }  // watch?v=…&list=…
+  | { kind: 'ambiguous'; track: Track; collectionUrl: string;          // watch?v=…&list=…
+      collectionKind: 'playlist' | 'album' | 'mix' }
+
+// POST /api/resolve/entries
+type EntryRef = { platform: Platform; id: string; url: string }
+type EntryResult =
+  | { status: 'ok'; platform: Platform; id: string; track: Track }
+  | { status: 'error'; platform: Platform; id: string; error: ErrorInfo }
+
+// Limits: MAX_URL_LENGTH 2048, MAX_ID_LENGTH 256 (Track, EntryRef and EntryResult ids),
+// MAX_COLLECTION_ENTRIES 5000, MAX_MIX_ENTRIES 50, MAX_ENTRIES_PER_REQUEST 25
 
 type ErrorCode =
   | 'invalid_url' | 'unsupported_url' | 'unavailable' | 'private' | 'geo_blocked'
@@ -186,8 +209,15 @@ type Health = {
 }
 ```
 
-Pure helpers in `packages/shared`, used by both apps:
+Pure helpers and constants in `packages/shared`, used by both apps:
 ```ts
+// URLs (classify.ts, artist-title.ts). classifyUrl(text) → ClassifiedUrl (platform, UrlKind, guess,
+// ids, collectionKind, channelRoot, embeddedList, secret) or a UrlRejection;
+// urlRejectionMessage(reason); splitArtistTitle(title); youtubeListKind(listId); isYoutubeChannelId(id)
+
+// Ports (ports.ts): SERVER_PORT 4747, WEB_DEV_PORT 5173, PortSchema (the PORT env var),
+// loopbackHosts(port) (the exact Host values the guards accept)
+
 // The engine minimums (engine.ts): YTDLP_MIN_RELEASE '2025-11-12', YTDLP_STALE_AFTER_DAYS 60,
 // FFMPEG_MIN_MAJOR 8, DENO_MIN_VERSION [2, 3, 0], NODE_MIN_VERSION [22, 0, 0]
 
@@ -200,7 +230,9 @@ allowedByFetchMetadata(req: { method: string; site?: string; mode?: string; dest
 ```
 
 ```ts
-// Sketch (Phase 1–2)
+// Sketch (Phase 2)
+// TrackRef: not designed yet. It must let a partial (not yet enriched) row be downloaded.
+
 type DownloadOptions = {
   format: 'mp3' | 'm4a' | 'aiff' | 'wav' | 'flac' | 'original'
   embedArtwork: boolean
@@ -226,13 +258,25 @@ type ServerEvent =
 ## Flows
 
 ### Resolve
-1. Web: `classifyUrl(url)` from shared gives an instant platform/type hint and rejects obviously invalid input.
-2. Server: a single `yt-dlp -J --flat-playlist` call, normalized into a `ResolveResult`.
-   - YouTube flat entries already carry title, duration, uploader and thumbnails, but no availability: rows stay `unknown` unless the title marks them private or deleted.
-   - SoundCloud set entries are bare (id + url), so they arrive as `partial` entries. The web asks `POST /api/resolve/entries` for the partial rows in view, and the server throttles those lookups to respect SoundCloud's API budget.
-3. Special cases:
-   - `watch?v=…&list=…` returns `ambiguous` unless the request sets `mode`.
-   - YouTube Mix/Radio (`list=RD…`) never ends: treat it as a single track unless asked, and cap its entries.
+The reasons are in ADR-013 and ADR-014.
+1. **Web.** `classifyUrl(text)` from shared gives an instant platform and type badge (`guess`: track, collection, ambiguous or unknown) and rejects invalid input: empty, too long, not http(s), or carrying a username or password.
+2. **Server: check.** The same `classifyUrl` validates the URL (400 `invalid_url`). DRM services (Spotify, Apple Music, Amazon Music, Tidal, Deezer, Beatport) get 422 `unsupported_url` without starting yt-dlp.
+3. **Server: plan** (`resolve/plan.ts`, pure). It decides the URL, the playlist flag, the entry cap and the timeout:
+   - The entry cap is 5,000 (YouTube's own playlist limit) and 50 for a mix. yt-dlp is asked for one row more (`-I 1:<cap+1>`), and getting that extra row is what sets `truncated`. `playlist_count` can't tell, because it is null for channel tabs, mixes and SoundCloud user pages.
+   - The timeout is 60 s for a track and 180 s for a list (5,001 rows took 38–56 s live).
+   - `watch?v=…&list=…` in `auto` mode is a single `--no-playlist` track lookup, answered as `ambiguous` with the list's `collectionUrl` and `collectionKind`. A mix's `collectionUrl` keeps its seed video (`watch?v=X&list=RDX`), because `playlist?list=RD…` is "unviewable" to yt-dlp; such playlist URLs are rewritten to the watch form. `mode: 'track'` resolves just the track, and `mode: 'collection'` lists the list (`--yes-playlist`).
+   - A YouTube channel root lists its tabs, not videos, so it is resolved as `<channel>/videos`. An embed player list (`/embed/videoseries?list=…`) is resolved at its playlist page.
+4. **Server: yt-dlp.** One `yt-dlp -J --flat-playlist` call (at most 4 run at once; a closed browser request stops it), normalized by `engine/ytdlp-parse.ts` and checked against `ResolveResultSchema`. A failure maps to an `ErrorCode` through `engine/ytdlp-errors.ts`.
+   - YouTube flat rows carry title, duration, uploader and thumbnails, but no availability: they stay `unknown` unless their exact title is `[Private video]` or `[Deleted video]`.
+   - SoundCloud set rows are bare (id + url) and user-page rows have no duration, so both arrive as `partial` rows (ADR-008). User pages also list sets: only track rows are kept, and the rest are counted in `skippedEntries`.
+   - Artist comes from platform metadata (YouTube Music, SoundCloud label tracks), else from the title split at its first dash (`splitArtistTitle`).
+   - `source` is the stream yt-dlp's `ba` would download: the last audio-only format, skipping Go+ previews and SoundCloud's login-only original. A track that only has preview formats is `unavailable` with reason `preview_only`, without a duration.
+5. **Enrichment.** The web asks `POST /api/resolve/entries` for the partial rows in view. The server looks each row up with `yt-dlp -J --flat-playlist --no-playlist -- <row url>`:
+   - Pacing is per platform: two lookups at a time, with a minimum gap between starts. SoundCloud adds a request budget, a burst of 25 lookups refilling one every 5 s. That is about 120 lookups per 10 min, or 360–600 API requests at the measured 3–5 per lookup, within SoundCloud's ~600.
+   - A `rate_limited` row pauses its platform for 60 s, doubling per consecutive hit up to 10 min. During the pause, rows fail at once without spawning.
+   - Results are cached for 30 min (2,000 rows), and concurrent requests for the same row share one lookup. That lookup stops only when every request waiting on it is gone. Rows that are lists are refused.
+   - Pacing, budget, cooldown and cache are keyed by the platform of the row's URL, not the `platform` the client sent. Results echo the request's platform and id.
+   - Timers use a monotonic clock, so a wall-clock jump can't stall pacing or expire the cache.
 
 ### Download
 1. `POST /api/downloads` validates the folder (absolute, and exists or can be created) and enqueues one job per track.
@@ -290,7 +334,8 @@ The server can spawn processes and write files, so other websites must not be ab
     - HMR's WebSocket upgrade bypasses connect middlewares and keeps Vite's own token check.
   - Vite binds whatever `localhost` resolves to: `[::1]:5173` on macOS. When the server is down, its proxy answers 502 `text/plain` with an empty body, which the web client reports as "Server offline".
   - `apps/web/vite-config.test.ts` pins every setting above, so dropping one fails a test.
-- **Processes.** Argv arrays only (`shell: false`), with `--ignore-config`. The URL is validated (http/https, length cap) and passed after `--`.
+- **Processes.** Argv arrays only (`shell: false`), with `--ignore-config`. The URL is validated by `classifyUrl` (http/https only, at most 2,048 characters, no username or password, since argv shows in `ps`) and passed last, right after `--`. Nothing else in the argv comes from the request.
+- **Logs.** SoundCloud secret links (`/s-…`, `secret_token=`) are credentials. Resolve and enrichment logs carry the URL kind, counts, error codes and timings, never URLs, titles or argv.
 - **Paths.** yt-dlp writes only into the job's temp dir. Finalize resolves the final path, asserts it is inside the target folder, and sanitizes the filename for macOS and Windows.
 - **Secrets:**
   - Sign-ins are opt-in and per platform. yt-dlp reads browser cookies at runtime, and the app never stores cookies.
@@ -326,9 +371,9 @@ App data dir: `~/Library/Application Support/DJ Scraper/` on macOS.
 | Layer | Tool | Scope | Network |
 |---|---|---|---|
 | Unit | Vitest | shared helpers and schemas, argv builders, parsers, error mapping, finalize naming/tagging logic, queue state machine, hooks/components | never |
-| Integration | Vitest | real server + `test/fake-yt-dlp.mjs` replaying fixtures: spawn, progress, cancel, errors, finalize | never |
+| Integration | Vitest | real server and processes against the fake engine (`test/fake-yt-dlp.mjs` replaying fixtures, `test/fake-tool.sh` for version probes): spawn, boot, resolve, enrichment, abort, errors; downloads (progress, cancel, finalize) in Phase 2 | never |
 | E2E | Playwright (Chromium, WebKit) | UI flows against the production server + fake engine (`apps/server/test/e2e-server.ts`) | never |
-| Smoke | `pnpm smoke '<url>'` | real yt-dlp against live YouTube/SoundCloud | yes, run by hand |
+| Smoke | `pnpm smoke ['<url>' …] [--mode …] [--entries N] [--json]` | the real resolver against live YouTube/SoundCloud; with no URL, the sample set from the `smoke-test` skill | yes, run by hand |
 
 E2E (`pnpm test:e2e` = `playwright test` in `apps/web`; `pnpm test:e2e:install` downloads Chromium's headless shell and WebKit once):
 - Playwright's `webServer` first builds the UI into its own `node_modules/.e2e-dist`, never `dist`, which `pnpm start` may be serving. It then runs `apps/server/test/e2e-server.ts` on that build, on port 4849, so e2e can run beside `pnpm dev` and `pnpm start`.
@@ -339,4 +384,14 @@ E2E (`pnpm test:e2e` = `playwright test` in `apps/web`; `pnpm test:e2e:install` 
 
 Web tests (`apps/web`) run in jsdom with Testing Library. They fake `fetch` at the network edge (`src/test/fake-api.ts`) instead of mocking hooks, use a fresh QueryClient per test, and fail on any `console.error` or `console.warn` (React warnings included). Node-side files at the package root (`dev-guard.test.ts`, `dev-exit.test.ts`, `vite-config.test.ts`) choose the node environment per file.
 
-Fixtures live in `apps/server/test/fixtures/<platform>/` and `fixtures/engine/` (version probe output). Each is recorded from a real run, with the tool version and date noted in its directory's `README.md`. Fake engine binaries are checked in (`test/fake-tool.sh`) and symlinked per test: endpoint security scans each newly written executable on its first run.
+Fixtures:
+- **Where:** `apps/server/test/fixtures/youtube/` and `soundcloud/` (`-J` output), `errors/` (stderr), and `engine/` (version probe output).
+- **Recording:** each is recorded from a real run. `-J` dumps are piped through `fixtures/trim.mjs`, which trims bulk and scrubs signed stream URLs and IPs; stderr logs are kept verbatim. The tool version and date are noted in the directory's `README.md`. The checklist for a new case is the Fixtures rule in `apps/server/CLAUDE.md`.
+- **Synthetic logs:** error logs that can't be produced on demand (429, bot check, geo block) are synthetic, built from upstream wording, and marked as such.
+
+Fake engine:
+- **Fake binaries:** they are checked in and symlinked per test, because endpoint security scans each newly written executable on its first run. `test/fake-tool.sh` stands in for the version probes.
+- **`test/fake-yt-dlp.mjs`:** it replays the fixtures through the manifest `fixtures/fake-yt-dlp.json`, matching by URL and playlist flag, and applies `-I` to recorded lists.
+  - It exits 2 on argv that breaks our rules (no `--ignore-config`, no `--`).
+  - Env knobs add a delay, a hang until SIGINT, extra rules, or a calls log.
+  - Point `YTDLP_PATH` at it for integration and e2e tests (`writeFakeYtdlp` in `test/helpers.ts`).

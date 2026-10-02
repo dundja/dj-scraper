@@ -28,9 +28,9 @@ export const YtdlpHealthSchema = z.discriminatedUnion('status', [
     ...found,
     releaseDate: z.iso.date(),
     ageDays: z.int().nonnegative(),
-    /** Older than 60 days, so it may miss YouTube fixes. A warning, not a failure. */
+    /** Older than YTDLP_STALE_AFTER_DAYS (60), so it may miss YouTube fixes. A warning, not a failure. */
     stale: z.boolean(),
-    /** At least 2025.11.12, the first release with `--js-runtimes`, which we always pass. */
+    /** At least YTDLP_MIN_RELEASE (2025.11.12), the first release with `--js-runtimes`, which we always pass. */
     meetsMinimum: z.boolean(),
   }),
   MissingSchema,
@@ -42,7 +42,7 @@ const ffFound = {
   ...found,
   /** From the release number, or libavformat's for git builds; omitted when neither parses. */
   major: z.int().nonnegative().optional(),
-  /** major >= 8 */
+  /** major >= FFMPEG_MIN_MAJOR (8) */
   meetsMinimum: z.boolean(),
 }
 
@@ -66,7 +66,7 @@ export const JsRuntimeSchema = z.object({
   name: z.enum(['deno', 'node']),
   path: z.string().min(1),
   version: z.string().min(1),
-  /** deno >= 2.3.0, node >= 22: yt-dlp skips older ones. */
+  /** At least DENO_MIN_VERSION or NODE_MIN_VERSION (deno 2.3.0, node 22): yt-dlp skips older ones. */
   supported: z.boolean(),
 })
 export type JsRuntime = z.infer<typeof JsRuntimeSchema>

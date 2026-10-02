@@ -14,20 +14,20 @@ import {
   type YtdlpHealth,
   YtdlpHealthSchema,
 } from './health.ts'
-import { issuePaths, type OptionalKeys, without } from './test-helpers.ts'
+import {
+  brewDeno,
+  brewFfmpeg,
+  brewFfprobe,
+  brewNode,
+  brewYtdlp,
+  healthy,
+  issuePaths,
+  type OptionalKeys,
+  without,
+} from './test-helpers.ts'
 
-// The shapes the server reported for real installs (Homebrew yt-dlp/ffmpeg on 2026-10-02).
-const brewYtdlp = {
-  status: 'ok',
-  path: '/opt/homebrew/bin/yt-dlp',
-  source: 'path',
-  version: '2026.08.19',
-  releaseDate: '2026-08-19',
-  ageDays: 44,
-  stale: false,
-  meetsMinimum: true,
-} satisfies YtdlpHealth
-
+// The shapes the server reported for real installs on 2026-10-02 (the healthy Homebrew ones are
+// in test-helpers.ts).
 const nightlyYtdlp = {
   status: 'ok',
   path: '/Users/dj/bin/yt-dlp_macos/yt-dlp_macos',
@@ -59,16 +59,6 @@ const brokenYtdlp = {
   source: 'path',
   message: "yt-dlp can't start: the interpreter in its #! line is missing. Reinstall yt-dlp.",
 } satisfies YtdlpHealth
-
-const brewFfmpeg = {
-  status: 'ok',
-  path: '/opt/homebrew/bin/ffmpeg',
-  source: 'path',
-  version: '8.0',
-  major: 8,
-  meetsMinimum: true,
-  mp3: true,
-} satisfies FfmpegHealth
 
 const snapshotFfmpeg = {
   status: 'ok',
@@ -103,15 +93,6 @@ const missingFfmpeg = {
   message: 'ffmpeg is not on PATH. Run `brew install ffmpeg` or set FFMPEG_PATH.',
 } satisfies FfmpegHealth
 
-const brewFfprobe = {
-  status: 'ok',
-  path: '/opt/homebrew/bin/ffprobe',
-  source: 'path',
-  version: '8.0',
-  major: 8,
-  meetsMinimum: true,
-} satisfies FfprobeHealth
-
 const unknownMajorFfprobe = {
   status: 'ok',
   path: '/usr/local/bin/ffprobe',
@@ -128,29 +109,6 @@ const brokenFfprobe = {
   message: 'FFMPEG_PATH: /Users/dj/ffmpeg/ffprobe does not exist.',
 } satisfies FfprobeHealth
 
-const deno = {
-  name: 'deno',
-  path: '/opt/homebrew/bin/deno',
-  version: '2.9.7',
-  supported: true,
-} satisfies JsRuntime
-
-const node = {
-  name: 'node',
-  path: '/opt/homebrew/Cellar/node/24.12.0/bin/node',
-  version: '24.12.0',
-  supported: true,
-} satisfies JsRuntime
-
-const healthy = {
-  ok: true,
-  checkedAt: '2026-10-02T08:00:00.000Z',
-  ytdlp: brewYtdlp,
-  ffmpeg: brewFfmpeg,
-  ffprobe: brewFfprobe,
-  jsRuntimes: [deno, node],
-} satisfies Health
-
 const nothingInstalled = {
   ok: false,
   checkedAt: '2026-10-02T08:00:00.000Z',
@@ -160,7 +118,7 @@ const nothingInstalled = {
     status: 'missing',
     message: 'ffprobe is not on PATH. Run `brew install ffmpeg` or set FFMPEG_PATH.',
   },
-  jsRuntimes: [node],
+  jsRuntimes: [brewNode],
 } satisfies Health
 
 describe('ToolSourceSchema', () => {
@@ -326,18 +284,18 @@ describe('FfprobeHealthSchema', () => {
 
 describe('JsRuntimeSchema', () => {
   it.each([
-    ['deno', deno],
-    ['our own node', node],
-    ['an unsupported old deno', { ...deno, version: '2.2.12', supported: false }],
+    ['deno', brewDeno],
+    ['our own node', brewNode],
+    ['an unsupported old deno', { ...brewDeno, version: '2.2.12', supported: false }],
   ])('parses %s unchanged', (_label, input) => {
     expect(JsRuntimeSchema.parse(input)).toStrictEqual(input)
   })
 
   it.each([
-    ['a runtime yt-dlp supports but we never report', { ...deno, name: 'bun' }, 'name'],
-    ['an empty version', { ...deno, version: '' }, 'version'],
-    ['an empty path', { ...deno, path: '' }, 'path'],
-    ['no supported flag', without(deno, 'supported'), 'supported'],
+    ['a runtime yt-dlp supports but we never report', { ...brewDeno, name: 'bun' }, 'name'],
+    ['an empty version', { ...brewDeno, version: '' }, 'version'],
+    ['an empty path', { ...brewDeno, path: '' }, 'path'],
+    ['no supported flag', without(brewDeno, 'supported'), 'supported'],
   ])('rejects %s', (_label, input, field) => {
     expect(issuePaths(JsRuntimeSchema, input)).toEqual([[field]])
   })
@@ -389,7 +347,7 @@ describe('HealthSchema', () => {
       ...healthy,
       ytdlp: { ...brokenYtdlp, message: '' },
       ffmpeg: { ...brewFfmpeg, major: null },
-      jsRuntimes: [deno, { ...node, name: 'bun' }],
+      jsRuntimes: [brewDeno, { ...brewNode, name: 'bun' }],
     }
     expect(issuePaths(HealthSchema, input)).toEqual([
       ['ytdlp', 'message'],

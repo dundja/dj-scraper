@@ -7,6 +7,13 @@ export {
   CollectionSchema,
 } from './collection.ts'
 export {
+  DENO_MIN_VERSION,
+  FFMPEG_MIN_MAJOR,
+  NODE_MIN_VERSION,
+  YTDLP_MIN_RELEASE,
+  YTDLP_STALE_AFTER_DAYS,
+} from './engine.ts'
+export {
   type ApiErrorBody,
   ApiErrorBodySchema,
   type ErrorCode,
@@ -14,6 +21,7 @@ export {
   type ErrorInfo,
   ErrorInfoSchema,
 } from './errors.ts'
+export { allowedByFetchMetadata, type FetchMetadata } from './fetch-metadata.ts'
 export {
   type FfmpegHealth,
   FfmpegHealthSchema,
@@ -28,8 +36,9 @@ export {
   type YtdlpHealth,
   YtdlpHealthSchema,
 } from './health.ts'
+export { type HealthProblem, healthProblems } from './health-problems.ts'
 export { type Platform, PlatformSchema } from './platform.ts'
-export { SERVER_PORT, WEB_DEV_PORT } from './ports.ts'
+export { loopbackHosts, PortSchema, SERVER_PORT, WEB_DEV_PORT } from './ports.ts'
 export { type ResolveResult, ResolveResultSchema } from './resolve.ts'
 export {
   type AudioSource,

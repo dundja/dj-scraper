@@ -73,6 +73,11 @@ const PLATFORM_NAMES: Record<Platform, string> = {
 export type EnricherDeps = {
   engine: EngineEnv
   run?: typeof run
+  /**
+   * Finds the yt-dlp binary, once per request, or throws `ApiError('engine_missing')`. Default
+   * `findYtdlp`. Injected so pacing tests on a fake clock have no filesystem lookups racing it.
+   */
+  locate?: (engine: EngineEnv) => Promise<string>
   /** Our Node for `--js-runtimes`: `process.execPath`, never user input. */
   jsRuntime?: string
   /** Pacing, cooldowns and cache expiry. Default `monotonicClock`. */
@@ -130,6 +135,7 @@ type InFlight = {
 export function createEnricher({
   engine,
   run: runFn = run,
+  locate = findYtdlp,
   jsRuntime = process.execPath,
   clock = monotonicClock,
   sleep = defaultSleep,
@@ -334,7 +340,7 @@ export function createEnricher({
       const scope = signal ? AbortSignal.any([signal, failure.signal]) : failure.signal
       let located: Promise<string> | undefined
       const bin = () => {
-        located ??= findYtdlp(engine)
+        located ??= locate(engine)
         return located
       }
 

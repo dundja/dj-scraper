@@ -1,11 +1,17 @@
 import type { EntryRef, ErrorInfo, Platform, Track, ValidUrl } from '@dj-scraper/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { EngineEnv } from '../engine/binaries.ts'
 import { type RunOptions, type RunResult, type run, SpawnError } from '../engine/run.ts'
 import { entryArgs } from '../engine/ytdlp-args.ts'
 import { mapYtdlpError } from '../engine/ytdlp-errors.ts'
 import { InfoParseError, normalizeEntry } from '../engine/ytdlp-parse.ts'
 import { ApiError } from '../http/errors.ts'
-import { createEnricher, type Pacing, SOUNDCLOUD_LOOKUP_BUDGET } from './enricher.ts'
+import {
+  createEnricher,
+  type EnricherDeps,
+  type Pacing,
+  SOUNDCLOUD_LOOKUP_BUDGET,
+} from './enricher.ts'
 
 // The parser and the error mapper have their own fixture tests; here they are stand-ins.
 vi.mock('../engine/ytdlp-parse.ts', async (importOriginal) => ({
@@ -15,9 +21,13 @@ vi.mock('../engine/ytdlp-parse.ts', async (importOriginal) => ({
 }))
 vi.mock('../engine/ytdlp-errors.ts', () => ({ mapYtdlpError: vi.fn() }))
 
-/** Any existing executable: the fake run never starts it. */
+/** Any existing executable, for the tests on the real locator: the fake run never starts it. */
 const ENGINE = { YTDLP_PATH: process.execPath }
+/** What the fake locator finds. */
+const YTDLP = '/opt/homebrew/bin/yt-dlp'
 const NODE = '/opt/homebrew/bin/node'
+
+type Locate = NonNullable<EnricherDeps['locate']>
 
 const sc = (id: string): EntryRef => ({
   platform: 'soundcloud',
@@ -115,12 +125,18 @@ function fakeTime() {
 function setup({
   respond = ok as Responder,
   engine = ENGINE,
+  realLocator = false,
   pacing,
   cacheTtlMs,
   cacheMax,
 }: {
   respond?: Responder
-  engine?: { YTDLP_PATH?: string; PATH?: string }
+  engine?: EngineEnv
+  /**
+   * Use the default locator (findYtdlp), whose file checks finish at any point of the fake time.
+   * Only for one request at a time: its rows all wait for the same lookup, so none jumps the queue.
+   */
+  realLocator?: boolean
   pacing?: Pacing
   cacheTtlMs?: number
   cacheMax?: number
@@ -132,10 +148,15 @@ function setup({
     starts.push({ url, at: time.now })
     return respond(url, options)
   })
+  // Already settled when it returns, so a request's rows join the pacing queue within the
+  // microtasks of its enrich() call: concurrent requests queue in call order, before the fake
+  // clock can move.
+  const locate = vi.fn<Locate>(async () => YTDLP)
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
   const enricher = createEnricher({
     engine,
     run: runFn,
+    ...(realLocator ? {} : { locate }),
     jsRuntime: NODE,
     clock,
     sleep,
@@ -145,7 +166,7 @@ function setup({
     ...(cacheMax === undefined ? {} : { cacheMax }),
   })
   const enrich = (entries: EntryRef[], signal?: AbortSignal) => enricher.enrich({ entries }, signal)
-  return { enrich, run: runFn, starts, time, log }
+  return { enrich, run: runFn, locate, starts, time, log }
 }
 
 /** Results reduced to `id → ok | code`, in order. */
@@ -192,7 +213,7 @@ afterEach(() => {
 
 describe('enricher.enrich', () => {
   it('looks up each row in full and returns its Track, keyed by the request platform + id', async () => {
-    const { enrich, run } = setup()
+    const { enrich, run, locate } = setup()
     const response = await enrich([sc('1001')])
 
     expect(response).toStrictEqual({
@@ -211,8 +232,9 @@ describe('enricher.enrich', () => {
         },
       ],
     })
+    expect(locate).toHaveBeenCalledExactlyOnceWith(ENGINE)
     const [bin, argv, options] = run.mock.calls[0] ?? []
-    expect(bin).toBe(process.execPath)
+    expect(bin).toBe(YTDLP)
     expect(argv).toEqual(
       entryArgs({ url: 'https://api.soundcloud.com/tracks/1001', jsRuntime: NODE }),
     )
@@ -301,12 +323,29 @@ describe('enricher.enrich', () => {
 
   describe('engine', () => {
     it('fails the whole request with engine_missing when yt-dlp is not found', async () => {
-      const { enrich, run } = setup({ engine: { YTDLP_PATH: '/nonexistent/yt-dlp' } })
+      const { enrich, run } = setup({
+        engine: { YTDLP_PATH: '/nonexistent/yt-dlp' },
+        realLocator: true,
+      })
       expect(await apiError(enrich([sc('1'), sc('2')]))).toEqual({
         code: 'engine_missing',
         message: 'YTDLP_PATH: /nonexistent/yt-dlp does not exist.',
       })
       expect(run).not.toHaveBeenCalled()
+    })
+
+    it('finds yt-dlp with findYtdlp by default, in the engine as it is at request time', async () => {
+      const engine = { YTDLP_PATH: process.execPath }
+      const { enrich, run } = setup({ engine, realLocator: true })
+      await enrich([sc('1')])
+      expect(run.mock.calls[0]?.[0]).toBe(process.execPath)
+
+      engine.YTDLP_PATH = '/nonexistent/yt-dlp'
+      expect(await apiError(enrich([sc('2')]))).toEqual({
+        code: 'engine_missing',
+        message: 'YTDLP_PATH: /nonexistent/yt-dlp does not exist.',
+      })
+      expect(run).toHaveBeenCalledOnce()
     })
 
     it('fails the whole request with engine_missing when yt-dlp cannot start', async () => {
@@ -318,12 +357,11 @@ describe('enricher.enrich', () => {
       expect(await apiError(enrich([sc('1'), sc('2')]))).toMatchObject({ code: 'engine_missing' })
     })
 
-    it('finds yt-dlp per request, and needs none when every row is cached or refused', async () => {
-      const engine = { YTDLP_PATH: process.execPath }
-      const { enrich, run } = setup({ engine })
-      await enrich([sc('1')])
+    it('finds yt-dlp once per request, and not at all when every row is cached or refused', async () => {
+      const { enrich, run, locate } = setup()
+      await enrich([sc('1'), sc('2')])
+      expect(locate).toHaveBeenCalledExactlyOnceWith(ENGINE)
 
-      engine.YTDLP_PATH = '/nonexistent/yt-dlp'
       const response = await enrich([
         sc('1'),
         { platform: 'soundcloud', id: 'x', url: 'https://open.spotify.com/track/1' },
@@ -332,8 +370,15 @@ describe('enricher.enrich', () => {
         ['1', 'ok'],
         ['x', 'unsupported_url'],
       ])
-      expect(await apiError(enrich([sc('2')]))).toMatchObject({ code: 'engine_missing' })
-      expect(run).toHaveBeenCalledOnce()
+      expect(locate).toHaveBeenCalledOnce()
+
+      // Never remembered across requests: a yt-dlp gone since fails the next request, and one
+      // installed since serves the request after it without a restart.
+      locate.mockRejectedValueOnce(new ApiError('engine_missing', 'yt-dlp is not on PATH.'))
+      expect(await apiError(enrich([sc('3')]))).toMatchObject({ code: 'engine_missing' })
+      expect(outcome(await enrich([sc('3')]))).toEqual([['3', 'ok']])
+      expect(locate).toHaveBeenCalledTimes(3)
+      expect(run).toHaveBeenCalledTimes(3)
     })
   })
 
@@ -752,7 +797,13 @@ describe('enricher.enrich', () => {
       try {
         const runFn = vi.fn<typeof run>(async () => rateLimited())
         const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
-        const enricher = createEnricher({ engine: ENGINE, run: runFn, jsRuntime: NODE, log })
+        const enricher = createEnricher({
+          engine: ENGINE,
+          run: runFn,
+          locate: async () => YTDLP,
+          jsRuntime: NODE,
+          log,
+        })
         await enricher.enrich({ entries: [sc('1')] })
         vi.setSystemTime(Date.now() + 60 * 60_000)
         const next = await enricher.enrich({ entries: [sc('2')] })

@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import {
   ApiErrorBodySchema,
   type EntryRef,
@@ -9,7 +12,7 @@ import {
   type ResolveResult,
   ResolveResultSchema,
 } from '@dj-scraper/shared'
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createApp } from '../app.ts'
 import { ApiError, ERROR_STATUS } from '../http/errors.ts'
 import type { Enricher } from '../resolve/enricher.ts'
@@ -60,14 +63,17 @@ const ENRICHED: ResolveEntriesResponse = {
 function setup({
   resolve = async () => RESOLVED,
   enrich = async () => ENRICHED,
+  webRoot,
 }: {
   resolve?: Resolver['resolve']
   enrich?: Enricher['enrich']
+  /** A built UI to serve, as in production (pnpm start). Default none, as with --dev. */
+  webRoot?: string
 } = {}) {
   const resolver = { resolve: vi.fn<Resolver['resolve']>(resolve) }
   const enricher = { enrich: vi.fn<Enricher['enrich']>(enrich) }
   const stubHealth = { current: async () => health, recheck: async () => health }
-  const app = createApp({ port: PORT, health: stubHealth, resolver, enricher })
+  const app = createApp({ port: PORT, health: stubHealth, resolver, enricher, webRoot })
   return { app, resolver, enricher }
 }
 
@@ -250,4 +256,59 @@ describe('POST /api/resolve/entries', () => {
       message: 'yt-dlp is not on PATH.',
     })
   })
+})
+
+describe('with the built UI served (production)', () => {
+  const INDEX = '<!doctype html><html><head><title>DJ Scraper</title></head><body></body></html>\n'
+  let dist = ''
+  beforeAll(async () => {
+    dist = await mkdtemp(path.join(tmpdir(), 'dj-scraper-resolve-dist-'))
+    await writeFile(path.join(dist, 'index.html'), INDEX)
+  })
+  afterAll(async () => {
+    await rm(dist, { recursive: true, force: true })
+  })
+
+  it('routes POST /api/resolve to the resolver', async () => {
+    const { app, resolver, enricher } = setup({ webRoot: dist })
+    const res = await send(app, '/api/resolve', postJson({ url: VIDEO_URL }))
+    expect(res.status).toBe(200)
+    expect(ResolveResultSchema.parse(await res.json())).toStrictEqual(RESOLVED)
+    expect(resolver.resolve).toHaveBeenCalledExactlyOnceWith(
+      { url: VIDEO_URL, mode: 'auto' },
+      expect.any(AbortSignal),
+    )
+    expect(enricher.enrich).not.toHaveBeenCalled()
+  })
+
+  it('routes POST /api/resolve/entries to the enricher', async () => {
+    const { app, resolver, enricher } = setup({ webRoot: dist })
+    const res = await send(app, '/api/resolve/entries', postJson({ entries: [ENTRY] }))
+    expect(res.status).toBe(200)
+    expect(ResolveEntriesResponseSchema.parse(await res.json())).toStrictEqual(ENRICHED)
+    expect(enricher.enrich).toHaveBeenCalledExactlyOnceWith(
+      { entries: [ENTRY] },
+      expect.any(AbortSignal),
+    )
+    expect(resolver.resolve).not.toHaveBeenCalled()
+  })
+
+  it.each(['/api/resolve', '/api/resolve/entries'])(
+    'answers GET %s with 404 not_found JSON, not index.html',
+    async (target) => {
+      const { app, resolver, enricher } = setup({ webRoot: dist })
+      // The same app serves the UI, so the SPA fallback is live and could have answered.
+      const page = await send(app, '/')
+      expect(page.status).toBe(200)
+      expect(await page.text()).toBe(INDEX)
+
+      expect(await errorOf(await send(app, target))).toEqual({
+        status: 404,
+        code: 'not_found',
+        message: 'Not found',
+      })
+      expect(resolver.resolve).not.toHaveBeenCalled()
+      expect(enricher.enrich).not.toHaveBeenCalled()
+    },
+  )
 })

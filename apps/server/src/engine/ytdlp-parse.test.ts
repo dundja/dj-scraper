@@ -17,6 +17,15 @@ const fixturesDir = path.resolve(import.meta.dirname, '../../test/fixtures')
 const fixture = (name: string): unknown =>
   JSON.parse(readFileSync(path.join(fixturesDir, name), 'utf8'))
 
+/** A fixture's top-level object, to vary a field of a recorded document. */
+function fixtureObject(name: string): Record<string, unknown> {
+  const value = fixture(name)
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${name} is not a JSON object`)
+  }
+  return { ...value }
+}
+
 /** The URL each success fixture was recorded from (see the fixture READMEs). */
 const RECORDED_URLS: Record<string, string> = {
   'youtube/album-olak.json':
@@ -403,7 +412,7 @@ describe('normalizeInfo: YouTube collections', () => {
     })
   })
 
-  it('lists a YouTube Music album without a top-level owner', () => {
+  it('lists a YouTube Music album, naming its artist after the rows’ shared Topic channel', () => {
     const album = collectionFixture('youtube/album.json')
     expect({ ...album, entries: album.entries.slice(0, 1) }).toStrictEqual({
       id: 'OLAK5uy_l1m0thk3g31NmIIz_vMIbWtyv7eZixlH0',
@@ -411,6 +420,8 @@ describe('normalizeInfo: YouTube collections', () => {
       url: 'https://www.youtube.com/playlist?list=OLAK5uy_l1m0thk3g31NmIIz_vMIbWtyv7eZixlH0',
       kind: 'album',
       title: 'Album - Royalty Free Music Library V2 (50 Songs)',
+      // yt-dlp's top-level uploader is null; all 50 rows are "Royalty Free Music Crew - Topic".
+      owner: 'Royalty Free Music Crew',
       thumbnailUrl:
         'https://i9.ytimg.com/s_p/OLAK5uy_l1m0thk3g31NmIIz_vMIbWtyv7eZixlH0/maxresdefault.jpg',
       trackCount: 50,
@@ -430,6 +441,9 @@ describe('normalizeInfo: YouTube collections', () => {
       ],
     })
     expect(album.entries).toHaveLength(50)
+    expect(
+      album.entries.every((entry) => entry.uploader === 'Royalty Free Music Crew - Topic'),
+    ).toBe(true)
   })
 
   it('lists the same album through its OLAK playlist URL with www row links', () => {
@@ -561,7 +575,8 @@ describe('normalizeInfo: SoundCloud collections', () => {
       id: '2284613',
       platform: 'soundcloud',
       url: 'https://soundcloud.com/the-concept-band/sets/the-royal-concept-ep',
-      kind: 'set',
+      // SoundCloud labels this set an EP (album_type "ep"): a release, so an album.
+      kind: 'album',
       title: 'The Royal Concept EP',
       owner: 'The Royal Concept',
       thumbnailUrl: 'https://i1.sndcdn.com/artworks-000030896212-o16m9v-original.jpg',
@@ -581,15 +596,20 @@ describe('normalizeInfo: SoundCloud collections', () => {
   it('keeps a capped set’s full track count and duration', () => {
     // Recorded with -I 1:3, as a cap of 2 would request it.
     const capped = collectionFixture('soundcloud/set-capped.json', 2)
-    expect(capped).toMatchObject({ truncated: true, trackCount: 6, durationSec: 1398.595 })
+    expect(capped).toMatchObject({
+      kind: 'album',
+      truncated: true,
+      trackCount: 6,
+      durationSec: 1398.595,
+    })
     expect(ids(capped)).toEqual(['75206121', '47127625'])
   })
 
-  it('lists an album set, its later rows as API URLs', () => {
+  it('lists an album set as an album, its later rows as API URLs', () => {
     const album = collectionFixture('soundcloud/album-set.json')
     expect(album).toMatchObject({
       id: '1524158182',
-      kind: 'set',
+      kind: 'album',
       title: 'out of spite',
       owner: 'Levi Ryan',
       trackCount: 8,
@@ -609,11 +629,14 @@ describe('normalizeInfo: SoundCloud collections', () => {
     expect(album.entries.every((entry) => entry.partial && entry.title === undefined)).toBe(true)
   })
 
-  it('infers a set from the resolved URL behind a short link', () => {
+  it('infers a set from the resolved URL behind a short link, then labels it by its type', () => {
     const input = classified('https://on.soundcloud.com/abc123')
-    expect(collectionFixture('soundcloud/album-set.json', MAX_COLLECTION_ENTRIES, input).kind).toBe(
-      'set',
-    )
+    expect(input.collectionKind).toBeUndefined()
+    const kindOf = (info: unknown) =>
+      collectionOf(normalizeInfo(info, { input, limit: MAX_COLLECTION_ENTRIES })).kind
+    const albumSet = fixtureObject('soundcloud/album-set.json')
+    expect(kindOf(albumSet)).toBe('album')
+    expect(kindOf({ ...albumSet, album_type: 'playlist' })).toBe('set')
   })
 
   it('skips the sets on a user page, counts them, and keeps titled partial rows', () => {
@@ -624,7 +647,9 @@ describe('normalizeInfo: SoundCloud collections', () => {
       platform: 'soundcloud',
       url: 'https://soundcloud.com/the-concept-band',
       kind: 'channel',
+      // yt-dlp's own title, kept; the owner is its username part (the page has no uploader).
       title: 'The Royal Concept (All)',
+      owner: 'The Royal Concept',
       truncated: true,
       skippedEntries: 1,
       entries: [],
@@ -670,12 +695,22 @@ describe('normalizeInfo: SoundCloud collections', () => {
 
   it('skips every row of a sets tab', () => {
     const sets = collectionFixture('soundcloud/user-sets.json')
-    expect(sets).toMatchObject({ kind: 'channel', skippedEntries: 4, entries: [] })
+    expect(sets).toMatchObject({
+      kind: 'channel',
+      title: 'The Royal Concept (Sets)',
+      owner: 'The Royal Concept',
+      skippedEntries: 4,
+      entries: [],
+    })
   })
 
   it('lists a tracks tab as partial rows', () => {
     const tracks = collectionFixture('soundcloud/user-tracks.json')
-    expect(tracks).toMatchObject({ kind: 'channel', title: 'The Royal Concept (Tracks)' })
+    expect(tracks).toMatchObject({
+      kind: 'channel',
+      title: 'The Royal Concept (Tracks)',
+      owner: 'The Royal Concept',
+    })
     expect(tracks.skippedEntries).toBeUndefined()
     expect(ids(tracks)).toEqual([
       '607075623',
@@ -690,7 +725,12 @@ describe('normalizeInfo: SoundCloud collections', () => {
 
   it('lists likes as their own kind', () => {
     const likes = collectionFixture('soundcloud/user-likes.json')
-    expect(likes).toMatchObject({ id: '229146182', kind: 'likes', title: 'Levi Ryan (Likes)' })
+    expect(likes).toMatchObject({
+      id: '229146182',
+      kind: 'likes',
+      title: 'Levi Ryan (Likes)',
+      owner: 'Levi Ryan',
+    })
     expect(likes.trackCount).toBeUndefined()
     expect(likes.entries[1]).toStrictEqual({
       id: '2063414124',
@@ -705,7 +745,12 @@ describe('normalizeInfo: SoundCloud collections', () => {
 
   it('counts the rows of a user list that ran out under the cap', () => {
     const reposts = collectionFixture('soundcloud/user-reposts.json')
-    expect(reposts).toMatchObject({ trackCount: 3, truncated: false })
+    expect(reposts).toMatchObject({
+      title: 'The Royal Concept (Reposts)',
+      owner: 'The Royal Concept',
+      trackCount: 3,
+      truncated: false,
+    })
     expect(reposts.entries[1]).toMatchObject({ artist: 'MRTN Feat. Deer', title: 'Illusion' })
   })
 })
@@ -1299,8 +1344,211 @@ describe('tolerance: collections', () => {
         'set',
       ],
       ['another site', { extractor_key: 'Bandcamp', id: 'OLAK5uy_abc' }, 'playlist'],
+      [
+        'a SoundcloudSet labelled an EP',
+        { extractor_key: 'SoundcloudSet', id: '1', album_type: 'ep' },
+        'album',
+      ],
+      [
+        'a SoundcloudSet labelled a playlist',
+        { extractor_key: 'SoundcloudSet', id: '1', album_type: 'playlist' },
+        'set',
+      ],
     ])('reads %s', (_label, fields, kind) => {
       expect(inferred(fields)).toBe(kind)
+    })
+  })
+
+  describe('SoundCloud release kinds', () => {
+    const setUrl = 'https://soundcloud.com/someone/sets/name'
+    const setInput = classified(setUrl)
+    const setListing = (fields: Record<string, unknown>) =>
+      listing([], { extractor_key: 'SoundcloudSet', id: '1', webpage_url: setUrl, ...fields })
+
+    it.each([
+      ['album', 'album'],
+      ['ep', 'album'],
+      ['single', 'album'],
+      ['compilation', 'album'],
+      ['EP', 'album'],
+      ['Compilation', 'album'],
+      ['  Single  ', 'album'],
+      ['playlist', 'set'],
+      ['Playlist', 'set'],
+      ['', 'set'],
+      ['mixtape', 'set'],
+      ['albums', 'set'],
+      [null, 'set'],
+      [7, 'set'],
+    ])('reads a set with album_type %j as a %s, over the input’s kind', (albumType, kind) => {
+      expect(setInput.collectionKind).toBe('set')
+      expect(collection(setListing({ album_type: albumType }), { input: setInput }).kind).toBe(kind)
+    })
+
+    it('keeps a set without album_type a set', () => {
+      expect(collection(setListing({}), { input: setInput }).kind).toBe('set')
+    })
+
+    it('reads the label of an API playlist URL too', () => {
+      const apiInput = classified('https://api-v2.soundcloud.com/playlists/123')
+      const apiListing = setListing({ extractor_key: 'SoundcloudPlaylist', album_type: 'album' })
+      expect(collection(apiListing, { input: apiInput }).kind).toBe('album')
+    })
+
+    it.each([
+      [
+        'a SoundCloud user page',
+        'https://soundcloud.com/someone/tracks',
+        'SoundcloudUser',
+        'channel',
+      ],
+      ['SoundCloud likes', 'https://soundcloud.com/someone/likes', 'SoundcloudUser', 'likes'],
+      [
+        'a YouTube playlist',
+        'https://www.youtube.com/playlist?list=PLtest',
+        'YoutubeTab',
+        'playlist',
+      ],
+      [
+        'a YouTube mix',
+        'https://www.youtube.com/watch?v=abcdefghijk&list=RDabcdefghijk',
+        'YoutubeTab',
+        'mix',
+      ],
+      // Only SoundCloud's own label counts: here another extractor answered a set URL.
+      [
+        'a set listed by another site',
+        'https://soundcloud.com/someone/sets/name',
+        'Generic',
+        'set',
+      ],
+    ])('leaves the kind of %s alone, whatever its album_type', (_label, url, key, kind) => {
+      const info = listing([], { extractor_key: key, webpage_url: url, album_type: 'album' })
+      expect(collection(info, { input: classified(url) }).kind).toBe(kind)
+    })
+  })
+
+  describe('derived owners', () => {
+    describe('SoundCloud user pages', () => {
+      const pageUrl = 'https://soundcloud.com/someone/tracks'
+      const userPage = (title: unknown, fields: Record<string, unknown> = {}) =>
+        collection(
+          listing([], {
+            extractor_key: 'SoundcloudUser',
+            id: '9',
+            webpage_url: pageUrl,
+            title,
+            ...fields,
+          }),
+          { input: classified(pageUrl) },
+        )
+
+      it.each([
+        ['The Royal Concept (All)', 'The Royal Concept'],
+        ['Levi Ryan (Likes)', 'Levi Ryan'],
+        ['DJ (Live) (Tracks)', 'DJ (Live)'],
+        ['Artist - Name (Reposts)', 'Artist - Name'],
+        ['Name (Popular-tracks)', 'Name'],
+        ['Name (Spotlight)', 'Name'],
+        ['Name  (Albums)', 'Name'],
+      ])('names the user of %j %j and keeps the title', (title, owner) => {
+        expect(userPage(title)).toMatchObject({ title, owner })
+      })
+
+      it.each([
+        ['no suffix', 'The Royal Concept'],
+        ['only a suffix', '(All)'],
+        ['a suffix that is not a word', 'Name (2024)'],
+        ['a suffix of several words', 'Name (Live set)'],
+        ['no space before the suffix', 'Name(All)'],
+        ['text after the suffix', 'Name (All) x'],
+        ['no title', null],
+      ])('names nobody for a title with %s', (_label, title) => {
+        expect(userPage(title).owner).toBeUndefined()
+      })
+
+      it('keeps the listed uploader or channel when there is one', () => {
+        expect(userPage('Name (All)', { uploader: 'Listed' }).owner).toBe('Listed')
+        expect(userPage('Name (All)', { channel: 'Channel' }).owner).toBe('Channel')
+      })
+
+      it('reads the title format only from the user-page extractor', () => {
+        // SoundcloudRelated titles a track's related lists "<track title> (Albums)".
+        const related = userPage('Sexapil - Pingers 5 (Albums)', {
+          extractor_key: 'SoundcloudRelated',
+        })
+        expect(related.owner).toBeUndefined()
+        const setUrl = 'https://soundcloud.com/someone/sets/live'
+        const set = collection(
+          listing([], {
+            extractor_key: 'SoundcloudSet',
+            id: '1',
+            webpage_url: setUrl,
+            title: 'Summer (Live)',
+          }),
+          { input: classified(setUrl) },
+        )
+        expect(set.owner).toBeUndefined()
+      })
+    })
+
+    describe('YouTube Music albums', () => {
+      const albumUrl = 'https://www.youtube.com/playlist?list=OLAK5uy_test'
+      const topicRow = (id: string, channel: string | null) =>
+        row(id, { uploader: channel, channel })
+      const ownerOf = (rows: unknown[], url = albumUrl, fields: Record<string, unknown> = {}) =>
+        collection(listing(rows, { id: 'OLAK5uy_test', webpage_url: url, ...fields }), {
+          input: classified(url),
+        }).owner
+
+      it('names the artist of an album whose rows share one Topic channel', () => {
+        const rows = [topicRow('a', 'Artist - Topic'), topicRow('b', 'Artist - Topic')]
+        expect(ownerOf(rows)).toBe('Artist')
+      })
+
+      it('ignores rows without a channel, such as deleted videos', () => {
+        const rows = [
+          topicRow('a', 'Artist - Topic'),
+          row('b', { title: '[Deleted video]', duration: null }),
+          topicRow('c', null),
+        ]
+        expect(ownerOf(rows)).toBe('Artist')
+      })
+
+      it('reads a row’s channel when it has no uploader', () => {
+        expect(ownerOf([row('a', { channel: 'Artist - Topic' })])).toBe('Artist')
+      })
+
+      it.each([
+        ['several Topic channels (a compilation)', ['Artist A - Topic', 'Artist B - Topic']],
+        ['a Topic channel and a regular one', ['Artist - Topic', 'Artist']],
+        ['one regular channel', ['Artist', 'Artist']],
+        ['a lowercase topic', ['Artist - topic']],
+        ['a Topic suffix alone', [' - Topic']],
+        ['no channels at all', [null, null]],
+      ])('names nobody for %s', (_label, channels) => {
+        expect(ownerOf(channels.map((channel, index) => topicRow(`r${index}`, channel)))).toBe(
+          undefined,
+        )
+      })
+
+      it('names nobody for an empty album', () => {
+        expect(ownerOf([])).toBeUndefined()
+      })
+
+      it('keeps the listed uploader when there is one', () => {
+        const rows = [topicRow('a', 'Artist - Topic')]
+        expect(ownerOf(rows, albumUrl, { uploader: 'Label' })).toBe('Label')
+      })
+
+      it.each([
+        ['a playlist', 'https://www.youtube.com/playlist?list=PLtest'],
+        ['a mix', 'https://www.youtube.com/watch?v=abcdefghijk&list=RDabcdefghijk'],
+        ['a channel tab', 'https://www.youtube.com/@someone/videos'],
+      ])('names nobody for %s of one Topic channel’s tracks', (_label, url) => {
+        const rows = [topicRow('a', 'Artist - Topic'), topicRow('b', 'Artist - Topic')]
+        expect(ownerOf(rows, url)).toBeUndefined()
+      })
     })
   })
 })

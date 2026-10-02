@@ -98,6 +98,7 @@ const InfoSchema = RowSchema.extend({
   format_id: Text,
   formats: lenient(z.array(lenient(FormatSchema))),
   playlist_count: lenient(z.int().nonnegative()),
+  album_type: Text,
   entries: lenient(z.array(z.unknown())),
 })
 type Info = z.output<typeof InfoSchema>
@@ -120,6 +121,22 @@ const PLACEHOLDER_THUMBNAILS = [
 ]
 /** SoundCloud's original file: only for a logged-in user, and only when the uploader allows it. */
 const SOUNDCLOUD_ORIGINAL_FORMAT = 'download'
+/**
+ * The set types SoundCloud labels as releases. yt-dlp copies a set's `set_type` to `album_type`,
+ * and an unlabelled set becomes `'playlist'`: `'album_type': ('set_type', {str}, {lambda x: x or
+ * 'playlist'})` in SoundcloudPlaylistBaseIE._extract_set (yt_dlp/extractor/soundcloud.py, 2026.08.19).
+ */
+const SOUNDCLOUD_RELEASE_TYPES = new Set(['album', 'ep', 'single', 'compilation'])
+/**
+ * A SoundCloud user page has no uploader, only a title: SoundcloudUserIE._real_extract names it
+ * `'{} ({})'.format(user['username'], resource.capitalize())`, where resource is all, tracks,
+ * albums, sets, reposts, likes, spotlight or comments (yt_dlp/extractor/soundcloud.py,
+ * 2026.08.19). Only the last group, anchored at the end and made of letters and hyphens, is
+ * stripped, so a username with parentheses of its own, like `DJ (Live) (Tracks)`, keeps them.
+ */
+const SOUNDCLOUD_USER_TITLE = /^(.+) \([A-Za-z]+(?:-[A-Za-z]+)*\)$/
+/** YouTube Music's auto-generated artist channels are named "<artist> - Topic". */
+const YOUTUBE_TOPIC_SUFFIX = ' - Topic'
 
 /** `yt-dlp -J --flat-playlist …` output → a track or a collection. Throws `InfoParseError`. */
 export function normalizeInfo(info: unknown, context: NormalizeContext): Normalized {
@@ -200,11 +217,11 @@ function toCollection(info: Info, { input, limit }: NormalizeContext): Collectio
   if (id === undefined) throw new InfoParseError('collection has no id')
   const platform = platformOf(info.extractor_key, input.platform)
   const kind = collectionKind(info, input, platform, id)
-  const owner = info.uploader ?? info.channel
+  const listedOwner = info.uploader ?? info.channel
   // A channel tab lists only that channel's uploads, but its flat rows don't name the channel.
   const rowContext: RowContext = {
     platform,
-    fallbackUploader: platform === 'youtube' && kind === 'channel' ? owner : undefined,
+    fallbackUploader: platform === 'youtube' && kind === 'channel' ? listedOwner : undefined,
   }
 
   const rows = info.entries ?? []
@@ -231,7 +248,7 @@ function toCollection(info: Info, { input, limit }: NormalizeContext): Collectio
     url: info.webpage_url ?? info.original_url ?? input.url,
     kind,
     title: info.title ?? id,
-    owner,
+    owner: listedOwner ?? derivedOwner(info, platform, kind, entries),
     thumbnailUrl: bestThumbnail(info),
     // yt-dlp reports the platform's count (YouTube playlists, SoundCloud sets), or the row count
     // when the listing ran out under the cap; null when capped. Rows that aren't tracks inflate it.
@@ -414,8 +431,8 @@ function compareRanks(a: number[], b: number[]): number {
 }
 
 /**
- * The classified input knows best (it is what the user pasted); otherwise the resolved URL, the
- * extractor and the list id tell.
+ * What the listing is, with the platform's own label winning: a SoundCloud set that SoundCloud
+ * calls an album, EP, single or compilation is an album, whatever URL it came from.
  */
 function collectionKind(
   info: Info,
@@ -423,6 +440,17 @@ function collectionKind(
   platform: Platform,
   id: string,
 ): CollectionKind {
+  const kind = listedKind(info, input, platform, id)
+  const albumType = info.album_type?.toLowerCase()
+  const isRelease = albumType !== undefined && SOUNDCLOUD_RELEASE_TYPES.has(albumType)
+  return platform === 'soundcloud' && kind === 'set' && isRelease ? 'album' : kind
+}
+
+/**
+ * The classified input knows best (it is what the user pasted); otherwise the resolved URL, the
+ * extractor and the list id tell.
+ */
+function listedKind(info: Info, input: ValidUrl, platform: Platform, id: string): CollectionKind {
   if (input.collectionKind !== undefined) return input.collectionKind
   for (const url of [info.webpage_url, info.original_url]) {
     if (url === undefined) continue
@@ -435,6 +463,42 @@ function collectionKind(
   // The same list-id rules classifyUrl applies to pasted URLs.
   if (platform === 'youtube') return isYoutubeChannelId(id) ? 'channel' : youtubeListKind(id)
   return 'playlist'
+}
+
+/**
+ * The owner of a listing yt-dlp gives no uploader or channel for: a SoundCloud user page's
+ * username, or the one artist behind a YouTube Music album. Anything less certain stays unknown.
+ */
+function derivedOwner(
+  info: Info,
+  platform: Platform,
+  kind: CollectionKind,
+  entries: readonly CollectionEntry[],
+): string | undefined {
+  if (platform === 'soundcloud' && info.extractor_key === 'SoundcloudUser') {
+    return nonEmpty(info.title?.match(SOUNDCLOUD_USER_TITLE)?.[1])
+  }
+  if (platform === 'youtube' && kind === 'album') return youtubeAlbumArtist(entries)
+  return undefined
+}
+
+/**
+ * A YouTube Music album has a null uploader, but its rows carry their artists' "<artist> - Topic"
+ * channels. One shared Topic channel names the album's artist; rows without a channel don't count.
+ * A compilation (several artists) or a regular channel names nobody.
+ */
+function youtubeAlbumArtist(entries: readonly CollectionEntry[]): string | undefined {
+  const uploaders = new Set(entries.flatMap(({ uploader }) => (uploader ? [uploader] : [])))
+  const [only] = uploaders
+  if (uploaders.size !== 1 || only === undefined || !only.endsWith(YOUTUBE_TOPIC_SUFFIX)) {
+    return undefined
+  }
+  return nonEmpty(only.slice(0, -YOUTUBE_TOPIC_SUFFIX.length))
+}
+
+function nonEmpty(text: string | undefined): string | undefined {
+  const trimmed = text?.trim()
+  return trimmed ? trimmed : undefined
 }
 
 /** Optional contract fields are omitted, not present with `undefined`. */

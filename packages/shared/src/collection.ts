@@ -3,7 +3,10 @@ import { PlatformSchema } from './platform.ts'
 import { TrackSchema } from './track.ts'
 import { HttpUrlSchema } from './url.ts'
 
-/** `channel` covers a YouTube channel tab and a SoundCloud user page (all, tracks, reposts). */
+/**
+ * `channel` covers a YouTube channel tab and a SoundCloud user page (all, tracks, reposts). `album`
+ * also covers SoundCloud sets the uploader labelled album, EP, single or compilation.
+ */
 export const CollectionKindSchema = z.enum([
   'playlist',
   'album',

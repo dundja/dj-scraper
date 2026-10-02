@@ -177,9 +177,11 @@ const SUCCESS: Record<
     url: 'https://music.youtube.com/browse/MPREb_gTAcphH99wE',
     check: (r) => {
       const c = asCollection(r)
+      // yt-dlp gives no uploader; the rows' one Topic channel names the album's artist.
       expect(c).toMatchObject({
         id: 'OLAK5uy_l1m0thk3g31NmIIz_vMIbWtyv7eZixlH0',
         kind: 'album',
+        owner: 'Royalty Free Music Crew',
         trackCount: 50,
         truncated: false,
       })
@@ -191,7 +193,7 @@ const SUCCESS: Record<
     url: 'https://www.youtube.com/playlist?list=OLAK5uy_l1m0thk3g31NmIIz_vMIbWtyv7eZixlH0',
     check: (r) => {
       const c = asCollection(r)
-      expect(c).toMatchObject({ kind: 'album', trackCount: 50 })
+      expect(c).toMatchObject({ kind: 'album', owner: 'Royalty Free Music Crew', trackCount: 50 })
       expect(c.entries).toHaveLength(50)
     },
   },
@@ -211,6 +213,8 @@ const SUCCESS: Record<
       const c = asCollection(r)
       expect(c).toMatchObject({ id: 'RDdQw4w9WgXcQ', kind: 'mix', truncated: true })
       expect(c.trackCount).toBeUndefined()
+      // Many artists' channels: a mix names no owner.
+      expect(c.owner).toBeUndefined()
       expect(c.entries).toHaveLength(MAX_MIX_ENTRIES)
       expect(c.entries[0]?.id).toBe('dQw4w9WgXcQ')
     },
@@ -297,10 +301,11 @@ const SUCCESS: Record<
     url: 'https://soundcloud.com/the-concept-band/sets/the-royal-concept-ep',
     check: (r) => {
       const c = asCollection(r)
+      // SoundCloud labels the set an EP (album_type "ep").
       expect(c).toMatchObject({
         id: '2284613',
         platform: 'soundcloud',
-        kind: 'set',
+        kind: 'album',
         owner: 'The Royal Concept',
         trackCount: 6,
         durationSec: 1398.595,
@@ -314,7 +319,12 @@ const SUCCESS: Record<
     url: 'https://soundcloud.com/leviryan/sets/out-of-spite',
     check: (r) => {
       const c = asCollection(r)
-      expect(c).toMatchObject({ kind: 'set', trackCount: 8, durationSec: 1531.376 })
+      expect(c).toMatchObject({
+        kind: 'album',
+        owner: 'Levi Ryan',
+        trackCount: 8,
+        durationSec: 1531.376,
+      })
       expect(c.entries).toHaveLength(8)
     },
   },
@@ -322,7 +332,12 @@ const SUCCESS: Record<
     url: 'https://soundcloud.com/the-concept-band',
     check: (r) => {
       const c = asCollection(r)
-      expect(c).toMatchObject({ kind: 'channel', title: 'The Royal Concept (All)' })
+      // The page has no uploader: the owner is the username in yt-dlp's title, which stays whole.
+      expect(c).toMatchObject({
+        kind: 'channel',
+        title: 'The Royal Concept (All)',
+        owner: 'The Royal Concept',
+      })
       expect(c.skippedEntries).toBe(1)
       expect(c.entries).toHaveLength(11)
       expect(c.entries.some((entry) => entry.url.includes('/sets/'))).toBe(false)
@@ -332,7 +347,11 @@ const SUCCESS: Record<
     url: 'https://soundcloud.com/the-concept-band/tracks',
     check: (r) => {
       const c = asCollection(r)
-      expect(c.kind).toBe('channel')
+      expect(c).toMatchObject({
+        kind: 'channel',
+        title: 'The Royal Concept (Tracks)',
+        owner: 'The Royal Concept',
+      })
       expect(c.entries).toHaveLength(6)
       expect(c.skippedEntries).toBeUndefined()
     },
@@ -341,20 +360,25 @@ const SUCCESS: Record<
     url: 'https://soundcloud.com/leviryan/likes',
     check: (r) => {
       const c = asCollection(r)
-      expect(c).toMatchObject({ kind: 'likes', title: 'Levi Ryan (Likes)' })
+      expect(c).toMatchObject({ kind: 'likes', title: 'Levi Ryan (Likes)', owner: 'Levi Ryan' })
       expect(c.entries).toHaveLength(6)
     },
   },
   'soundcloud/user-sets.json': {
     url: 'https://soundcloud.com/the-concept-band/sets',
     check: (r) =>
-      expect(asCollection(r)).toMatchObject({ kind: 'channel', entries: [], skippedEntries: 4 }),
+      expect(asCollection(r)).toMatchObject({
+        kind: 'channel',
+        owner: 'The Royal Concept',
+        entries: [],
+        skippedEntries: 4,
+      }),
   },
   'soundcloud/user-reposts.json': {
     url: 'https://soundcloud.com/the-concept-band/reposts',
     check: (r) => {
       const c = asCollection(r)
-      expect(c).toMatchObject({ kind: 'channel', trackCount: 3 })
+      expect(c).toMatchObject({ kind: 'channel', owner: 'The Royal Concept', trackCount: 3 })
       expect(c.entries).toHaveLength(3)
     },
   },

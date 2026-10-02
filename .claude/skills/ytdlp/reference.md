@@ -50,7 +50,7 @@ SoundCloud, without login (2026 logs, #17651 and #14216):
 
 | format_id | Codec / bitrate |
 |---|---|
-| `http_mp3_1_0`, `hls_mp3_1_0` | MP3 128 kbps |
+| `http_mp3_0_0`, `hls_mp3_0_0` | MP3 128 kbps (the numeric suffix varies; match the prefix) |
 | `hls_aac_96k` | AAC 96 kbps |
 | `hls_aac_160k` | AAC 160 kbps (best without login) |
 | `hls_opus_0_0` | Opus 64 kbps |

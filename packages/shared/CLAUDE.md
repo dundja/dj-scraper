@@ -1,6 +1,6 @@
 # packages/shared: the API contract
 
-Zod schemas and inferred types shared by `apps/web` and `apps/server`, plus small pure helpers and constants both sides need: `healthProblems` (engine problems in words), `allowedByFetchMetadata` (the guard's cross-site rule, also used by the Vite dev server), the engine minimums in `engine.ts`, and later `classifyUrl` and duration formatting. Every request, response and SSE event shape is defined here and nowhere else.
+Zod schemas and inferred types shared by `apps/web` and `apps/server`, plus small pure helpers and constants both sides need: `healthProblems` (engine problems in words), `allowedByFetchMetadata` (the guard's cross-site rule, also used by the Vite dev server), `SECURITY_HEADERS` (sent by the server and the Vite dev server), `PortSchema` and `loopbackHosts`, the engine minimums in `engine.ts`, and later `classifyUrl` and duration formatting. Every request, response and SSE event shape is defined here and nowhere else.
 
 ## Rules
 - The only runtime dependency is `zod`. No Node or DOM APIs: this code runs in the browser and on the server.

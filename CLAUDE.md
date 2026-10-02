@@ -2,7 +2,7 @@
 
 A local web app for DJs. Paste a YouTube or SoundCloud link (track or playlist), review the metadata, pick tracks, and download them as DJ-ready audio files into a folder you choose. It runs only on this machine: a Vite/React UI at localhost plus a Node server that drives yt-dlp and ffmpeg.
 
-**Status:** scaffolding (roadmap Phase 0). The root workspace, `packages/shared`, `apps/server` (health, guard, engine spawn wrapper) and `apps/web` (dark shell with live engine status) exist, and `pnpm dev` runs both apps. Still to come: `pnpm start` serving the built UI, and Playwright. The current phase and next items are in `docs/roadmap.md`.
+**Status:** Phase 0 (scaffold) is done: `packages/shared` (the contract), `apps/server` (guard, engine health, spawn wrapper, serving the built UI) and `apps/web` (dark shell with live engine status), with `pnpm dev`, `pnpm start` and Vitest/Playwright tests. Next is roadmap Phase 1 (engine & resolve). The current phase and next items are in `docs/roadmap.md`.
 
 ## Where things are explained
 | Need | Read |
@@ -28,11 +28,12 @@ These scripts are created in roadmap Phase 0. Keep this list true.
 ```
 pnpm dev          # web on :5173 (proxies /api) + server on :4747
 pnpm build        # build all packages
-pnpm start        # production: server serves the built UI on :4747 (serving the UI is not built yet)
+pnpm start        # production: builds the UI, then the server serves it on :4747 and opens the browser
 pnpm check        # Biome lint + format check (check:fix applies fixes)
 pnpm typecheck    # tsc across the workspace
 pnpm test         # Vitest unit + integration, no network
-pnpm test:e2e     # Playwright against the fake engine (not set up yet)
+pnpm test:e2e     # build the UI + Playwright (Chromium, WebKit) against the fake engine, port 4849
+pnpm test:e2e:install # download the Playwright browsers once (network)
 pnpm smoke '<url>' # live resolve against real YouTube/SoundCloud (network)
 ```
 To scope a script to one package: `pnpm --filter @dj-scraper/<web|server|shared> <script>`. Biome is scoped by path instead: `pnpm check apps/web`.

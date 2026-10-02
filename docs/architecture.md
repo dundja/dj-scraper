@@ -26,20 +26,25 @@ Filesystem: <target folder>/<Artist - Title>.<ext>
 | Mode | Command | What runs |
 |---|---|---|
 | dev | `pnpm dev` | Vite on `localhost:5173` (HMR), proxying `/api` to the server on `127.0.0.1:4747` (`node --watch src/index.ts --dev`) |
-| prod | `pnpm start` | the server on `127.0.0.1:4747` (`node src/index.ts`), serving the built SPA and `/api`; opens the browser |
+| prod | `pnpm start` | `pnpm build` (the web app), then the server on `127.0.0.1:4747` (`node src/index.ts --open`), serving the built SPA and `/api`, and opening it in the default browser |
 
 The server runs its TypeScript source directly on Node, with no build step (ADR-009). Config comes from env, validated with Zod at boot (`config.ts`):
 - `PORT`: default 4747, allowed 1024–65535. Browsers drop default ports such as 80 from `Host`, which the guard would then reject. The rule is `PortSchema` in `packages/shared`, and the Vite proxy reads `PORT` with it too, so `PORT=… pnpm dev` moves both ends.
 - `YTDLP_PATH`: an absolute path to the yt-dlp binary.
 - `FFMPEG_PATH`: an absolute path to the ffmpeg binary, or to a directory holding ffmpeg and ffprobe, as with `--ffmpeg-location`.
+- `DJS_WEB_DIST`: an absolute path to the built UI. The default is `apps/web/dist`, found from the server's source location rather than the cwd (ADR-009). Tests and the e2e server set it.
 - `DJS_DATA_DIR` (planned), which overrides the app data dir (tests use it).
-- An empty variable counts as unset. The `--dev` flag (set by `pnpm dev`) also trusts the Vite dev server on port 5173 (see Security model).
+- An empty variable counts as unset.
+- Flags:
+  - `--dev` (set by `pnpm dev`) also trusts the Vite dev server on port 5173 (see Security model). The server then serves no UI, because Vite does.
+  - `--open` (set by `pnpm start`) opens `http://127.0.0.1:<port>/` once listening. On macOS that runs `/usr/bin/open <url>` through `engine/run.ts`; elsewhere it logs the URL. A failure only warns. It is ignored with `--dev`.
+- Outside `--dev`, a missing `index.html` in the web dist prints one warning at boot. The API keeps working, and pages answer 404 `not_found` saying to run `pnpm build`.
 
 ## Workspace & tooling
 The reasons are in ADR-007.
 - **Scripts.** Each root script delegates to the package scripts of the same name.
   - `dev`, `build`, `typecheck` and `test` run in every package that defines them (`pnpm -r --if-present run …`). `build` runs in dependency order.
-  - `start` and `smoke` run in `@dj-scraper/server`, and `test:e2e` runs in `@dj-scraper/web`. Each fails if its package doesn't exist.
+  - `start` first runs `pnpm build`, so it never serves a stale UI, then the server's `start` (`node src/index.ts --open`). `smoke` runs in `@dj-scraper/server`, and `test:e2e` runs in `@dj-scraper/web`. Each fails if its package doesn't exist.
   - Biome (`check`, `check:fix`) runs from the root with the root `biome.json`. Scope it by path, not with `--filter`: `pnpm check apps/web`.
   - Generated code isn't linted: `routeTree.gen.ts` is skipped entirely, and `apps/web/src/components/ui/` (shadcn/ui) is formatted but not linted. Tool-owned `.claude/settings.json` and `.mcp.json` are skipped.
 - **pnpm.**
@@ -54,7 +59,11 @@ The reasons are in ADR-007.
   - no enums, namespaces or constructor parameter properties (`erasableSyntaxOnly`); use `as const` objects or `z.enum` instead
   - globals are opt-in per package: the server adds `types: ["node"]`, and the web adds `lib: ["es2024", "dom"]` and `types: ["vite/client"]`. `packages/shared` gets none, so Node and DOM globals, including `URL` and `console`, are type errors there. Declare the few WHATWG globals it needs in a local `.d.ts`.
 - **Web app (`apps/web`).**
-  - Two tsconfigs, both checked by `typecheck`: `tsconfig.json` for `src` (`module: preserve`, so bundler resolution, plus the `@/*` → `src/*` alias shadcn/ui expects) and `tsconfig.node.json` for the Node-side files (`vite.config.ts`, `vitest.config.ts`, `dev-guard.ts`). Our own imports keep the extension, also through the alias (`@/lib/api.ts`); generated shadcn/ui files don't.
+  - Three tsconfigs, all checked by `typecheck`:
+    - `tsconfig.json` for `src`: `module: preserve`, so bundler resolution, plus the `@/*` → `src/*` alias shadcn/ui expects.
+    - `tsconfig.node.json` for the Node-side files: the Vite and Vitest configs and the dev-server plugins.
+    - `tsconfig.e2e.json` for `playwright.config.ts` and `e2e/`: Node types plus the DOM lib, because `page.evaluate` callbacks run in the browser.
+  - Our own imports keep the extension, also through the alias (`@/lib/api.ts`). Generated shadcn/ui files don't.
   - TanStack Router's Vite plugin writes `src/routeTree.gen.ts` on `dev` and `build`. It is committed, because `tsc` needs it, and its temp dir `.tanstack/` is ignored.
   - Vitest has its own `vitest.config.ts` without the router and Tailwind plugins, so test runs never rewrite the route tree.
   - `pnpm build` makes one ~570 kB bundle (react-dom, zod, Base UI, TanStack). It loads from localhost, so there is no vendor splitting, and the chunk-size warning starts at 1 MB.
@@ -63,9 +72,12 @@ The reasons are in ADR-007.
 | Module | Responsibility |
 |---|---|
 | `index.ts` | boot, engine check at startup (logs shared `healthProblems`), graceful shutdown (cancel jobs, kill process groups) |
-| `config.ts` | env + `--dev` → `Config`, Zod-validated |
+| `config.ts` | env + `--dev`/`--open` → `Config`, Zod-validated |
+| `startup.ts` | after listening: the missing-UI warning and `--open` |
 | `server.ts` | `startServer`: `node:http` + Hono's request listener on `127.0.0.1`; listen errors reject; `close()` also drops open connections |
-| `app.ts` | Hono app: guard first, then routes, `notFound` and `onError` |
+| `app.ts` | Hono app, in this order: security headers, guard, `/api` routes, the built UI (not with `--dev`), `notFound` and `onError` |
+| `http/security-headers.ts` | anti-framing, `nosniff` and `no-referrer` headers on every response (see Security model) |
+| `routes/web.ts` | serves the built UI and the SPA fallback (see Security model) |
 | `http/guard.ts` | Host/Origin/Fetch-Metadata guard and JSON-only mutations; with `--dev` it also trusts the Vite port (see Security model) |
 | `http/errors.ts` | `ApiError`, the `ErrorCode` → HTTP status map, error and 404 handlers |
 | `routes/*` | thin HTTP layer: validate with shared schemas → call a service → respond |
@@ -86,6 +98,8 @@ The reasons are in ADR-007.
 |---|---|
 | `vite.config.ts` | dev server (port 5173, `strictPort`, `cors: false`, anti-framing headers, `/api` proxy keeping the browser's Host), router/React/Tailwind plugins |
 | `dev-guard.ts` | dev-server plugin: the guard's exact Host check and Fetch Metadata rule for every request Vite answers; `/__open-in-editor` only from the page itself |
+| `dev-exit.ts` | dev-server plugin: Ctrl-C (SIGINT) or SIGTERM closes Vite and exits 0, so `pnpm dev` ends cleanly (Vite alone dies by SIGINT and exits 143 on SIGTERM) |
+| `playwright.config.ts`, `e2e/` | Playwright e2e against `apps/server/test/e2e-server.ts` (see Testing) |
 | `src/main.tsx` | mounts the app: QueryClient, router with `{ queryClient }` context |
 | `src/routes/__root.tsx` | the shell: header (app name, engine status), `<Outlet/>`, not-found page |
 | `src/routes/index.tsx` | home: the paste flow (Phase 3); an empty state for now |
@@ -257,11 +271,18 @@ The server can spawn processes and write files, so other websites must not be ab
   - With `--dev` only, the Vite dev port is trusted too: `localhost:5173` and `127.0.0.1:5173` pass as Host and as origin (ADR-011).
 - **State-changing routes.** Every method except GET, HEAD and OPTIONS requires `Content-Type: application/json` (415 `invalid_request` otherwise), which forces a CORS preflight that we never approve. Bodyless mutations (cancel, retry) send the header too. Re-checking the engine is a POST for the same reason.
 - **No CORS headers**, ever, from the server or from Vite.
+- **Response headers.** Every response the app produces carries `SECURITY_HEADERS` from `packages/shared`: `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. That includes pages, assets, API answers, the guard's rejections and errors. The middleware runs before the guard, and the Vite dev server sends the same set.
+  - The only exceptions are the empty 400 and 431 that Node's HTTP parser or `@hono/node-server` send before the app runs: a malformed request line, an unparseable Host or URL, oversized headers.
+- **The built UI** (`routes/web.ts`, production only) is served behind the guard like everything else. It uses a small file server of our own (ADR-012):
+  - A path segment may name a file only if it matches `^[\w-][\w.-]*$`. That rules out dotfiles, `.` and `..`, empty segments, and anything still encoded or decoded into `%`, `\`, NUL or a space. Paths are at most 1024 characters.
+  - The file's `realpath` must lie inside the `realpath` of the dist dir, so a symlink can't lead out. Only regular files are served, never a directory listing.
+  - SPA fallback: a GET or HEAD outside `/api` whose last segment has no dot gets `index.html`. A missing file with an extension, and anything under `/api`, is 404 `not_found` JSON, never `index.html`.
+  - `Cache-Control`: `/assets/*` (Vite's content-hashed files) is `public, max-age=31536000, immutable`; `index.html` and the files from `public/` are `no-cache`. The dist dir is read per request, so a rebuild needs no restart.
 - **The Vite dev server** (`apps/web/vite.config.ts`) is attack surface too while `pnpm dev` runs (ADR-011):
   - `cors: false`. Otherwise Vite answers CORS requests and approves preflights from any localhost origin.
   - `strictPort: true`, because the server trusts exactly port 5173.
   - The `/api` proxy keeps the browser's Host (`changeOrigin: false`), so the guard's exact Host check sees `localhost:5173`. Vite's own host check is looser and is not a defense: it lets through a missing Host, any IP literal, `*.localhost`, `file:*`, `*-extension:*` and `localhost:<anything>`, and single-label names such as `file` resolve through the DHCP search domain, so they can be rebound. Never widen it either (no `allowedHosts`, `--host` or https).
-  - `server.headers` sends `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY`. In dev, Vite serves the page, so the guard's iframe refusal doesn't cover it, and a framed app could be clickjacked into a state-changing click.
+  - `server.headers` sends the server's `SECURITY_HEADERS`, including `frame-ancestors 'none'` and `X-Frame-Options: DENY`. In dev, Vite serves the page, so the guard's iframe refusal doesn't cover it, and a framed app could be clickjacked into a state-changing click.
   - `dev-guard.ts` applies the guard's rules to every request Vite answers, not just `/api`:
     - The exact Host check. Otherwise a rebinding page at `http://file:5173` could read the repo through `/@fs`, take the HMR token from `/@vite/client` and call `/__open-in-editor`, all same-origin.
     - The Fetch Metadata rule, so other sites and ports can't frame the app or load its modules.
@@ -306,9 +327,16 @@ App data dir: `~/Library/Application Support/DJ Scraper/` on macOS.
 |---|---|---|---|
 | Unit | Vitest | shared helpers and schemas, argv builders, parsers, error mapping, finalize naming/tagging logic, queue state machine, hooks/components | never |
 | Integration | Vitest | real server + `test/fake-yt-dlp.mjs` replaying fixtures: spawn, progress, cancel, errors, finalize | never |
-| E2E | Playwright | UI flows against the server + fake engine | never |
+| E2E | Playwright (Chromium, WebKit) | UI flows against the production server + fake engine (`apps/server/test/e2e-server.ts`) | never |
 | Smoke | `pnpm smoke '<url>'` | real yt-dlp against live YouTube/SoundCloud | yes, run by hand |
 
-Web tests (`apps/web`) run in jsdom with Testing Library. They fake `fetch` at the network edge (`src/test/fake-api.ts`) instead of mocking hooks, use a fresh QueryClient per test, and fail on any `console.error` or `console.warn` (React warnings included). Node-side files at the package root (`dev-guard.test.ts`, `vite-config.test.ts`) choose the node environment per file.
+E2E (`pnpm test:e2e` = `playwright test` in `apps/web`; `pnpm test:e2e:install` downloads Chromium's headless shell and WebKit once):
+- Playwright's `webServer` first builds the UI into its own `node_modules/.e2e-dist`, never `dist`, which `pnpm start` may be serving. It then runs `apps/server/test/e2e-server.ts` on that build, on port 4849, so e2e can run beside `pnpm dev` and `pnpm start`.
+- That script serves the freshly built UI in production mode with a healthy fake engine: a temp PATH of fake yt-dlp, ffmpeg and ffprobe (symlinks to `fake-tool.sh`), with node as the JS runtime. It keeps the server child in its own process group, so Playwright's signals reach it, and it removes its temp dir on exit.
+- Specs import `test` and `expect` from `e2e/fixtures.ts`, whose console guard fails a test on any console error, warning or page error.
+- They cover what jsdom can't: the focus ring actually drawing, the popover fitting a 420 px window, and reduced motion. WebKit stands in for Safari. Its Tab skips links, so keyboard tests use Option-Tab there.
+- The cached Firefox build is too old for Playwright 1.63, so Firefox isn't a project.
+
+Web tests (`apps/web`) run in jsdom with Testing Library. They fake `fetch` at the network edge (`src/test/fake-api.ts`) instead of mocking hooks, use a fresh QueryClient per test, and fail on any `console.error` or `console.warn` (React warnings included). Node-side files at the package root (`dev-guard.test.ts`, `dev-exit.test.ts`, `vite-config.test.ts`) choose the node environment per file.
 
 Fixtures live in `apps/server/test/fixtures/<platform>/` and `fixtures/engine/` (version probe output). Each is recorded from a real run, with the tool version and date noted in its directory's `README.md`. Fake engine binaries are checked in (`test/fake-tool.sh`) and symlinked per test: endpoint security scans each newly written executable on its first run.

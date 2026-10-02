@@ -12,7 +12,7 @@ Run these in order, and fix each failure before moving on:
 1. `pnpm check`: Biome lint and format (`pnpm check:fix` applies the safe fixes).
 2. `pnpm typecheck`
 3. `pnpm test`: unit and integration tests, no network.
-4. `pnpm test:e2e`, only if files under `apps/web` changed.
+4. `pnpm test:e2e`, unless only docs changed. It builds the UI and runs it against the real server (`apps/server/test/e2e-server.ts`), so changes in `apps/web`, `apps/server` or `packages/shared` can all break it. Always run the root script, even when scoped to server or shared: only `@dj-scraper/web` has it. If the browsers are missing, `pnpm test:e2e:install` downloads them (network, so run it by hand).
 
 Fix root causes. Don't silence anything (`@ts-ignore`, `biome-ignore`, `.skip`, loosened assertions) unless the user agrees. If a failure is unrelated to the current change, report it instead of fixing it.
 

@@ -6,8 +6,8 @@ Work top to bottom. Tick items (`- [x]`) as they land and add discovered work as
 Done when `pnpm dev` shows the app shell with live engine status, and `pnpm check && pnpm typecheck && pnpm test` pass.
 
 - [x] Root workspace: `package.json` (scripts: dev, build, start, check, check:fix, typecheck, test, test:e2e, smoke), `pnpm-workspace.yaml`, `tsconfig.base.json` (strict), `biome.json`, pinned `packageManager` and Node engine
-- [ ] `packages/shared`: Zod + first schemas (Platform, Track, Collection, ResolveResult, ErrorCode), consumed as TS source
-- [ ] `apps/server`: Hono on `127.0.0.1:4747`, Host/Origin guard, `GET /api/health` (yt-dlp/ffmpeg/ffprobe found? versions? JS runtime?), watch mode for dev
+- [x] `packages/shared`: Zod + first schemas (Platform, Track, Collection, ResolveResult, ErrorCode), consumed as TS source
+- [ ] `apps/server`: Hono on `127.0.0.1:4747`, Host/Origin guard, `GET /api/health` (yt-dlp/ffmpeg/ffprobe found? versions? JS runtime?), watch mode for dev; add `forbidden` and `not_found` error codes for the guard and unknown routes
 - [ ] `apps/web`: Vite + React + TanStack Router (file routes) + Query + Tailwind v4 + shadcn/ui; dark app shell showing engine status from `/api/health`
 - [ ] `pnpm dev` runs both with the `/api` proxy; `pnpm start` serves the built SPA from the server
 - [ ] Vitest across packages; Playwright with one e2e (shell loads, health is OK)
@@ -19,10 +19,11 @@ Done when `pnpm smoke <url>` prints a normalized result for YouTube and SoundClo
 - [ ] Binary discovery (`YTDLP_PATH`/`FFMPEG_PATH` → `PATH`), versions, JS runtime check, warning when yt-dlp is more than ~60 days old
 - [ ] `classifyUrl` in shared (YouTube watch/shorts/youtu.be/music/playlist/mix/channel; SoundCloud track/set/user/likes/secret links; other) + tests
 - [ ] `engine/run.ts`: the one spawn wrapper (argv only, detached process group, line streaming on stdout and stderr, abort, timeout)
-- [ ] Resolve: `yt-dlp -J --flat-playlist` → normalized Track/Collection for YouTube and SoundCloud; record fixtures
-- [ ] SoundCloud set entries are bare (id + url): `POST /api/resolve/entries` with lazy, throttled per-track enrichment
+- [ ] Resolve: `yt-dlp -J --flat-playlist` → normalized Track/Collection for YouTube and SoundCloud; record fixtures (include a SoundCloud user page that mixes in sets: keep only track rows)
+- [ ] SoundCloud set entries are bare (id + url): `POST /api/resolve/entries` with lazy, throttled per-track enrichment. The response needs a per-id failure shape (removed track, 429), not a bare `Track[]`
 - [ ] Map yt-dlp errors to `ErrorCode` (unavailable, private, geo-blocked, age-restricted, bot check, rate-limited, unsupported, …) with fixtures
-- [ ] `POST /api/resolve`, including the ambiguous `watch?v=…&list=…` case and capped mixes, plus the `pnpm smoke <url>` script
+- [ ] `POST /api/resolve`, including the ambiguous `watch?v=…&list=…` case and capped mixes, plus the `pnpm smoke <url>` script. Input URLs: http(s), length cap, no embedded credentials (argv shows in `ps`)
+- [ ] Collection header data: the platform's track count and SoundCloud's set duration when yt-dlp reports them, and `truncated` when our `-I` cap cut the list. Reconcile the 1000-entry cap with "smooth with 1,000+ tracks" (product.md)
 - [ ] `test/fake-yt-dlp.mjs` that replays fixtures for integration and e2e tests
 - [ ] `.gitignore` ignores `*.log`, which would drop the planned `<case>.log` fixtures: un-ignore `apps/server/test/fixtures/**/*.log`
 
@@ -34,7 +35,7 @@ Done when the API downloads a selected set of tracks into a folder with live pro
 - [ ] Finalize: artist/title, tags (comment = source URL), AIFF + artwork via ffmpeg, filename template, sanitize, skip-if-exists, safe move (copy + unlink across volumes)
 - [ ] Job queue: concurrency limit, state machine, cancel (SIGINT to the process group → SIGKILL → delete job dir), retry, stale job dirs swept at startup
 - [ ] Per-platform pacing and back-off (YouTube ~300 tracks/h without login, SoundCloud 429s); Go+ previews reported as `preview_only`
-- [ ] `GET /api/events` (SSE with heartbeat, throttled progress), `POST /api/downloads`, cancel, retry, reveal
+- [ ] `GET /api/events` (SSE with heartbeat, throttled progress), `POST /api/downloads`, cancel, retry, reveal. Define `TrackRef` so a partial (not yet enriched) row can be downloaded
 - [ ] Settings store in the app data dir + `GET/PUT /api/settings`; native folder picker `POST /api/folders/pick`
 
 ## Phase 3 — UI

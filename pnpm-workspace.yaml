@@ -5,3 +5,5 @@ packages:
 # Versions shared across packages; reference them as "catalog:" in package.json.
 catalog:
   typescript: ~7.0.2
+  vitest: ^5.0.3
+  zod: ^4.6.5

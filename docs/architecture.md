@@ -43,7 +43,7 @@ The reasons are in ADR-007.
 - **pnpm.**
   - The version is pinned in `packageManager`.
   - Settings live in `pnpm-workspace.yaml`; since pnpm 11, `.npmrc` holds only auth.
-  - Dependency versions shared across packages go in its `catalog`, and packages reference them as `"catalog:"`.
+  - Dependency versions shared across packages go in its `catalog`, and packages reference them as `"catalog:"`. A package that builds its own Zod schemas depends on `zod` itself (from the catalog), so the workspace keeps one Zod instance.
   - A dependency that runs an install script needs an `allowBuilds` entry, or `pnpm install` fails with `ERR_PNPM_IGNORED_BUILDS`.
   - `devEngines.runtime` makes pnpm refuse any Node version outside `^24.11.0` (the Node 24 LTS line).
 - **TypeScript.** Every package extends `tsconfig.base.json` and is checked with `tsc` (TS 7); tsc never emits. The source must run unchanged under Vite, Vitest and Node's type stripping:
@@ -86,30 +86,36 @@ JSON bodies are validated with the shared schemas. Errors use the shape `{ error
 | `POST /api/folders/pick` | `{ startIn?: string }` | `{ path }` or `{ canceled: true }` |
 
 ## Domain model (`packages/shared`)
-This is a starting sketch. Once the Zod schemas exist, they are authoritative.
+The schemas in `packages/shared/src` are authoritative. The first block below summarizes them; the second is still a sketch for Phase 1–2.
 
 ```ts
+// Implemented (packages/shared/src). Every URL field accepts http(s) only.
 type Platform = 'youtube' | 'soundcloud' | 'other'
 
 type Track = {
   id: string                  // platform id from yt-dlp
   platform: Platform
-  url: string                 // canonical page URL
+  url: string                 // canonical page URL (a partial row's may be an API URL)
   title: string
   artist?: string             // platform metadata, else parsed from the title
   uploader?: string
   durationSec?: number
   thumbnailUrl?: string
-  availability: 'available' | 'unavailable' | 'unknown'
-  unavailableReason?: string
-  source?: { codec?: string; bitrateKbps?: number }  // known after full extraction
+  availability: 'available' | 'unavailable' | 'unknown'   // 'unknown' is normal in flat listings
+  unavailableReason?: 'unavailable' | 'private' | 'geo_blocked' | 'age_restricted' | 'login_required' | 'preview_only'
+  source?: { codec?: string; bitrateKbps?: number }        // yt-dlp acodec/abr, known after full extraction
 }
 
+// A collection row. Partial rows (e.g. bare SoundCloud set entries) await POST /api/resolve/entries.
+type CollectionEntry =
+  | (Track & { partial: false })
+  | (Omit<Track, 'title'> & { title?: string; partial: true })
+
 type Collection = {
-  id: string; platform: Platform; url: string
+  id: string; platform: Platform; url: string   // identified by url: id repeats across a channel's tabs
   kind: 'playlist' | 'album' | 'set' | 'channel' | 'likes' | 'mix' | 'other'
   title: string; owner?: string; thumbnailUrl?: string
-  entries: Track[]            // may be partial (e.g. SoundCloud) until enriched
+  entries: CollectionEntry[]
 }
 
 type ResolveResult =
@@ -117,6 +123,17 @@ type ResolveResult =
   | { kind: 'collection'; collection: Collection }
   | { kind: 'ambiguous'; track: Track; collectionUrl: string }  // watch?v=…&list=…
 
+type ErrorCode =
+  | 'invalid_url' | 'unsupported_url' | 'unavailable' | 'private' | 'geo_blocked'
+  | 'age_restricted' | 'login_required' | 'bot_check' | 'rate_limited' | 'preview_only'
+  | 'network' | 'engine_missing' | 'postprocess_failed' | 'canceled' | 'unknown'
+
+type ErrorInfo = { code: ErrorCode; message: string }
+type ApiErrorBody = { error: ErrorInfo }      // body of every API error response
+```
+
+```ts
+// Sketch (Phase 1–2)
 type DownloadOptions = {
   format: 'mp3' | 'm4a' | 'aiff' | 'wav' | 'flac' | 'original'
   embedArtwork: boolean
@@ -130,18 +147,13 @@ type Job = {
   id: string; batchId: string; track: TrackRef; status: JobStatus
   progress?: { percent: number; speedBps?: number; etaSec?: number; waitingSec?: number }
   outputPath?: string
-  error?: { code: ErrorCode; message: string }
+  error?: ErrorInfo
 }
 
 type ServerEvent =
   | { type: 'job.updated'; job: Job }
   | { type: 'job.progress'; jobId: string; progress: NonNullable<Job['progress']> }
   | { type: 'heartbeat' }
-
-type ErrorCode =
-  | 'invalid_url' | 'unsupported_url' | 'unavailable' | 'private' | 'geo_blocked'
-  | 'age_restricted' | 'login_required' | 'bot_check' | 'rate_limited' | 'preview_only'
-  | 'network' | 'engine_missing' | 'postprocess_failed' | 'canceled' | 'unknown'
 ```
 
 ## Flows
@@ -149,8 +161,8 @@ type ErrorCode =
 ### Resolve
 1. Web: `classifyUrl(url)` from shared gives an instant platform/type hint and rejects obviously invalid input.
 2. Server: a single `yt-dlp -J --flat-playlist` call, normalized into a `ResolveResult`.
-   - YouTube flat entries already carry title, duration, uploader and thumbnails.
-   - SoundCloud set entries are bare (id + url). The web asks `POST /api/resolve/entries` for the rows in view, and the server throttles those lookups to respect SoundCloud's API budget.
+   - YouTube flat entries already carry title, duration, uploader and thumbnails, but no availability: rows stay `unknown` unless the title marks them private or deleted.
+   - SoundCloud set entries are bare (id + url), so they arrive as `partial` entries. The web asks `POST /api/resolve/entries` for the partial rows in view, and the server throttles those lookups to respect SoundCloud's API budget.
 3. Special cases:
    - `watch?v=…&list=…` returns `ambiguous` unless the request sets `mode`.
    - YouTube Mix/Radio (`list=RD…`) never ends: treat it as a single track unless asked, and cap its entries.

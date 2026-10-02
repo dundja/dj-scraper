@@ -2,7 +2,7 @@
 
 A local web app for DJs. Paste a YouTube or SoundCloud link (track or playlist), review the metadata, pick tracks, and download them as DJ-ready audio files into a folder you choose. It runs only on this machine: a Vite/React UI at localhost plus a Node server that drives yt-dlp and ffmpeg.
 
-**Status:** scaffolding (roadmap Phase 0). The root workspace exists; the packages don't yet. The current phase and next items are in `docs/roadmap.md`.
+**Status:** scaffolding (roadmap Phase 0). The root workspace and `packages/shared` exist; `apps/server` and `apps/web` don't yet. The current phase and next items are in `docs/roadmap.md`.
 
 ## Where things are explained
 | Need | Read |

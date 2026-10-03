@@ -6,5 +6,5 @@ const unused = (name: string) => () =>
 /** For tests of other routes: resolve services that fail loudly if a request reaches them. */
 export const UNUSED_RESOLVE_DEPS: ResolveDeps = {
   resolver: { resolve: unused('resolver.resolve') },
-  enricher: { enrich: unused('enricher.enrich') },
+  enricher: { enrich: unused('enricher.enrich'), peek: () => undefined },
 }

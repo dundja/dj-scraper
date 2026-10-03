@@ -166,7 +166,7 @@ function setup({
     ...(cacheMax === undefined ? {} : { cacheMax }),
   })
   const enrich = (entries: EntryRef[], signal?: AbortSignal) => enricher.enrich({ entries }, signal)
-  return { enrich, run: runFn, locate, starts, time, log }
+  return { enricher, enrich, run: runFn, locate, starts, time, log }
 }
 
 /** Results reduced to `id → ok | code`, in order. */
@@ -412,6 +412,33 @@ describe('enricher.enrich', () => {
       expect(run).toHaveBeenCalledTimes(3)
       await enrich([sc('2')])
       expect(run).toHaveBeenCalledTimes(4)
+    })
+
+    it('peeks at a cached row without a lookup, by the platform of its URL + its id', async () => {
+      const { enricher, enrich, run, locate, time } = setup({ cacheTtlMs: 60_000 })
+      expect(enricher.peek('soundcloud', '1')).toBeUndefined()
+      await enrich([sc('1'), yt('abc')])
+      expect(enricher.peek('soundcloud', '1')).toEqual({
+        id: '1',
+        platform: 'soundcloud',
+        url: 'https://api.soundcloud.com/tracks/1',
+        title: 'Track 1',
+        availability: 'available',
+      })
+      expect(enricher.peek('youtube', 'abc')?.title).toBe('Track abc')
+      // Another platform's row with the same id is another row.
+      expect(enricher.peek('youtube', '1')).toBeUndefined()
+      expect(run).toHaveBeenCalledTimes(2)
+      expect(locate).toHaveBeenCalledTimes(1)
+      time.now += 60_000
+      expect(enricher.peek('soundcloud', '1')).toBeUndefined()
+      expect(run).toHaveBeenCalledTimes(2)
+    })
+
+    it('peeks at nothing for a row whose lookup failed', async () => {
+      const { enricher, enrich } = setup({ respond: removed })
+      await enrich([sc('1')])
+      expect(enricher.peek('soundcloud', '1')).toBeUndefined()
     })
 
     it('does not cache a failed row', async () => {

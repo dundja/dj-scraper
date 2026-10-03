@@ -71,7 +71,7 @@ function setup({
   webRoot?: string
 } = {}) {
   const resolver = { resolve: vi.fn<Resolver['resolve']>(resolve) }
-  const enricher = { enrich: vi.fn<Enricher['enrich']>(enrich) }
+  const enricher = { enrich: vi.fn<Enricher['enrich']>(enrich), peek: () => undefined }
   const stubHealth = { current: async () => health, recheck: async () => health }
   const app = createApp({ port: PORT, health: stubHealth, resolver, enricher, webRoot })
   return { app, resolver, enricher }

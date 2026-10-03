@@ -16,6 +16,7 @@ import { entryArgs } from '../engine/ytdlp-args.ts'
 import { InfoParseError, normalizeEntry } from '../engine/ytdlp-parse.ts'
 import { ApiError } from '../http/errors.ts'
 import { describeIssues } from '../http/json.ts'
+import type { TokenBucket } from '../pacing/token-bucket.ts'
 import { checkUrl } from './input.ts'
 import {
   type Budget,
@@ -30,9 +31,15 @@ import { CANCELED, callYtdlp, findYtdlp, type Logger, since, UNREADABLE } from '
 
 /**
  * How many lookups may run at once per platform, the least time between their starts, and an
- * optional budget of starts over longer stretches (see `SOUNDCLOUD_LOOKUP_BUDGET`).
+ * optional budget of starts over longer stretches (see `SOUNDCLOUD_LOOKUP_BUDGET`). A `TokenBucket`
+ * instance is shared with its other holders (the download queue's SoundCloud gate); a `Budget`
+ * gets a bucket of its own.
  */
-export type PacingRule = { concurrency: number; minIntervalMs: number; budget?: Budget }
+export type PacingRule = {
+  concurrency: number
+  minIntervalMs: number
+  budget?: Budget | TokenBucket
+}
 export type Pacing = Record<Platform, PacingRule>
 
 /**
@@ -97,6 +104,12 @@ export type Enricher = {
    * (`canceled`: its rows stop waiting, and lookups no other request waits for are stopped).
    */
   enrich: (request: ResolveEntriesRequest, signal?: AbortSignal) => Promise<ResolveEntriesResponse>
+  /**
+   * The Track a lookup found for `platform` (classified from the row's URL) + `id`, while it is
+   * cached; else undefined. Never starts a lookup, spends no pacing. The download route fills a
+   * request's missing display fields with it.
+   */
+  peek: (platform: Platform, id: string) => Track | undefined
 }
 
 type PlatformState = {
@@ -326,6 +339,8 @@ export function createEnricher({
   }
 
   return {
+    peek: (platform, id) => cache.get(`${platform}:${id}`),
+
     async enrich(request, signal) {
       const startedAt = performance.now()
       const rows = new Map<string, Row>()

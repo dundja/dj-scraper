@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createTokenBucket } from '../pacing/token-bucket.ts'
 import { createLimiter, monotonicClock } from './limiter.ts'
 
 /** A promise the test settles by hand. */
@@ -269,6 +270,61 @@ describe('createLimiter: budget', () => {
     await expect(leaving).rejects.toThrow('client went away')
     await staying
     expect(starts).toEqual(['first@0', 'staying@5000'])
+  })
+})
+
+describe('createLimiter: shared bucket', () => {
+  it('shares a TokenBucket instance with its other holders', async () => {
+    const { time, clock, sleep } = fakeTime()
+    const shared = createTokenBucket({ burst: 2, refillMs: 1000 })
+    const a = createLimiter({ concurrency: 5, budget: shared, clock, sleep })
+    const b = createLimiter({ concurrency: 5, budget: shared, clock, sleep })
+    const starts: string[] = []
+    const call = (limiter: typeof a, name: string) =>
+      limiter.run(async () => {
+        starts.push(`${name}@${time.now}`)
+      })
+    await Promise.all([call(a, 'a1'), call(b, 'b1'), call(a, 'a2'), call(b, 'b2')])
+    expect(starts).toEqual(['a1@0', 'b1@0', 'a2@1000', 'b2@2000'])
+  })
+
+  it('measures the wait again after a sleep, when another holder took the token meanwhile', async () => {
+    const { time, clock, sleep } = fakeTime()
+    const shared = createTokenBucket({ burst: 1, refillMs: 1000 })
+    shared.take(0)
+    const limiter = createLimiter({
+      concurrency: 1,
+      budget: shared,
+      clock,
+      sleep: (ms) => {
+        // Someone else (the download queue) takes the token that refills during this sleep.
+        if (time.sleeps.length === 0) shared.take(ms)
+        return sleep(ms)
+      },
+    })
+    const starts: number[] = []
+    await limiter.run(async () => {
+      starts.push(time.now)
+    })
+    expect(time.sleeps).toEqual([1000, 1000])
+    expect(starts).toEqual([2000])
+  })
+
+  it('keeps the tokens another holder reserves for it', async () => {
+    const { time, clock, sleep } = fakeTime()
+    const shared = createTokenBucket({ burst: 5, refillMs: 1000 })
+    // Downloads take what they may, leaving 2 tokens.
+    while (shared.waitMs(0, 2) <= 0) shared.take(0)
+    const limiter = createLimiter({ concurrency: 5, budget: shared, clock, sleep })
+    const starts: number[] = []
+    await Promise.all(
+      [1, 2, 3].map(() =>
+        limiter.run(async () => {
+          starts.push(time.now)
+        }),
+      ),
+    )
+    expect(starts).toEqual([0, 0, 1000])
   })
 })
 

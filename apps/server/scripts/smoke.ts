@@ -1,13 +1,18 @@
 // `pnpm smoke [--json] [--mode auto|track|collection] [--entries N] [url ...]`
+// `pnpm smoke --download [--format mp3|m4a|aiff|wav|flac|original]… [--keep] [--bare] [url ...]`
 //
-// A live check of the resolve engine against real YouTube and SoundCloud, with the real yt-dlp and
-// the same resolver and enricher the server uses. This is the only code path that touches the
-// network on purpose, so it is never part of `pnpm test`. Without URLs it runs the sample set from
-// .claude/skills/smoke-test/SKILL.md. Exits 1 if any URL failed.
+// A live check of the engine against real YouTube and SoundCloud, with the real yt-dlp and the
+// same services the server uses: the resolver and enricher, or with --download the whole download
+// pipeline into a temp dir (scripts/smoke-download.ts). This is the only code path that touches
+// the network on purpose, so it is never part of `pnpm test`. Without URLs it runs the sample set
+// from .claude/skills/smoke-test/SKILL.md (its shortest tracks with --download). Exits 1 if any
+// URL (× format) failed.
 
 import { parseArgs } from 'node:util'
 import {
   type CollectionEntry,
+  type DownloadFormat,
+  DownloadFormatSchema,
   type EntryRef,
   type EntryResult,
   MAX_ENTRIES_PER_REQUEST,
@@ -21,8 +26,9 @@ import { ConfigError, loadConfig } from '../src/config.ts'
 import { checkYtdlp } from '../src/engine/binaries.ts'
 import { killActiveGroups } from '../src/engine/run.ts'
 import { ApiError } from '../src/http/errors.ts'
-import { createEnricher } from '../src/resolve/enricher.ts'
+import { createEnricher, type Enricher } from '../src/resolve/enricher.ts'
 import { createResolver } from '../src/resolve/resolver.ts'
+import { DOWNLOAD_SAMPLES, smokeDownloads } from './smoke-download.ts'
 
 /** The smoke-test skill's sample set (public URLs from yt-dlp's own extractor tests). */
 const SAMPLES: readonly { label: string; url: string }[] = [
@@ -58,7 +64,10 @@ const SAMPLES: readonly { label: string; url: string }[] = [
   },
 ]
 
-const USAGE = 'Usage: pnpm smoke [--json] [--mode auto|track|collection] [--entries N] [url ...]'
+const USAGE = [
+  'Usage: pnpm smoke [--json] [--mode auto|track|collection] [--entries N] [url ...]',
+  '       pnpm smoke --download [--format mp3|m4a|aiff|wav|flac|original]… [--keep] [--bare] [url ...]',
+].join('\n')
 /** How many entries of a collection the summary lists. */
 const SHOWN_ENTRIES = 3
 
@@ -67,7 +76,18 @@ const SHOWN_ENTRIES = 3
 process.on('exit', killActiveGroups)
 process.on('SIGINT', () => process.exit(130))
 
-type Options = { json: boolean; mode: ResolveMode; entries: number; urls: string[] }
+type Options = {
+  json: boolean
+  mode: ResolveMode
+  entries: number
+  urls: string[]
+  /** --download: run the download pipeline instead of resolve only. */
+  download: boolean
+  /** --format, repeatable: one batch per format. Default mp3. */
+  formats: DownloadFormat[]
+  keep: boolean
+  bare: boolean
+}
 
 function parseOptions(argv: readonly string[]): Options {
   const { values, positionals } = parseArgs({
@@ -77,6 +97,10 @@ function parseOptions(argv: readonly string[]): Options {
       json: { type: 'boolean', default: false },
       mode: { type: 'string', default: 'auto' },
       entries: { type: 'string', default: '0' },
+      download: { type: 'boolean', default: false },
+      format: { type: 'string', multiple: true },
+      keep: { type: 'boolean', default: false },
+      bare: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
   })
@@ -87,7 +111,28 @@ function parseOptions(argv: readonly string[]): Options {
   const mode = ResolveModeSchema.safeParse(values.mode)
   if (!mode.success) throw new Error(`--mode must be auto, track or collection`)
   if (!/^\d+$/.test(values.entries)) throw new Error('--entries must be a whole number')
-  return { json: values.json, mode: mode.data, entries: Number(values.entries), urls: positionals }
+  const formats = (values.format ?? ['mp3']).map((format) => {
+    const parsed = DownloadFormatSchema.safeParse(format)
+    if (!parsed.success) throw new Error('--format must be mp3, m4a, aiff, wav, flac or original')
+    return parsed.data
+  })
+  const download = values.download
+  if (!download && (values.format !== undefined || values.keep || values.bare)) {
+    throw new Error('--format, --keep and --bare go with --download')
+  }
+  if (download && (values.json || values.entries !== '0')) {
+    throw new Error('--json and --entries are for resolving, not --download')
+  }
+  return {
+    json: values.json,
+    mode: mode.data,
+    entries: Number(values.entries),
+    urls: positionals,
+    download,
+    formats: [...new Set(formats)],
+    keep: values.keep,
+    bare: values.bare,
+  }
 }
 
 let options: Options
@@ -126,47 +171,76 @@ if (!ytdlp.meetsMinimum) {
 }
 say('')
 
-const resolver = createResolver({ engine: config.engine, log })
-const enricher = createEnricher({ engine: config.engine, log })
-const targets = options.urls.length > 0 ? options.urls.map((url) => ({ label: '', url })) : SAMPLES
+const given = options.urls.map((url) => ({ label: '', url }))
+process.exitCode = (options.download ? await smokeDownload() : await smokeResolve()) > 0 ? 1 : 0
 
-let failures = 0
-for (const { label, url } of targets) {
-  const startedAt = performance.now()
-  try {
-    const result = ResolveResultSchema.parse(await resolver.resolve({ url, mode }))
-    const enriched = options.entries > 0 ? await enrichPartialRows(result, options.entries) : []
-    if (json) {
-      console.log(JSON.stringify({ url, ok: true, result, enriched }, null, 2))
-    } else {
-      say(`✅ ${label ? `${label}: ` : ''}${url} (${seconds(startedAt)})`)
-      for (const line of describeResult(result)) say(`   ${line}`)
-      if (enriched.length > 0) say(`   enriched ${enriched.length} partial rows:`)
-      for (const entry of enriched) say(`     ${describeEntryResult(entry)}`)
-    }
-  } catch (error) {
-    failures++
-    const failure =
-      error instanceof ApiError
-        ? { code: error.code, message: error.message }
-        : { code: 'unexpected', message: error instanceof Error ? error.message : String(error) }
-    if (json) console.log(JSON.stringify({ url, ok: false, error: failure }, null, 2))
-    else
-      say(
-        `❌ ${label ? `${label}: ` : ''}${url} (${seconds(startedAt)})\n   ${failure.code}: ${failure.message}`,
-      )
-    if (!(error instanceof ApiError)) console.error(error)
-  }
-  say('')
+/** --download: the download pipeline per URL × format; returns how many failed. */
+async function smokeDownload(): Promise<number> {
+  const targets = given.length > 0 ? given : DOWNLOAD_SAMPLES
+  const failures = await smokeDownloads({
+    targets,
+    formats: options.formats,
+    keep: options.keep,
+    bare: options.bare,
+    mode,
+    engine: config.engine,
+    say,
+    log,
+  })
+  const total = targets.length * options.formats.length
+  say(`${total - failures}/${total} downloaded${failures > 0 ? ', see ❌ above' : ''}`)
+  return failures
 }
 
-say(
-  `${targets.length - failures}/${targets.length} resolved${failures > 0 ? ', see ❌ above' : ''}`,
-)
-process.exitCode = failures > 0 ? 1 : 0
+/** Resolves each URL (and enriches partial rows with --entries); returns how many failed. */
+async function smokeResolve(): Promise<number> {
+  const resolver = createResolver({ engine: config.engine, log })
+  const enricher = createEnricher({ engine: config.engine, log })
+  const targets = given.length > 0 ? given : SAMPLES
+
+  let failures = 0
+  for (const { label, url } of targets) {
+    const startedAt = performance.now()
+    try {
+      const result = ResolveResultSchema.parse(await resolver.resolve({ url, mode }))
+      const enriched =
+        options.entries > 0 ? await enrichPartialRows(enricher, result, options.entries) : []
+      if (json) {
+        console.log(JSON.stringify({ url, ok: true, result, enriched }, null, 2))
+      } else {
+        say(`✅ ${label ? `${label}: ` : ''}${url} (${seconds(startedAt)})`)
+        for (const line of describeResult(result)) say(`   ${line}`)
+        if (enriched.length > 0) say(`   enriched ${enriched.length} partial rows:`)
+        for (const entry of enriched) say(`     ${describeEntryResult(entry)}`)
+      }
+    } catch (error) {
+      failures++
+      const failure =
+        error instanceof ApiError
+          ? { code: error.code, message: error.message }
+          : { code: 'unexpected', message: error instanceof Error ? error.message : String(error) }
+      if (json) console.log(JSON.stringify({ url, ok: false, error: failure }, null, 2))
+      else
+        say(
+          `❌ ${label ? `${label}: ` : ''}${url} (${seconds(startedAt)})\n   ${failure.code}: ${failure.message}`,
+        )
+      if (!(error instanceof ApiError)) console.error(error)
+    }
+    say('')
+  }
+
+  say(
+    `${targets.length - failures}/${targets.length} resolved${failures > 0 ? ', see ❌ above' : ''}`,
+  )
+  return failures
+}
 
 /** Fills the first `count` partial rows through the enricher, as the web does for rows in view. */
-async function enrichPartialRows(result: ResolveResult, count: number): Promise<EntryResult[]> {
+async function enrichPartialRows(
+  enricher: Enricher,
+  result: ResolveResult,
+  count: number,
+): Promise<EntryResult[]> {
   if (result.kind !== 'collection') return []
   const refs: EntryRef[] = result.collection.entries
     .filter((entry) => entry.partial)

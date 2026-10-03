@@ -133,8 +133,10 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Below lg the page itself scrolls under the sticky 48 px header (h-12): keep a row or control
+     that is scrolled or focused into view (scrollIntoView, Tab) clear of it. */
   html {
-    @apply font-sans;
+    @apply font-sans scroll-pt-12;
   }
 }
 

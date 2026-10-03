@@ -8,10 +8,16 @@ import {
   type Job,
   JobSchema,
   type JobStatus,
+  type ServerEvent,
   type Settings,
   SettingsSchema,
 } from '@dj-scraper/shared'
 import { jobsByStatus, testBatch, testUuid, youtubeRef } from '@dj-scraper/shared/test-helpers'
+import type { QueryClient } from '@tanstack/react-query'
+import { act } from '@testing-library/react'
+import { onTestFinished, vi } from 'vitest'
+import { startEvents } from '@/lib/events.ts'
+import { fakeEventSource } from './fake-event-source.ts'
 
 export const batch: Batch = BatchSchema.parse(testBatch)
 
@@ -60,3 +66,34 @@ export const settings: Settings = SettingsSchema.parse({
   concurrency: 3,
   autoDownloadSingles: true,
 })
+
+/**
+ * Feeds `['downloads']` the way the app does: startEvents (main.tsx) over a FakeEventSource, opened
+ * and sent `snapshot`. `send` delivers one more event and waits, inside act(), until TanStack Query
+ * has told React (it notifies on a 0 ms timer; fake timers are advanced instead). The stream stops
+ * when the test finishes. Call it after rendering, with the render's QueryClient.
+ */
+export async function liveDownloads(
+  queryClient: QueryClient,
+  snapshot: DownloadsSnapshot = snapshotWith(),
+) {
+  const es = fakeEventSource()
+  const flush = () =>
+    vi.isFakeTimers()
+      ? vi.advanceTimersByTimeAsync(0)
+      : new Promise<void>((resolve) => setTimeout(resolve, 0))
+  const send = (event: ServerEvent) =>
+    act(async () => {
+      es.current.send(event)
+      await flush()
+    })
+  let stop = () => {}
+  await act(async () => {
+    stop = startEvents(queryClient)
+    es.current.open()
+    await flush()
+  })
+  onTestFinished(() => stop())
+  await send({ type: 'snapshot', ...snapshot })
+  return { es, send }
+}

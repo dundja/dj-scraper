@@ -1,5 +1,5 @@
 import { constants } from 'node:fs'
-import { access, lstat, mkdir, realpath, stat } from 'node:fs/promises'
+import { access, lstat, mkdir, opendir, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import {
   FolderPathSchema,
@@ -11,10 +11,12 @@ import { StepError, type TargetFolder } from '../jobs/types.ts'
 import { errnoCode } from '../util/errno.ts'
 
 /**
- * The download folder (design D10, D16): checked when a batch is enqueued, and again right before
- * each file is published. Errors are StepErrors with texts for the user (never a path):
- * `invalid_request` for a folder value that can't work at all, `folder_unavailable` for a folder
- * that exists in the wrong way (missing, not a folder, not writable, inside the data dir).
+ * The download folder (design D10, D16): checked when it is chosen (the native picker returns it,
+ * or the settings change to it), when a batch is enqueued, and again right before each file is
+ * published. Errors are StepErrors with texts for the user (never a path): `invalid_request` for a
+ * folder value that can't work at all, `folder_unavailable` for a folder that exists in the wrong
+ * way (missing, not a folder, not writable, inside the data dir, blocked by macOS privacy
+ * settings).
  */
 
 /** The filesystem calls this module makes; tests replace some to script errors. */
@@ -25,9 +27,11 @@ export type FolderOps = {
   access: (path: string, mode: number) => Promise<void>
   mkdir: (path: string, options?: { recursive?: boolean }) => Promise<unknown>
   lstat: (path: string) => Promise<{ isSymbolicLink(): boolean }>
+  /** Only to read a picked folder's first entry (checkPickedFolder). */
+  opendir: (path: string) => Promise<{ read(): Promise<unknown>; close(): Promise<void> }>
 }
 
-const DEFAULT_OPS: FolderOps = { realpath, stat, access, mkdir, lstat }
+const DEFAULT_OPS: FolderOps = { realpath, stat, access, mkdir, lstat, opendir }
 
 /** macOS limits a whole path to 1024 bytes, the terminating NUL included. */
 const MAX_PATH_BYTES = 1024
@@ -107,6 +111,32 @@ export async function resolveTargetFolder(
 }
 
 /**
+ * A folder just chosen, in the native picker or as the new `settings.folder` (e.g. a recent one):
+ * the checks a batch's folder gets at enqueue, then a read of its first entry. macOS asks for
+ * access to a protected folder (Desktop, Documents, Downloads, iCloud Drive, a removable or network
+ * volume) at the first read inside it, so its privacy prompt shows now rather than when a batch
+ * publishes its first file, and the read waits for the user's answer. A refusal is EPERM
+ * (PRIVACY_MESSAGE). Every refusal is `folder_unavailable`: the folder is the problem, not the
+ * request. Never creates anything.
+ */
+export async function checkPickedFolder(
+  picked: string,
+  context: Pick<ResolveFolderContext, 'dataDirReal'>,
+  ops: Partial<FolderOps> = {},
+): Promise<void> {
+  const fs: FolderOps = { ...DEFAULT_OPS, ...ops }
+  try {
+    const { real } = await resolveTargetFolder(picked, undefined, context, fs)
+    await readFirstEntry(fs, real)
+  } catch (error) {
+    if (error instanceof StepError && error.code !== 'folder_unavailable') {
+      throw new StepError('folder_unavailable', error.message)
+    }
+    throw error
+  }
+}
+
+/**
  * Right before publishing: the folder must still resolve to the same real path and be a directory
  * (a renamed folder, an unplugged drive or a swapped-in symlink fail the job). Never creates it.
  */
@@ -149,6 +179,22 @@ async function checkWritableFolder(fs: FolderOps, real: string): Promise<void> {
   await fs.access(real, constants.W_OK).catch(rethrowAsFolderError)
 }
 
+/** One entry, not the whole listing: a DJ folder may hold thousands of files. */
+async function readFirstEntry(fs: FolderOps, real: string): Promise<void> {
+  try {
+    const dir = await fs.opendir(real)
+    try {
+      await dir.read()
+    } finally {
+      await dir.close().catch(() => {})
+    }
+  } catch (error) {
+    // A folder we may write to but not list (a drop box) still takes downloads: publishing never
+    // lists it. macOS privacy settings refuse with EPERM, not EACCES.
+    if (errnoCode(error) !== 'EACCES') rethrowAsFolderError(error)
+  }
+}
+
 function checkPathBudget(target: TargetFolder): TargetFolder {
   const longest = path.join(target.real, 'x'.repeat(MAX_FILENAME_LENGTH))
   if (Buffer.byteLength(longest) >= MAX_PATH_BYTES) throw pathTooLong()
@@ -162,10 +208,14 @@ function pathTooLong(): StepError {
   )
 }
 
+/**
+ * A job's folder that went away before publishing. No next step in the message: Retry keeps this
+ * folder, so the web says to put it back (jobErrorHint), not to choose another.
+ */
 function folderGone(): StepError {
   return new StepError(
     'folder_unavailable',
-    'The download folder was moved, renamed or its drive was disconnected. Choose it again.',
+    'The download folder was moved, renamed or its drive was disconnected.',
   )
 }
 

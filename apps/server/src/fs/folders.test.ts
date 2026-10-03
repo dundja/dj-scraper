@@ -1,9 +1,10 @@
 import { chmod, mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { StepError } from '../jobs/types.ts'
 import {
+  checkPickedFolder,
   type FolderOps,
   folderError,
   insideFolder,
@@ -368,6 +369,196 @@ describe('resolveTargetFolder', () => {
   })
 })
 
+describe('checkPickedFolder', () => {
+  /** An open folder whose read answers as told. */
+  const fakeDir = (read: () => Promise<unknown> = async () => null) => ({
+    read: vi.fn(read),
+    close: vi.fn(async () => {}),
+  })
+
+  it('accepts a writable folder outside the data dir once it has read its first entry', async () => {
+    const dir = await folder('Picked Set')
+    await writeFile(path.join(dir, 'track.mp3'), 'x')
+    const handle = fakeDir()
+    const opendir = vi.fn(async (_dir: string) => handle)
+    await expect(checkPickedFolder(dir, context(), { opendir })).resolves.toBeUndefined()
+    expect(opendir).toHaveBeenCalledExactlyOnceWith(path.join(rootReal, 'Picked Set'))
+    expect(handle.read).toHaveBeenCalledOnce()
+    expect(handle.close).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['an empty folder', () => folder('Picked Empty')],
+    [
+      'a folder full of files',
+      async () => {
+        const dir = await folder('Picked Full')
+        await Promise.all(
+          Array.from({ length: 100 }, (_, i) => writeFile(path.join(dir, `${i}.mp3`), '')),
+        )
+        return dir
+      },
+    ],
+    [
+      'a symlink to a folder',
+      async () => {
+        const link = path.join(root, 'Picked Link')
+        await symlink(await folder('Picked Target'), link)
+        return link
+      },
+    ],
+    ['a path with a trailing slash', async () => `${await folder('Picked Slash')}/`],
+  ])('accepts %s on the real filesystem', async (_label, picked) => {
+    await expect(checkPickedFolder(await picked(), context())).resolves.toBeUndefined()
+  })
+
+  it('accepts a folder it may write to but not list (a drop box): downloads only write', async () => {
+    const dir = await folder('Drop Box')
+    await chmod(dir, 0o333)
+    try {
+      await expect(checkPickedFolder(dir, context())).resolves.toBeUndefined()
+    } finally {
+      await chmod(dir, 0o755)
+    }
+    await expect(
+      checkPickedFolder(dir, context(), { opendir: () => Promise.reject(errno('EACCES')) }),
+    ).resolves.toBeUndefined()
+  })
+
+  it('refuses a folder macOS privacy settings block, naming them, and closes it', async () => {
+    // Desktop, Documents, a USB drive: once the user said no, reading inside fails EPERM.
+    const dir = await folder('Picked Private')
+    const handle = fakeDir(() => Promise.reject(errno('EPERM')))
+    await expectStepError(
+      checkPickedFolder(dir, context(), { opendir: async () => handle }),
+      'folder_unavailable',
+      PRIVACY_MESSAGE,
+    )
+    expect(handle.close).toHaveBeenCalledOnce()
+    await expectStepError(
+      checkPickedFolder(dir, context(), { opendir: () => Promise.reject(errno('EPERM')) }),
+      'folder_unavailable',
+      PRIVACY_MESSAGE,
+    )
+  })
+
+  it.each([
+    ['ENOENT', "That folder doesn't exist. Check the path, or that its drive is connected."],
+    ['EIO', "That folder can't be used (EIO)."],
+  ])('maps %s from opening or reading it', async (code, message) => {
+    const dir = await folder('Picked Errors')
+    await expectStepError(
+      checkPickedFolder(dir, context(), { opendir: () => Promise.reject(errno(code)) }),
+      'folder_unavailable',
+      message,
+    )
+    const handle = fakeDir(() => Promise.reject(errno(code)))
+    await expectStepError(
+      checkPickedFolder(dir, context(), { opendir: async () => handle }),
+      'folder_unavailable',
+      message,
+    )
+    expect(handle.close).toHaveBeenCalledOnce()
+  })
+
+  it('ignores a failure to close the folder after reading it', async () => {
+    const dir = await folder('Picked Close')
+    const handle = { read: async () => null, close: () => Promise.reject(errno('EBADF')) }
+    await expect(
+      checkPickedFolder(dir, context(), { opendir: async () => handle }),
+    ).resolves.toBeUndefined()
+  })
+
+  describe('what enqueue refuses', () => {
+    it.each([
+      [
+        'a missing folder',
+        async () => path.join(root, 'picked-gone'),
+        "That folder doesn't exist. Check the path, or that its drive is connected.",
+      ],
+      [
+        'a file',
+        async () => {
+          const file = path.join(root, 'picked.mp3')
+          await writeFile(file, 'x')
+          return file
+        },
+        "That path isn't a folder.",
+      ],
+      [
+        'the data dir',
+        async () => path.join(dataDir, 'jobs'),
+        "That folder is inside DJ Scraper's own data folder. Choose another one.",
+      ],
+    ])('refuses %s without reading it', async (_label, picked, message) => {
+      const opendir = vi.fn(async () => fakeDir())
+      await expectStepError(
+        checkPickedFolder(await picked(), context(), { opendir }),
+        'folder_unavailable',
+        message,
+      )
+      expect(opendir).not.toHaveBeenCalled()
+    })
+
+    it('refuses a folder it may not write to', async () => {
+      const dir = await folder('picked-read-only')
+      await chmod(dir, 0o555)
+      try {
+        await expectStepError(
+          checkPickedFolder(dir, context()),
+          'folder_unavailable',
+          "DJ Scraper isn't allowed to write to that folder.",
+        )
+      } finally {
+        await chmod(dir, 0o755)
+      }
+    })
+
+    it('never creates a missing folder', async () => {
+      const missing = path.join(root, 'picked-never-made', 'DJ Scraper')
+      await expectStepError(checkPickedFolder(missing, context()), 'folder_unavailable')
+      await expect(realpath(path.join(root, 'picked-never-made'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      })
+    })
+
+    it.each([
+      [
+        'a relative path (the picker never answers one)',
+        'Music',
+        {},
+        'Choose a folder by its full path, starting with /.',
+      ],
+      [
+        'a path macOS finds too long',
+        '/Volumes/USB',
+        { realpath: () => Promise.reject(errno('ENAMETOOLONG')) },
+        'That folder path is too long.',
+      ],
+      [
+        'a path that leaves no room for the file names',
+        '/Volumes/USB',
+        {
+          realpath: async (file: string) =>
+            file === '/Volumes/USB' ? `/${'a'.repeat(900)}` : file,
+          stat: async () => ({ isDirectory: () => true }),
+          access: async () => {},
+        },
+        'That folder path is too long for the file names. Choose a folder closer to the top of the drive.',
+      ],
+    ] satisfies [string, string, Partial<FolderOps>, string][])(
+      'refuses %s as folder_unavailable, where enqueue says invalid_request',
+      async (_label, picked, ops, message) => {
+        await expectStepError(
+          checkPickedFolder(picked, context(), ops),
+          'folder_unavailable',
+          message,
+        )
+      },
+    )
+  })
+})
+
 describe('recheckFolder', () => {
   it('passes while the folder still resolves to the same real path', async () => {
     const dir = await folder('Stable')
@@ -411,7 +602,7 @@ describe('recheckFolder', () => {
     await expectStepError(
       recheckFolder(target),
       'folder_unavailable',
-      'The download folder was moved, renamed or its drive was disconnected. Choose it again.',
+      'The download folder was moved, renamed or its drive was disconnected.',
     )
   })
 

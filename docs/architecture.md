@@ -71,7 +71,7 @@ The reasons are in ADR-007.
   - Our own imports keep the extension, also through the alias (`@/lib/api.ts`). Generated shadcn/ui files don't.
   - TanStack Router's Vite plugin writes `src/routeTree.gen.ts` on `dev` and `build`. It is committed, because `tsc` needs it, and its temp dir `.tanstack/` is ignored.
   - Vitest has its own `vitest.config.ts` without the router and Tailwind plugins, so test runs never rewrite the route tree.
-  - `pnpm build` makes one ~570 kB bundle (react-dom, zod, Base UI, TanStack). It loads from localhost, so there is no vendor splitting, and the chunk-size warning starts at 1 MB.
+  - `pnpm build` makes a ~710 kB bundle (react-dom, zod, Base UI, TanStack, TanStack Virtual) plus a ~110 kB chunk of route code that the router plugin splits off. It loads from localhost, so there is no vendor splitting, and the chunk-size warning starts at 1 MB.
 
 ## Server modules (`apps/server/src`)
 | Module | Responsibility |
@@ -99,16 +99,16 @@ The reasons are in ADR-007.
 | `engine/ytdlp-parse.ts` | pure: info JSON → Track/Collection, read with tolerant schemas and checked against the contract; `trackNames`, shared with finalize |
 | `engine/ytdlp-progress.ts` | pure: one download line → DL progress, PP, START or DONE; `waitingUntil` |
 | `engine/ytdlp-errors.ts` | pure: yt-dlp stderr + exit code → `ErrorInfo` with a human message, from ordered pattern tables backed by fixtures; `mapDownloadExit` for downloads (transfer errors, the preview break filter's exit 101) |
-| `engine/finalize-plan.ts` | pure: tags and the comment rule, file name, codec plan and muxer table, ffmpeg/ffprobe argv, ffprobe JSON, output checks, ffmpeg's error text, cover sniffing (ADR-015, ADR-016) |
+| `engine/finalize-plan.ts` | pure: tags and the comment rule, file name, codec plan and muxer table, `canHoldCover` (whether to fetch a thumbnail), ffmpeg/ffprobe argv, ffprobe JSON, output checks, ffmpeg's error text, cover sniffing (ADR-015, ADR-016) |
 | `engine/id3.ts` | pure: our ID3v2.3 tag (TIT2, TPE1, TALB, TPE2, TYER, COMM, APIC) and the AIFF `ID3 ` chunk |
 | `engine/finalize.ts` | the downloaded file → a tagged file in the target format: probe, cover pass, audio pass, read back, ID3 tag |
-| `fs/folders.ts` | `resolveTargetFolder` (at enqueue), `recheckFolder` (at publish), `insideFolder`, the path byte budget |
+| `fs/folders.ts` | `checkPickedFolder` (when a folder is chosen: enqueue's checks plus a read of one entry, ADR-024), `resolveTargetFolder` (at enqueue), `recheckFolder` (at publish), `insideFolder`, the path byte budget |
 | `fs/move.ts` | `createPublish`: link, or copy and claim, into the target folder, never overwriting (ADR-018) |
 | `fs/folder-picker.ts` | the macOS folder picker (osascript `choose folder`), one at a time, 300 s timeout |
 | `fs/reveal.ts` | `open -R` on a finished file |
 | `jobs/types.ts` | `StartInfo`, `DoneInfo`, `TargetFolder`, the attempt, finalize and publish signatures, `PartRecord`, `StepError` |
 | `jobs/attempt.ts` | one attempt of one job: job dir, yt-dlp, its lines → updates, finalize, publish, cleanup |
-| `jobs/queue.ts` | jobs and batches, dedupe, run order, concurrency, gates, the state machine, cancel/retry/clear, eviction of finished jobs |
+| `jobs/queue.ts` | jobs and batches, dedupe, run order, concurrency, gates, the state machine, cancel/retry/clear, eviction of finished jobs (ADR-025) |
 | `jobs/bus.ts` | typed event bus: each event serialized once for every listener, checked against the contract when asked |
 | `pacing/token-bucket.ts` | GCRA token bucket with an optional reserve; one instance can be shared |
 | `pacing/gates.ts` | per-platform admission for downloads: bucket, cooldown, strikes, half-open, persistent block (ADR-017) |
@@ -126,14 +126,23 @@ The reasons are in ADR-007.
 | `dev-guard.ts` | dev-server plugin: the guard's exact Host check and Fetch Metadata rule for every request Vite answers; `/__open-in-editor` only from the page itself |
 | `dev-exit.ts` | dev-server plugin: Ctrl-C (SIGINT) or SIGTERM closes Vite and exits 0, so `pnpm dev` ends cleanly (Vite alone dies by SIGINT and exits 143 on SIGTERM) |
 | `playwright.config.ts`, `e2e/` | Playwright e2e against `apps/server/test/e2e-server.ts` (see Testing) |
-| `src/main.tsx` | mounts the app: QueryClient, router with `{ queryClient }` context; starts the event stream once (`startEvents`), outside React |
-| `src/routes/__root.tsx` | the shell: header (app name, engine status), `<Outlet/>`, not-found page |
-| `src/routes/index.tsx` | home: the paste flow (Phase 3); an empty state for now |
+| `src/main.tsx` | mounts the app: QueryClient (`createQueryClient`), router with `{ queryClient }` context; starts the event stream once (`startEvents`), outside React |
+| `src/routes/__root.tsx` | the shell (ADR-020): a header (app name, `FolderPicker`, `EngineStatus`), the `EngineBanner`, then `<main>` (the page) and `<aside aria-label="Downloads">` (`DownloadsPanel`), each scrolling on its own on lg+ and stacked below; one `TooltipProvider` (300 ms); the not-found page |
+| `src/routes/index.tsx` | home: `ResolvePage` |
 | `src/lib/api.ts` | the only `fetch` caller: same-origin `/api`, JSON `Content-Type` on every non-GET, shared-schema validation, `ApiError` (`api` / `unreachable` / `invalid_response`). Calls for health, resolve, downloads (create, cancel, retry, reveal, bulk cancel/retry/clear), settings and the folder picker; no downloads list call |
 | `src/lib/events.ts` | `startEvents`: the one `/api/events` stream → `['downloads']` (`DownloadsState`, never fetched); a drop past 2 s rechecks `['health']`; a hidden tab closes it after 10 s (ADR-019) |
-| `src/features/engine/` | `useHealth` (query `['health']`, retried every 3 s only while failing) and `useRecheckHealth`; the header chip and popover (`EngineStatus`) listing tools, versions and `healthProblems` |
-| `src/components/ui/` | shadcn/ui components (Base UI, Nova), generated by the CLI |
-| `src/test/` | test helpers: fake `fetch` at the network edge, `FakeEventSource`, Health and download fixtures, render with a fresh QueryClient, the console guard |
+| `src/lib/format.ts`, `error-text.ts` | pure display helpers: sizes, speeds, ETAs, total durations, clock times, `~/` paths, folder names, text clipped to the contract's caps; `errorHint` (a next step per `ErrorCode`), `describeError` (any thrown value → message and hint, nothing for an abort), `unavailableLabel` |
+| `src/lib/query-client.ts` | `queryClientDefaults` and `createQueryClient`: `networkMode: 'always'` for queries and mutations, since the API is on 127.0.0.1 and the browser's online state says nothing about reaching it. Tests use the same defaults (`createTestQueryClient`) |
+| `src/lib/focus.ts`, `use-throttled-value.ts` | `focusNextAfter` (focus moves on, as Tab would, when a control removes itself); `useThrottledValue` (a live region's text at most once per interval) |
+| `src/features/resolve/` | the paste flow (ADR-020): the link box and its badge (`classifyUrl`), paste anywhere (a document `paste` listener outside text fields, plus a ⌘V fallback that focuses the box), drop (`text/uri-list`, then `text/plain`; a dragged file is refused so the browser never opens it in place of the app, and text without a link dropped on another text field such as the filter goes into that field), every way in (Try again and the list fallback too) loading through the link box, `useResolve` (a `useMutation` per load with its own AbortController; a new load aborts the last), loading skeletons with the elapsed time and the big-list note, errors with hints and the list fallback, the "This track or the whole playlist?" prompt, results keyed by the load's number. `testing/` holds `vi.mock` doubles of the result views for its own tests |
+| `src/features/track/` | `TrackCard`: artwork, names, duration, platform, the source (the job's once it reports one); `useTrackDownload` queues the track once when `autoStart` (frozen at mount), else a Download button beside the format |
+| `src/features/collection/` | `CollectionView` (keyed by the collection object): the header (counts, total duration, notes, `lists` to open), the toolbar (all/none/invert, a filter that keeps the selection and ignores case and accents, the count and duration of the selection, of which only the count is announced), the virtualized track table (44 px div rows with ARIA table roles, roving focus that also scrolls the page below lg, shift-click ranges, each row's job chip read by job id), the selection reducer over `TrackKey`s, and the download bar (folder, format, subfolder switch, "Download N tracks"; sticky only on lg+) (ADR-021). `useEnrichment` fills partial rows from `enrich-session.ts`, outside TanStack Query (ADR-022) |
+| `src/features/downloads/` | `['downloads']` readers (`useDownloads`, `useJob`, `useJobIdsByTrack`, `useQueue`); `useCreateDownloads` (reads settings, invalidates `['settings']`); `track-ref.ts` (`toTrackRef`, `trackKey`, `downloadOptionsFrom`); `JobRow` (56 px) and `JobInline` with their wording (`job-text.ts`: output next to source, waiting and requeued states) and one action per job (`job-actions.ts`); the panel (`downloads-panel.tsx`, `panel-*`): counts, overall progress over the batches at work since the panel was last idle (`use-running-summary.ts`, `summary.ts`), bulk menus for all or one batch, queue notes, and one virtualized list of batch headers and job rows |
+| `src/features/folder/` | `FolderPicker` in the header: recent folders and "Choose folder…" (`usePickFolder`, aborted by Cancel or unmount); refusals in a popover |
+| `src/features/settings/` | `useSettings`, `useUpdateSettings` (optimistic, rolled back on error, sent one at a time in the order made: mutation scope `settings`); `FormatSelect`, one line per format (`format-options.ts`) |
+| `src/features/engine/` | `useHealth` (query `['health']`, retried every 3 s only while failing) and `useRecheckHealth`; the header chip and popover (`EngineStatus`) listing tools, versions and `healthProblems`; `EngineBanner` under the header: server offline, engine problems with their commands, warnings dismissible one by one for the tab's session (remembered by tool and severity in `sessionStorage`) |
+| `src/components/` | `Artwork` (lazy, square, no referrer, a placeholder when missing or broken), `PlatformBadge`, `FolderPath` (a path on one line that, when it doesn't fit, loses its start, not the end that tells folders apart; the full path in its tooltip); `ui/` holds the shadcn/ui components (Base UI, Nova), generated by the CLI |
+| `src/test/` | test helpers: fake `fetch` at the network edge, `FakeEventSource` and `liveDownloads` (the real stream over it), Health, download and resolve fixtures, render with a fresh QueryClient, the console guard |
 
 ## API (v1)
 JSON bodies are validated with the shared schemas. Errors use the shape `{ error: { code: ErrorCode, message } }` (`ApiErrorBody`) with the status from `http/errors.ts`: 400 `invalid_url`/`invalid_request`, 403 `forbidden`, 404 `not_found`, 409 `canceled`, 413 `invalid_request` for a body over its route's limit (64 KiB unless the route says otherwise), 415 `invalid_request` for a non-JSON mutation, 422 `unsupported_url`, `folder_unavailable` and content the platform refuses (`unavailable`, `private`, `geo_blocked`, `age_restricted`, `login_required`, `bot_check`, `preview_only`), 429 `rate_limited`, 502 `network`, 503 `engine_missing`, 507 `disk_full`, 500 `postprocess_failed`/`unknown`. A route may override the status with `ApiError`'s `status` option: 409 `invalid_request` for a retry that can't run or a second folder picker, and 503 `unknown` while the server shuts down or when too many event streams are open.
@@ -154,8 +163,8 @@ JSON bodies are validated with the shared schemas. Errors use the shape `{ error
 | `POST /api/downloads/clear` | `ClearJobsRequest`: `{ target }` | `{ count }`; removes finished jobs (done, skipped, failed, canceled) |
 | `GET /api/events` | – | SSE: `retry: 1000`, then a `snapshot`, then `ServerEvent`s in order, with a `heartbeat` every 15 s (ADR-019). 503 while shutting down or with 32 streams open. HEAD gets the headers only, never a stream |
 | `GET /api/settings` | – | `Settings` |
-| `PUT /api/settings` | `SettingsUpdate`: any fields except `recentFolders` | `Settings`. A changed `concurrency` resizes the queue at once |
-| `POST /api/folders/pick` | `FolderPickRequest`: `{ startIn? }` | `FolderPickResponse`: `{ path }`, or `{ canceled: true }` (the user canceled, 300 s passed, or the browser dropped the request). 409 `invalid_request` while a picker is open, 422 `folder_unavailable` for a picked path that is gone or unusable, 500 `unknown` (e.g. no Mac desktop session) |
+| `PUT /api/settings` | `SettingsUpdate`: any fields except `recentFolders` | `Settings`. A changed `concurrency` resizes the queue at once. A changed `folder` (e.g. a recent one) is checked and read like a picked one (ADR-024): 422 `folder_unavailable` when it is missing, not a folder, not writable, inside the data dir or blocked by macOS privacy settings, and nothing is saved. The default folder is accepted while missing, since its first download creates it, and an unchanged folder isn't checked again. PUTs apply one at a time, in the order they arrive, so an older folder can't be saved after a newer one while its check waits |
+| `POST /api/folders/pick` | `FolderPickRequest`: `{ startIn? }` | `FolderPickResponse`: `{ path }`, or `{ canceled: true }` (the user canceled, 300 s passed, or the browser dropped the request). A picked folder gets enqueue's checks (exists, is a folder, writable, outside the data dir, room for the file names) and a read of one entry, so macOS's privacy prompt for a protected folder (Desktop, Documents, Downloads, iCloud Drive, a removable or network volume) shows now; the answer waits for it (ADR-024). A folder that is writable but can't be listed is accepted. 409 `invalid_request` while the dialog is open, 422 `folder_unavailable` with enqueue's wording for any refusal (macOS privacy settings are named), 500 `unknown` (e.g. no Mac desktop session) |
 
 Bulk bodies (`/downloads/cancel`, `/retry`, `/clear`) may be up to 512 KiB, enough for 5,000 job ids. Once shutdown has begun, the download mutations (create, cancel, retry, bulk) and new event streams answer 503 ("DJ Scraper is shutting down").
 
@@ -193,8 +202,11 @@ type Collection = {
   durationSec?: number        // the platform's total (SoundCloud sets)
   truncated: boolean          // our entry cap cut the list
   skippedEntries?: number     // rows that aren't tracks, e.g. sets on a SoundCloud user page
+  lists?: CollectionLink[]    // the skipped rows that are lists, in listing order (ADR-023)
   entries: CollectionEntry[]
 }
+// A list a page links instead of a track (a set on a SoundCloud Sets tab); resolve its url to open it.
+type CollectionLink = { url: string; title?: string }
 
 type ResolveRequest = { url: string; mode: 'auto' | 'track' | 'collection' }  // mode defaults to auto
 type ResolveResult =
@@ -333,6 +345,8 @@ Pure helpers and constants in `packages/shared`, used by both apps:
 // ids, collectionKind, channelRoot, embeddedList, secret) or a UrlRejection;
 // urlRejectionMessage(reason); splitArtistTitle(title); youtubeListKind(listId); isYoutubeChannelId(id)
 
+// Durations (duration.ts): formatDuration(sec) → "3:07", "1:02:03" (the web's track and row lengths)
+
 // Ports (ports.ts): SERVER_PORT 4747, WEB_DEV_PORT 5173, PortSchema (the PORT env var),
 // loopbackHosts(port) (the exact Host values the guards accept)
 
@@ -369,11 +383,12 @@ The reasons are in ADR-013 and ADR-014.
 4. **Server: yt-dlp.** One `yt-dlp -J --flat-playlist` call (at most 4 run at once; a closed browser request stops it), normalized by `engine/ytdlp-parse.ts` and checked against `ResolveResultSchema`. A failure maps to an `ErrorCode` through `engine/ytdlp-errors.ts`.
    - YouTube flat rows carry title, duration, uploader and thumbnails, but no availability: they stay `unknown` unless their exact title is `[Private video]` or `[Deleted video]`.
    - SoundCloud set rows are bare (id + url) and user-page rows have no duration, so both arrive as `partial` rows (ADR-008). User pages also list sets: only track rows are kept, and the rest are counted in `skippedEntries`.
+   - Skipped rows whose URL classifies as a list (sets on a SoundCloud user page or its Sets and Albums tabs, playlists on a YouTube channel's Playlists tab) come back as `lists`, within the entry cap, once per URL and never the page itself (ADR-023). The web opens one by resolving its URL.
    - A SoundCloud set whose `album_type` (yt-dlp's copy of SoundCloud's set type) is `album`, `ep`, `single` or `compilation` is kind `album`, like a YouTube album, whatever URL it came from. Playlists (`album_type: playlist`) stay `set`.
    - `owner` is the list's uploader or channel. SoundCloud user pages report neither, so theirs is the username in the `<username> (<Resource>)` title (`The Royal Concept (All)` → `The Royal Concept`). YouTube Music albums have a null uploader, so theirs is the artist of the `<artist> - Topic` channel that all their rows share; an album by several artists gets no owner.
    - Artist comes from platform metadata (YouTube Music, SoundCloud label tracks), else from the title split at its first dash (`splitArtistTitle`).
    - `source` is the stream a download takes (ADR-017): the last audio-only format, skipping Go+ previews and SoundCloud's login-only original, and on SoundCloud also its Opus stream unless nothing else is left. A track that only has preview formats is `unavailable` with reason `preview_only`, without a duration.
-5. **Enrichment.** The web asks `POST /api/resolve/entries` for the partial rows in view. The server looks each row up with `yt-dlp -J --flat-playlist --no-playlist -- <row url>`:
+5. **Enrichment.** The web asks `POST /api/resolve/entries` for the partial rows in view: 150 ms after the table stops scrolling, the rows the table shows (the filter applied) plus the next 5 shown rows on each side, 4 rows per request and 2 requests at once (25 is only the server's cap), each aborted once its rows have scrolled away (ADR-022). The server looks each row up with `yt-dlp -J --flat-playlist --no-playlist -- <row url>`:
    - Pacing is per platform: two lookups at a time, with a minimum gap between starts. SoundCloud adds a request budget, a burst of 25 lookups refilling one every 5 s. That is about 120 lookups per 10 min, or 360–600 API requests at the measured 3–5 per lookup, within SoundCloud's ~600. SoundCloud downloads take from the same bucket and leave its last 5 tokens to lookups (ADR-017).
    - A `rate_limited` row pauses its platform for 60 s, doubling per consecutive hit up to 10 min. During the pause, rows fail at once without spawning.
    - Results are cached for 30 min (2,000 rows), and concurrent requests for the same row share one lookup. That lookup stops only when every request waiting on it is gone. Rows that are lists are refused.
@@ -382,7 +397,7 @@ The reasons are in ADR-013 and ADR-014.
 
 ### Download
 The reasons are in ADR-015 to ADR-019.
-1. **Enqueue** (`POST /api/downloads`, `routes/downloads.ts`). The cheap checks come first, so a request that can't work creates no jobs:
+1. **Enqueue** (`POST /api/downloads`, `routes/downloads.ts`). The folder was checked and read when it was chosen (ADR-024). The cheap checks come first, so a request that can't work creates no jobs:
    - yt-dlp, ffmpeg and ffprobe are located without running them (`locateEngine`); a missing one is 503 `engine_missing`.
    - The folder is resolved (`fs/folders.ts`): an existing, writable folder outside the data dir. Only the default `~/Music/DJ Scraper` is created when missing. A subfolder becomes one sanitized folder name inside it, created if missing, and may not be a symlink (not even to a folder beside it). The real path plus the longest file name must fit macOS's 1,024-byte path limit, and the folder as given plus the subfolder must stay a valid folder path (1,024 characters), since jobs carry it.
    - Each item's URL is classified with `classifyUrl`. Items repeating another (same classified platform + id) within the request, or a queued or running job with the same folder and format (not one being canceled), map to that job. Display fields the ref lacks are filled from the enricher's cache.
@@ -400,7 +415,7 @@ The reasons are in ADR-015 to ADR-019.
 5. **Finalize** (`engine/finalize.ts`, ADR-015), in `<jobDir>/finalize/`:
    - ffprobe the download; an MP3's duration is measured with a copy pass, because ffprobe estimates it without a Xing header. That duration must match the one yt-dlp reported, else `network` ("incomplete").
    - Plan (pure): copy when the source already has the target codec, else encode; tags, file name (cut to the UTF-8 bytes the folder's real path leaves of 1,023) and the comment URL (ADR-016).
-   - Cover: when `embedArtwork` is on and the target can hold one, yt-dlp's thumbnail (not a placeholder, sniffed as an image) becomes a baseline JPEG of at most 1000 px. A failure here costs only the artwork.
+   - Cover: when `embedArtwork` is on and the target can hold one, yt-dlp's thumbnail (not a placeholder, sniffed as an image) becomes a baseline JPEG of at most 1000 px. A failure here costs only the artwork. yt-dlp fetched the thumbnail only if `canHoldCover(format, platform)`: never for WAV or a YouTube original, which is WebM (ADR-015's amendment).
    - One audio pass (`-xerror` unless the source is MP3, ADR-015). Then ffprobe reads the output back: codec, ffmpeg's tags, the cover, and the duration against the input's. ffmpeg's exit 0 alone is never trusted. A full data drive, reported by yt-dlp or ffmpeg, fails `disk_full`.
    - MP3 and AIFF: our ID3v2.3 tag goes in (ADR-016).
 6. **Publish** (`fs/move.ts`, ADR-018). The folder is resolved again and must be the one from enqueue. The file name is then claimed without overwriting: the job ends `done`, or `skipped` when a file of that name is already there.
@@ -411,7 +426,7 @@ The reasons are in ADR-015 to ADR-019.
    - One failing job never stops the others.
 9. **Events.** Every change goes to the bus and out over SSE (ADR-019): `jobs.added`, `jobs.updated` (one event for a bulk action), `jobs.removed`, `job.progress` (one per `DL` line, at most about two a second, no throttle), `queue.updated` (pauses and paced starts). The web applies them to `['downloads']`.
 10. **Cancel.** A queued job is canceled at once. A running job gets `cancelRequested` and its attempt is aborted: SIGINT to the process group (yt-dlp, or our ffprobe/ffmpeg), SIGKILL after 3 s, then the job dir is removed. A file that already reached the folder stands, as done or skipped. A job still waiting for its turn to claim a name stops at once.
-11. **Retry** puts a failed or canceled job at the back of its platform's queue as its next attempt, with its strikes and transient fields reset. Bulk cancel, retry and clear act on a scope (all, a batch, or job ids). Finished jobs beyond 2,000 are dropped with `jobs.removed`: oldest first, done, skipped and canceled ones before failed ones, and none of a batch that still has jobs to run.
+11. **Retry** puts a failed or canceled job at the back of its platform's queue as its next attempt, with its strikes and transient fields reset. Bulk cancel, retry and clear act on a scope (all, a batch, or job ids). Finished jobs beyond 2,000 are dropped with `jobs.removed`: canceled ones first (except the 50 most recently canceled), then done and skipped ones, then failed ones together with those 50 recently canceled ones (a retry may still want them), oldest first within each group, and none of a batch that still has jobs to run. A job being canceled has nothing left to run, so a batch whose remaining jobs are all being canceled isn't spared: canceling a big batch drops its own canceled jobs, not other batches' finished ones (ADR-025).
 12. **Shutdown** aborts every running attempt (they end canceled) while the event streams end cleanly. **Startup** sweeps what a previous server left: its process groups, job dirs and part files (ADR-018).
 
 ### Job state machine
@@ -464,7 +479,7 @@ The server can spawn processes and write files, so other websites must not be ab
   - Tag values come from the platform's metadata. Each is one argv entry after `-metadata`, cleaned by `cleanTagValue` first (controls become spaces, at most 1,000 characters).
 - **Paths.**
   - yt-dlp writes only into the job dir (`-P`). The paths its `DONE` line names must resolve (realpath) to regular files inside it.
-  - The download folder is resolved at enqueue (real path, a writable folder outside the data dir; only the default is ever created) and again right before publishing, where it must be the same real path and still a folder; it is never created then. The file name is one sanitized path component.
+  - The download folder is checked and read when it is chosen (picked, or set through `PUT /api/settings`; ADR-024), resolved at enqueue (real path, a writable folder outside the data dir; only the default is ever created) and again right before publishing, where it must be the same real path and still a folder; it is never created then. The file name is one sanitized path component.
   - Publishing never overwrites: a hard link or an exclusive create claims the name, never `rename` onto it (ADR-018).
   - Reveal takes the file's path from the job, never from the request.
 - **Logs.**
@@ -475,7 +490,7 @@ The server can spawn processes and write files, so other websites must not be ab
   - Sign-ins are opt-in and per platform. yt-dlp reads browser cookies at runtime, and the app never stores cookies.
   - Secrets never go into argv (visible in `ps`) or logs.
 - **Other local users and processes are out of scope** (ADR-001): the server doesn't authenticate local clients. The data dir and its `jobs/` must be owned by the user and are created 0700.
-- **Bounds.** A download request holds at most 5,000 items in 8 MiB, with ref texts of at most 1,000 characters. Finished jobs beyond 2,000 are dropped (a running batch keeps all of its own). At most 32 event streams are open, and a stream that falls 16 MiB behind, its largest pending event aside, is cut off.
+- **Bounds.** A download request holds at most 5,000 items in 8 MiB, with ref texts of at most 1,000 characters. Finished jobs beyond 2,000 are dropped, canceled ones first except the 50 most recent (a batch with jobs still to run keeps all of its own; one that is only being canceled doesn't). At most 32 event streams are open, and a stream that falls 16 MiB behind, its largest pending event aside, is cut off.
 
 ## Persistence
 App data dir: `~/Library/Application Support/DJ Scraper/` on macOS, or `DJS_DATA_DIR`. It and `jobs/` are real directories owned by the user, created 0700, never symlinks (ADR-018).
@@ -524,12 +539,22 @@ Downloads integration tests:
 
 E2E (`pnpm test:e2e` = `playwright test` in `apps/web`; `pnpm test:e2e:install` downloads Chromium's headless shell and WebKit once):
 - Playwright's `webServer` first builds the UI into its own `node_modules/.e2e-dist`, never `dist`, which `pnpm start` may be serving. It then runs `apps/server/test/e2e-server.ts` on that build, on port 4849, so e2e can run beside `pnpm dev` and `pnpm start`.
-- That script serves the freshly built UI in production mode with a healthy fake engine: a temp PATH of fake yt-dlp, ffmpeg and ffprobe (symlinks to `fake-tool.sh`), with node as the JS runtime, and its own data dir and home folder. It keeps the server child in its own process group, so Playwright's signals reach it, and it removes its temp dir on exit.
-- Specs import `test` and `expect` from `e2e/fixtures.ts`, whose console guard fails a test on any console error, warning or page error. That includes the browser's own "Failed to load resource" lines, e.g. for `/api/events` while the server is down.
-- They cover what jsdom can't: the focus ring actually drawing, the popover fitting a 420 px window, and reduced motion. WebKit stands in for Safari. Its Tab skips links, so keyboard tests use Option-Tab there.
+- That script serves the freshly built UI in production mode with a healthy fake engine (`writeFakeEngine`: fake yt-dlp at today's version, fake ffmpeg and ffprobe, and a `node` link for the fakes, as the whole PATH), and its own data dir and home folder; downloads land in the temp home's `Music/DJ Scraper`. Before the recorded rules, the fake gets e2e rules of its own: a download for every row of the e2e playlist and for the watch+list and mix tracks, made from the one recorded YouTube download with each row's id, names and duration and 250 ms between lines so the UI shows each stage; set row 6 by its API URL; a list that takes 20 s to load; a download that hangs until canceled; and a private track inside a playlist. `e2e/fake-urls.ts` lists every URL it answers. The script keeps the server child in its own process group, so Playwright's signals reach it, and it removes its temp dir on exit.
+- One server serves the whole run, so `workers: 1`: both browsers run one test at a time, since settings, jobs, pacing and files outlive a test. YouTube's pacing is real (10 downloads at once, then one per 12 s, counted over the run): the playlist and cancel specs spend that burst, so the single-track and panel specs download the SoundCloud track, and a new spec that downloads from YouTube waits 12 s per extra download.
+- Specs import `test` and `expect` from `e2e/fixtures.ts`. Its automatic fixtures:
+  - a console guard that fails a test on any console error, warning or page error. That includes the browser's own "Failed to load resource" lines (an error answer, or `/api/events` while the server is down), which a spec expects one by one with `expectConsoleError(failedLoad(status, path))`; an expected line that never comes fails too;
+  - a network guard: a request that would leave the server's origin fails the test, except remote thumbnails, which get a 1×1 PNG;
+  - `POST /api/downloads/:id/reveal` answered 204 in the browser (`revealRequests`), so `open -R` never runs;
+  - settings restored after each test (UI changes included), and before it every job still at work canceled and every job cleared (`jobsCleared`), so each test starts with an empty downloads panel. `downloadFolder` gives a test a fresh folder in the server's temp home, so a download ends `done`, not `skipped`.
+- `e2e/app.ts` holds shared locators and actions (`linkBox`, `jobRow`, `trackCard`, `pasteAnywhere`, `nextPost`). `pasteAnywhere` dispatches a `paste` event, as Edit > Paste does; `single-track.spec.ts` also presses the real ⌘V. A paste sent right after `page.goto` can arrive before React has mounted, so specs wait for the autofocused link box first.
+- They cover what jsdom can't: the flows end to end, the focus ring actually drawing, the popover fitting a 420 px window, no sideways scroll at 420 px, and reduced motion. WebKit stands in for Safari. Its Tab skips links, so keyboard tests use Option-Tab there.
 - The cached Firefox build is too old for Playwright 1.63, so Firefox isn't a project.
 
 Web tests (`apps/web`) run in jsdom with Testing Library. They fake `fetch` at the network edge (`src/test/fake-api.ts`) instead of mocking hooks, use a fresh QueryClient per test, and fail on any `console.error` or `console.warn` (React warnings included). The event stream tests drive `FakeEventSource` (`src/test/fake-event-source.ts`) with fake timers and a stubbed `document.visibilityState`, and check that `stop()` leaves no timer behind. Node-side files at the package root (`dev-guard.test.ts`, `dev-exit.test.ts`, `vite-config.test.ts`) choose the node environment per file.
+- Feature tests that need live jobs run the real stream with `liveDownloads(queryClient)` (`src/test/downloads.ts`), which sends a snapshot and each event inside `act()`. Resolve fixtures (tracks, a 30-row playlist, a SoundCloud set with partial rows, `bigPlaylist(n)`, a page with `lists`) are in `src/test/resolve.ts`, parsed with the shared schemas.
+- A test's QueryClient comes from `createTestQueryClient()` (`src/test/render.tsx`): the app's defaults, no retries.
+- Two kinds of `vi.mock` stand in for parts built elsewhere: the resolve page's tests replace `TrackCard` and `CollectionView` with doubles (`features/resolve/testing/`), and the collection's component tests replace `useEnrichment` with `useFakeEnrichment` (`features/collection/test-utils.ts`). Both have tests of their own, and integration tests run the real parts together: `resolve-autostart.test.tsx` (a paste to its download with the real `TrackCard`, under StrictMode) and `collection-enrichment.test.tsx` (the real `useEnrichment` under the real table, with real timers).
+- jsdom lays nothing out, so virtualized lists get a stubbed `offsetHeight`/`offsetWidth` (`stubTableViewport`, and the panel's test).
 
 Fixtures:
 - **Where:** `apps/server/test/fixtures/youtube/` and `soundcloud/` (`-J` output), `errors/` (stderr), `engine/` (version probe output), `downloads/` (a stdout + stderr pair per download run with the real download argv) and `ffprobe/` (ffprobe JSON of real downloads and of finalize's outputs).
@@ -545,4 +570,4 @@ Fake engine:
   - It exits 2 on argv that breaks our rules (no `--ignore-config`, no `--`, or a download argv without its required flags).
   - Env knobs add a delay, a hang until SIGINT, a shorter forced wait, extra rules, or a calls log.
 - **`test/fake-ffmpeg.mjs`:** one script that is ffprobe or ffmpeg by the name of its link. Its media are FAKEAUDIO files (`test/fake-media.mjs`): ffmpeg writes them as its argv says (an AIFF inside a real FORM container), and ffprobe answers with the recorded `ffprobe/` JSON the file's header names. It exits 2 on argv finalize never builds, and otherwise answers like ffmpeg 8 (exit 0 on an existing output, 234 for a cover a container can't hold, `-vn` dropping a mapped cover). Knobs make a pass fail, hang, come out short or lose its tags. It doesn't read ID3 tags; tests read those with `test/id3-reader.ts`.
-- Point the engine at them with `writeFakeYtdlp`, `writeFakeFfmpeg` or `writeFakeEngine` in `test/helpers.ts` (`YTDLP_PATH`, `FFMPEG_PATH`). `test/e2e-server.ts` still uses `fake-tool.sh`, which answers only `--version`.
+- Point the engine at them with `writeFakeYtdlp`, `writeFakeFfmpeg` or `writeFakeEngine` in `test/helpers.ts` (`YTDLP_PATH`, `FFMPEG_PATH`, or a PATH of links as `test/e2e-server.ts` does).

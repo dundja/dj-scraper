@@ -1,5 +1,7 @@
 import { HealthSchema } from '@dj-scraper/shared'
 import type { Locator, Page } from '@playwright/test'
+import { emptyState, linkBox } from './app.ts'
+import { YOUTUBE_PLAYLIST } from './fake-urls.ts'
 import { expect, test } from './fixtures.ts'
 
 /** The header chip: the one button whose accessible name starts with "Engine status:". */
@@ -124,40 +126,61 @@ test('serves the app for a deep link, which shows Page not found with a way back
   expect(response?.status()).toBe(200)
   expect(await response?.headerValue('content-type')).toMatch(/^text\/html/)
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible()
+  // The shell stays (header, downloads); only the page is missing.
+  await expect(linkBox(page)).toHaveCount(0)
+  await expect(page.getByRole('complementary', { name: 'Downloads' })).toBeVisible()
 
   await page.getByRole('link', { name: 'Back to start' }).click()
 
   await expect(page).toHaveURL('/')
-  await expect(
-    page.getByRole('heading', { name: 'Paste a YouTube or SoundCloud link' }),
-  ).toBeVisible()
+  await expect(emptyState(page)).toBeVisible()
+  await expect(linkBox(page)).toBeVisible()
 })
 
-test('shows a visible focus indicator on the engine chip when reached with the keyboard', async ({
+test('focuses the link box on load; the keyboard reaches the folder and the engine chip, which shows a focus ring', async ({
   page,
   browserName,
 }) => {
   // Safari's Tab skips links (unless "Press Tab to highlight each item" is on); Option-Tab doesn't.
-  const tab = browserName === 'webkit' ? 'Alt+Tab' : 'Tab'
+  const back = browserName === 'webkit' ? 'Alt+Shift+Tab' : 'Shift+Tab'
   await page.goto('/')
+  await expect(linkBox(page)).toBeFocused()
   const button = chip(page)
   await expect(button).toHaveAccessibleName('Engine status: Engine ready')
   const unfocused = await focusIndicator(button)
 
-  await page.keyboard.press(tab)
-  await expect(page.getByRole('link', { name: 'DJ Scraper' })).toBeFocused()
-  await page.keyboard.press(tab)
+  // The header comes before the page: logo, download folder, engine chip, then the link box.
+  await page.keyboard.press(back)
   await expect(button).toBeFocused()
   expect(await button.evaluate((element) => element.matches(':focus-visible'))).toBe(true)
-
   const focused = await focusIndicator(button)
   expect(focused).not.toEqual(unfocused)
   // A ring or an outline that actually draws, not just a subtle border change.
   expect(focused.ringPx).toBeGreaterThan(0)
+
+  await page.keyboard.press(back)
+  await expect(page.getByRole('button', { name: /^Download folder: ~?\// })).toBeFocused()
+  await page.keyboard.press(back)
+  await expect(page.getByRole('link', { name: 'DJ Scraper' })).toBeFocused()
 })
 
 test.describe('in a 420×800 window', () => {
   test.use({ viewport: { width: 420, height: 800 } })
+
+  const scrollWidth = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth)
+
+  test('never scrolls sideways, empty or showing a playlist', async ({ page }) => {
+    await page.goto('/')
+    await expect(linkBox(page)).toBeFocused()
+    await expect(emptyState(page)).toBeVisible()
+    expect(await scrollWidth(page)).toBeLessThanOrEqual(420)
+
+    await linkBox(page).fill(YOUTUBE_PLAYLIST)
+    await linkBox(page).press('Enter')
+    await expect(page.getByRole('table', { name: 'Tracks' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Download 20 tracks' })).toBeVisible()
+    expect(await scrollWidth(page)).toBeLessThanOrEqual(420)
+  })
 
   test('keeps the open engine popover inside the window', async ({ page }) => {
     await page.goto('/')

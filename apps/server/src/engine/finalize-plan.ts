@@ -474,6 +474,17 @@ export function originalMuxer(formatNames: readonly string[], codec: string): Mu
   }
 }
 
+/**
+ * D3: whether the file a download makes can hold a cover, as far as is known before yt-dlp picks
+ * the stream, so the thumbnail is fetched only when it can be used. WAV can't. "Original" keeps the
+ * stream's own codec (`originalMuxer`): YouTube's best audio (`ba`) is its Opus stream, kept in
+ * WebM, which can't either; elsewhere it is usually an MP3, AAC or FLAC, which gets its cover.
+ */
+export function canHoldCover(format: DownloadFormat, platform: Platform): boolean {
+  if (format === 'original') return platform !== 'youtube'
+  return CONTAINERS[TARGETS[format].muxer].cover !== 'none'
+}
+
 // ---------------------------------------------------------------------------------------------
 // ffmpeg argv
 

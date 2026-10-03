@@ -1,12 +1,18 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { classifyUrl, type DownloadFormat, type ValidUrl } from '@dj-scraper/shared'
+import {
+  classifyUrl,
+  type DownloadFormat,
+  DownloadFormatSchema,
+  type ValidUrl,
+} from '@dj-scraper/shared'
 import { describe, expect, it } from 'vitest'
 import { type DoneInfo, StepError } from '../jobs/types.ts'
 import {
   type AudioPlan,
   audioArgs,
   COVER_SCALE,
+  canHoldCover,
   cleanTagValue,
   commentUrl,
   coverArgs,
@@ -688,6 +694,42 @@ describe('planAudio', () => {
       limit - 1,
     )
     expect(planAudio('aiff', surround).downmix).toBe(true)
+  })
+})
+
+describe('canHoldCover', () => {
+  const formats = DownloadFormatSchema.options
+  const platforms = ['youtube', 'soundcloud', 'other'] as const
+
+  it.each(
+    formats.flatMap((format) =>
+      platforms.map((platform) => ({
+        format,
+        platform,
+        expected: format !== 'wav' && !(format === 'original' && platform === 'youtube'),
+      })),
+    ),
+  )('fetches a cover for $format on $platform: $expected', ({ format, platform, expected }) => {
+    expect(canHoldCover(format, platform)).toBe(expected)
+  })
+
+  it('agrees with the plan for every converted format, whatever the source', () => {
+    for (const fixture of ['src-youtube-251-webm', 'src-soundcloud-mp3']) {
+      for (const format of formats.filter((name) => name !== 'original')) {
+        const planned = planAudio(format, probeFixture(fixture)).cover !== 'none'
+        expect(canHoldCover(format, 'youtube'), `${fixture} → ${format}`).toBe(planned)
+      }
+    }
+  })
+
+  it('matches what "original" makes of the recorded sources', () => {
+    // YouTube's best audio is Opus 251, kept in WebM: no cover to fetch.
+    expect(planAudio('original', probeFixture('src-youtube-251-webm')).cover).toBe('none')
+    expect(canHoldCover('original', 'youtube')).toBe(false)
+    // SoundCloud's is MP3 or AAC (its Opus only when nothing else exists): the cover goes in.
+    expect(planAudio('original', probeFixture('src-soundcloud-mp3')).cover).toBe('id3')
+    expect(planAudio('original', probeFixture('src-soundcloud-hls-aac-m4a')).cover).toBe('ffmpeg')
+    expect(canHoldCover('original', 'soundcloud')).toBe(true)
   })
 })
 

@@ -20,8 +20,10 @@ src/
                     with an optional status override, status map), security-headers.ts (anti-framing, nosniff,
                     no-referrer on every response), json.ts (readJson(c, Schema), jsonBodyLimit, jsonBodyLimitOf)
   routes/           system.ts (health, recheck), resolve.ts (resolve, entries), downloads.ts (create, list, cancel,
-                    retry, reveal, bulk cancel/retry/clear), events.ts (SSE: createEventStreams), settings.ts,
-                    folders.ts (folder picker), web.ts (the built UI + SPA fallback, ADR-012)
+                    retry, reveal, bulk cancel/retry/clear), events.ts (SSE: createEventStreams), settings.ts
+                    (a changed folder is checked like a picked one; PUTs apply one at a time, in arrival
+                    order), folders.ts (folder picker, then
+                    checkPickedFolder), web.ts (the built UI + SPA fallback, ADR-012)
   resolve/          plan.ts (pure: URL + mode → yt-dlp call), resolver.ts (POST /api/resolve),
                     enricher.ts (POST /api/resolve/entries: pacing, budget, cooldown, cache; peek for downloads),
                     limiter.ts, lru.ts, input.ts (checkUrl), ytdlp-call.ts
@@ -35,15 +37,17 @@ src/
     ytdlp-parse.ts  pure: info JSON → Track/Collection; trackNames (shared with finalize)
     ytdlp-progress.ts pure: one download line → DL / PP / START / DONE; waitingUntil
     ytdlp-errors.ts pure: stderr + exit code → ErrorInfo (ordered pattern tables); mapDownloadExit
-    finalize-plan.ts pure: tags, comment URL, file name, codec plan, muxer table, ffmpeg/ffprobe argv, probe
-                    parsing, readback checks, ffmpeg error text, cover sniffing (ADR-015, ADR-016)
+    finalize-plan.ts pure: tags, comment URL, file name, codec plan, muxer table, canHoldCover (whether the
+                    download fetches a thumbnail), ffmpeg/ffprobe argv, probe parsing, readback checks, ffmpeg
+                    error text, cover sniffing (ADR-015, ADR-016)
     id3.ts          pure: our ID3v2.3 tag and the AIFF ID3 chunk
     finalize.ts     probe → cover pass → audio pass → readback → ID3 tag, in <jobDir>/finalize/
-  fs/               folders.ts (resolveTargetFolder, recheckFolder, insideFolder), move.ts (createPublish: never
-                    overwrites), folder-picker.ts (osascript choose folder), reveal.ts (open -R)
+  fs/               folders.ts (checkPickedFolder when a folder is chosen, resolveTargetFolder at enqueue,
+                    recheckFolder at publish, insideFolder), move.ts (createPublish: never overwrites),
+                    folder-picker.ts (osascript choose folder), reveal.ts (open -R)
   jobs/             types.ts (StartInfo, DoneInfo, TargetFolder, attempt/finalize/publish types, StepError),
                     attempt.ts (one attempt: job dir, yt-dlp, finalize, publish, cleanup), queue.ts (state
-                    machine, run order, concurrency, cancel/retry/clear), bus.ts (typed events)
+                    machine, run order, concurrency, cancel/retry/clear, eviction: ADR-025), bus.ts (typed events)
   pacing/           token-bucket.ts (GCRA, shareable, with a reserve), gates.ts (per-platform admission, ADR-017)
   settings/         store.ts (settings.json: field-wise repair, settings.json.bad, atomic coalesced writes)
   util/             errno.ts (errnoCode, failureName: what a log may say about an error), fields.ts (lenient,
@@ -56,6 +60,9 @@ test/
   helpers.ts        test helpers (fake tools incl. writeFakeYtdlp, writeFakeFfmpeg, writeFakeEngine; serverEnv;
                     temp dirs, engine fixtures, free ports, raw requests, web dist); no src/ imports
   e2e-server.ts     Playwright's webServer: the production server on PORT with a healthy fake engine
+                    (writeFakeEngine, a node link on PATH) and e2e rules of its own, tried first: playlist row
+                    downloads, set row 6 by its API URL, a slow list, a hanging download, a private track in a
+                    playlist. apps/web/e2e/fake-urls.ts lists the URLs; e2e-server.test.ts checks them
   entry.ts          bootEntry: the real entry (node src/index.ts) as a child, with its lines; lockHolder
   resolve-app.ts    harness for the resolve/entries integration tests (real server + fake yt-dlp)
   downloads-app.ts  harness for the downloads integration tests (real server + createServices + fake engine, SSE reader)
@@ -79,6 +86,7 @@ test/
 - **Pure core, thin edges.** Argv builders, parsers, finalize's decisions (`finalize-plan.ts`), the ID3 writer and the gates are pure functions or clock-injected objects with unit tests. Routes only validate, call a service, and respond.
 - **Contract.** Validate every request with the `@dj-scraper/shared` schemas and return shared types. Errors are `{ error: { code, message } }` with a typed `ErrorCode`: throw `ApiError(code, message)`, and `http/errors.ts` maps the code to its HTTP status; pass `{ status }` only for the documented overrides (409, 503). Inside the pipeline, throw `StepError(code, message)` and convert it at the route. Messages never hold paths.
 - **Distrust yt-dlp JSON.** Parse it with tolerant schemas (most fields optional) and normalize it. Extractors change their fields over time. The same goes for `DL`/`START`/`DONE` lines and ffprobe JSON.
+- **Folders.** A download folder is checked when it is chosen (`checkPickedFolder`: enqueue's checks plus a read of one entry, on `POST /api/folders/pick` and when `PUT /api/settings` changes `folder`; not for the default folder or an unchanged one), at enqueue (`resolveTargetFolder`) and right before publishing (`recheckFolder`) (ADR-018, ADR-024). Every refusal at choice time is 422 `folder_unavailable`.
 - **Files.** yt-dlp writes only into the attempt's job dir (`<dataDir>/jobs/<attemptId>`), and finalize only into its `finalize/`. Paths yt-dlp prints must resolve to regular files inside the job dir. Publish (`fs/move.ts`):
   - rechecks that the folder is still the real path resolved at enqueue, and never creates it
   - claims the sanitized name with `link` or an exclusive create, never `rename` onto it, so an existing file means `skipped`
@@ -100,5 +108,5 @@ test/
   - Recordings get a `fake-yt-dlp.json` rule (`download: '<case>'` for download cases), or a `WITHOUT_RULES` reason in `test/fake-yt-dlp.test.ts`.
 - **Fake binaries.** `fake-yt-dlp.mjs`, `fake-ffmpeg.mjs` and `fake-tool.sh` are checked in with their exec bit (git mode 100755) and symlinked per test: endpoint security scans every newly written executable on its first run. The fakes exit 2 on argv our builders never produce, so drift fails loudly.
 - **Security middleware.** The Host/Origin guard and JSON-only mutations apply to every route. Never add CORS headers.
-- **Tests.** Unit tests never spawn the real yt-dlp or touch the network. Integration tests use the fake engine. Live checks belong in `pnpm smoke`. Test harnesses that start the server itself (`test/entry.ts`, `test/e2e-server.ts`) may spawn `node` directly, never an engine binary. Every spawned server entry spreads `serverEnv(root)` from `test/helpers.ts` into its env (its own `DJS_DATA_DIR` and `HOME`), so no test touches the user's data dir or `~/Music`.
+- **Tests.** Unit tests never spawn the real yt-dlp or touch the network. Integration tests use the fake engine. Live checks belong in `pnpm smoke`. Test harnesses that start the server itself (`test/entry.ts`, `test/e2e-server.ts`) may spawn `node` directly, never an engine binary. Fake rules only e2e needs (UI states no recording shows, downloads made from recorded runs) go in `e2e-server.ts`'s `e2eRules`, not in `fake-yt-dlp.json`, with their URL in `apps/web/e2e/fake-urls.ts`; one e2e server serves the whole run, so its state and YouTube's pacing carry over between specs. Every spawned server entry spreads `serverEnv(root)` from `test/helpers.ts` into its env (its own `DJS_DATA_DIR` and `HOME`), so no test touches the user's data dir or `~/Music`.
 - **Logs.** Keep them short and structured: URL kind, counts, error codes, timings, platforms, and job ids (their first 8 characters). Never log URLs, titles, paths, argv, `DONE` lines, `ps` output, cookies or tokens, or the message of a filesystem or spawn error (log its code: `failureName` in `util/errno.ts`). A SoundCloud secret link is a credential (see `docs/architecture.md` > Security model).

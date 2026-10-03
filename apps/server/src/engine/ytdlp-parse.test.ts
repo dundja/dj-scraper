@@ -60,6 +60,7 @@ const RECORDED_URLS: Record<string, string> = {
     'https://soundcloud.com/jaimemf/youtube-dl-test-video-a-y-baw/s-8Pjrp',
   'soundcloud/track-short-link.json': 'https://on.soundcloud.com/9TqpUbrnArHjKNAq6',
   'soundcloud/track.json': 'https://soundcloud.com/ethmusic/lostin-powers-she-so-heavy',
+  'soundcloud/user-albums.json': 'https://soundcloud.com/the-concept-band/albums',
   'soundcloud/user-likes.json': 'https://soundcloud.com/leviryan/likes',
   'soundcloud/user-reposts.json': 'https://soundcloud.com/the-concept-band/reposts',
   'soundcloud/user-sets.json': 'https://soundcloud.com/the-concept-band/sets',
@@ -530,7 +531,7 @@ describe('normalizeInfo: YouTube collections', () => {
     expect(channel.trackCount).toBeUndefined()
   })
 
-  it('skips the nested tab playlists of a channel root instead of listing them', () => {
+  it('skips the nested tab playlists of a channel root, linking them as lists', () => {
     const root = collectionFixture('youtube/channel-root.json')
     expect(root).toStrictEqual({
       id: '@NoCopyrightSounds',
@@ -544,6 +545,17 @@ describe('normalizeInfo: YouTube collections', () => {
       // playlist_count 2 counts tabs, not tracks.
       truncated: false,
       skippedEntries: 2,
+      // The tabs have no url, only a webpage_url.
+      lists: [
+        {
+          url: 'https://www.youtube.com/@NoCopyrightSounds/videos',
+          title: 'NoCopyrightSounds - Videos',
+        },
+        {
+          url: 'https://www.youtube.com/@NoCopyrightSounds/shorts',
+          title: 'NoCopyrightSounds - Shorts',
+        },
+      ],
       entries: [],
     })
   })
@@ -639,7 +651,7 @@ describe('normalizeInfo: SoundCloud collections', () => {
     expect(kindOf({ ...albumSet, album_type: 'playlist' })).toBe('set')
   })
 
-  it('skips the sets on a user page, counts them, and keeps titled partial rows', () => {
+  it('skips the sets on a user page, counts and links them, and keeps titled partial rows', () => {
     // Recorded with -I 1:12, as a cap of 11 would request it; row 3 is a set.
     const user = collectionFixture('soundcloud/user.json', 11)
     expect({ ...user, entries: [] }).toStrictEqual({
@@ -652,6 +664,12 @@ describe('normalizeInfo: SoundCloud collections', () => {
       owner: 'The Royal Concept',
       truncated: true,
       skippedEntries: 1,
+      lists: [
+        {
+          url: 'https://soundcloud.com/the-concept-band/sets/goldrushed-2013-album',
+          title: 'Goldrushed [2013 Album]',
+        },
+      ],
       entries: [],
     })
     expect(ids(user)).toEqual([
@@ -693,15 +711,67 @@ describe('normalizeInfo: SoundCloud collections', () => {
     expect(user.entries).toHaveLength(11)
   })
 
-  it('skips every row of a sets tab', () => {
-    const sets = collectionFixture('soundcloud/user-sets.json')
-    expect(sets).toMatchObject({
+  const bandSets = {
+    goldrushed: {
+      url: 'https://soundcloud.com/the-concept-band/sets/goldrushed-2013-album',
+      title: 'Goldrushed [2013 Album]',
+    },
+    royalEp: { url: 'https://soundcloud.com/the-concept-band/sets/royal-ep', title: 'Royal EP' },
+    royalConceptEp: {
+      url: 'https://soundcloud.com/the-concept-band/sets/the-royal-concept-ep',
+      title: 'The Royal Concept EP',
+    },
+    royalConcept: {
+      url: 'https://soundcloud.com/the-concept-band/sets/the-concept-1',
+      title: 'The Royal Concept',
+    },
+  }
+
+  it('lists no tracks for a sets tab, but links every set in listing order', () => {
+    expect(collectionFixture('soundcloud/user-sets.json')).toStrictEqual({
+      id: '9615865',
+      platform: 'soundcloud',
+      url: 'https://soundcloud.com/the-concept-band/sets',
       kind: 'channel',
       title: 'The Royal Concept (Sets)',
       owner: 'The Royal Concept',
+      truncated: false,
       skippedEntries: 4,
+      lists: [
+        bandSets.goldrushed,
+        bandSets.royalEp,
+        bandSets.royalConceptEp,
+        bandSets.royalConcept,
+      ],
       entries: [],
     })
+  })
+
+  it('links the sets of an albums tab in its own order, without a track count', () => {
+    // playlist_count 4 counts the sets: the list ran out under the cap.
+    expect(collectionFixture('soundcloud/user-albums.json')).toStrictEqual({
+      id: '9615865',
+      platform: 'soundcloud',
+      url: 'https://soundcloud.com/the-concept-band/albums',
+      kind: 'channel',
+      title: 'The Royal Concept (Albums)',
+      owner: 'The Royal Concept',
+      truncated: false,
+      skippedEntries: 4,
+      lists: [
+        bandSets.royalEp,
+        bandSets.goldrushed,
+        bandSets.royalConceptEp,
+        bandSets.royalConcept,
+      ],
+      entries: [],
+    })
+  })
+
+  it('links only the sets within the cap', () => {
+    const capped = collectionFixture('soundcloud/user-albums.json', 2)
+    expect(capped).toMatchObject({ truncated: true, skippedEntries: 2 })
+    expect(capped.lists).toStrictEqual([bandSets.royalEp, bandSets.goldrushed])
   })
 
   it('lists a tracks tab as partial rows', () => {
@@ -712,6 +782,7 @@ describe('normalizeInfo: SoundCloud collections', () => {
       owner: 'The Royal Concept',
     })
     expect(tracks.skippedEntries).toBeUndefined()
+    expect(tracks.lists).toBeUndefined()
     expect(ids(tracks)).toEqual([
       '607075623',
       '597335928',
@@ -1307,6 +1378,11 @@ describe('tolerance: collections', () => {
     expect(list.entries[2]?.platform).toBe('other')
     expect(list.skippedEntries).toBe(3)
     expect(list.trackCount).toBeUndefined()
+    // The nested playlist has no URL to open.
+    expect(list.lists).toStrictEqual([
+      { url: 'https://www.youtube.com/playlist?list=PLother', title: 'Title PLother' },
+      { url: 'https://www.youtube.com/playlist?list=PLnokey', title: 'Title PLnokey' },
+    ])
   })
 
   it('keeps only ie_key Soundcloud rows of a SoundCloud listing, whatever the URL looks like', () => {
@@ -1324,6 +1400,137 @@ describe('tolerance: collections', () => {
     )
     expect(ids(list)).toEqual(['1'])
     expect(list.skippedEntries).toBe(2)
+    // Row 2 has a track's URL: it is skipped, but it is no list to open.
+    expect(list.lists).toStrictEqual([
+      { url: 'https://soundcloud.com/user/sets/c', title: 'Title 3' },
+    ])
+  })
+
+  describe('lists', () => {
+    const pageUrl = 'https://soundcloud.com/user'
+    const pageInput = classified(pageUrl)
+    const setRow = (slug: string, fields: Record<string, unknown> = {}) => ({
+      _type: 'url',
+      id: slug,
+      title: `Set ${slug}`,
+      url: `${pageUrl}/sets/${slug}`,
+      ...fields,
+    })
+    const trackRow = (id: string) =>
+      row(id, { ie_key: 'Soundcloud', url: `${pageUrl}/track-${id}`, duration: null })
+    const userPage = (entries: unknown[], { limit = 100 } = {}) =>
+      collection(
+        listing(entries, {
+          extractor_key: 'SoundcloudUser',
+          id: '9',
+          title: 'User (All)',
+          webpage_url: pageUrl,
+        }),
+        { input: pageInput, limit },
+      )
+    const link = (slug: string) => ({ url: `${pageUrl}/sets/${slug}`, title: `Set ${slug}` })
+
+    it('links the set rows of a user page in listing order, apart from its tracks', () => {
+      const page = userPage([setRow('a'), trackRow('1'), setRow('b'), trackRow('2'), setRow('c')])
+      expect(ids(page)).toEqual(['1', '2'])
+      expect(page.skippedEntries).toBe(3)
+      expect(page.lists).toStrictEqual([link('a'), link('b'), link('c')])
+    })
+
+    it('keeps a title only when it has text, trimmed', () => {
+      const page = userPage([
+        setRow('a', { title: '  Summer  ' }),
+        setRow('b', { title: ' \t' }),
+        setRow('c', { title: null }),
+        setRow('d', { title: 1999 }),
+        setRow('e', { title: undefined }),
+      ])
+      expect(page.lists).toStrictEqual([
+        { url: `${pageUrl}/sets/a`, title: 'Summer' },
+        { url: `${pageUrl}/sets/b` },
+        { url: `${pageUrl}/sets/c` },
+        { url: `${pageUrl}/sets/d` },
+        { url: `${pageUrl}/sets/e` },
+      ])
+    })
+
+    it('reads a row’s webpage_url when it has no url', () => {
+      const page = userPage([setRow('a', { url: null, webpage_url: `${pageUrl}/sets/a` })])
+      expect(page.lists).toStrictEqual([link('a')])
+    })
+
+    it.each([
+      ['a script URL', 'javascript:alert(1)'],
+      ['an FTP URL', 'ftp://soundcloud.com/user/sets/x'],
+      ['a file URL', 'file:///Users/dj/sets/x'],
+      ['a relative URL', '/user/sets/x'],
+      ['a URL with credentials', 'https://dj:secret@soundcloud.com/user/sets/x'],
+      ['an overlong URL', `${pageUrl}/sets/${'x'.repeat(2048)}`],
+      ['a URL of a DRM service', 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M'],
+      ['a SoundCloud URL that names no list', 'https://soundcloud.com/discover/sets/x'],
+      ['a track’s URL', `${pageUrl}/some-track`],
+      ['no URL', null],
+    ])('counts a row with %s as skipped, but links nothing', (_label, url) => {
+      const page = userPage([setRow('x', { url })])
+      expect(page.skippedEntries).toBe(1)
+      expect(page.lists).toBeUndefined()
+    })
+
+    it('keeps a secret set’s URL whole, its token included', () => {
+      const secret = [
+        `${pageUrl}/sets/private-mix/s-AbCdEfGhIjK`,
+        'https://api-v2.soundcloud.com/playlists/123?secret_token=s-AbCdEfGhIjK',
+      ]
+      const page = userPage(secret.map((url, index) => setRow(String(index), { url })))
+      expect(page.lists?.map((list) => list.url)).toEqual(secret)
+    })
+
+    it('links a list listed twice once, and never the page itself', () => {
+      const page = userPage([
+        setRow('a'),
+        setRow('again', { url: `${pageUrl}/sets/a`, title: 'Set a, reposted' }),
+        setRow('self', { url: pageUrl }),
+      ])
+      expect(page.skippedEntries).toBe(3)
+      expect(page.lists).toStrictEqual([link('a')])
+    })
+
+    it('links only the rows within the cap', () => {
+      const page = userPage([setRow('a'), setRow('b'), setRow('c')], { limit: 2 })
+      expect(page).toMatchObject({ truncated: true, skippedEntries: 2 })
+      expect(page.lists).toStrictEqual([link('a'), link('b')])
+    })
+
+    it('links a YouTube channel’s playlists tab, whose rows are YoutubeTab playlists', () => {
+      const tabUrl = 'https://www.youtube.com/@someone/playlists'
+      const tab = collection(
+        listing(
+          [
+            row('PLone', {
+              ie_key: 'YoutubeTab',
+              url: 'https://www.youtube.com/playlist?list=PLone',
+            }),
+            row('OLAK5uy_two', {
+              ie_key: 'YoutubeTab',
+              url: 'https://www.youtube.com/playlist?list=OLAK5uy_two',
+            }),
+          ],
+          { id: 'UC_someone', webpage_url: tabUrl, uploader: 'Someone' },
+        ),
+        { input: classified(tabUrl) },
+      )
+      expect(tab.entries).toEqual([])
+      expect(tab.lists).toStrictEqual([
+        { url: 'https://www.youtube.com/playlist?list=PLone', title: 'Title PLone' },
+        { url: 'https://www.youtube.com/playlist?list=OLAK5uy_two', title: 'Title OLAK5uy_two' },
+      ])
+    })
+
+    it('leaves lists out when no skipped row is a list', () => {
+      const page = userPage([trackRow('1'), null, { id: 'x' }])
+      expect(page.skippedEntries).toBe(2)
+      expect(page.lists).toBeUndefined()
+    })
   })
 
   it('keeps the track count when only unreadable rows were skipped', () => {

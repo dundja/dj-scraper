@@ -132,7 +132,13 @@
     },
     {
       "url": "https://soundcloud.com/the-concept-band/sets",
-      "stdout": "soundcloud/user-sets.json"
+      "stdout": "soundcloud/user-sets.json",
+      "note": "Every row is a set; the resolver lists them as the collection's lists. Its third row has a rule: soundcloud/set.json."
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/albums",
+      "stdout": "soundcloud/user-albums.json",
+      "note": "The same four sets in the Albums tab's order; the third row has a rule: soundcloud/set.json."
     },
     {
       "url": "https://soundcloud.com/the-concept-band/reposts",

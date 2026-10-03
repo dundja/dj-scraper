@@ -99,11 +99,27 @@ export type QueueOptions = {
   now?: () => number
   /** Finished jobs kept beyond this many are removed, oldest first (D17). */
   maxRetainedTerminal?: number
+  /** The newest this many canceled jobs are removed along with failed ones, not first (ADR-025). */
+  recentCanceled?: number
   newId?: () => string
   log?: Logger
 }
 
 export const DEFAULT_MAX_RETAINED_TERMINAL = 2000
+export const DEFAULT_RECENT_CANCELED = 50
+/** A canceled job among the `recentCanceled` that ended last. */
+type EvictionGroup = JobStatus | 'recently canceled'
+/**
+ * Which finished jobs go first when there are too many (ADR-025): canceled ones (the user let them
+ * go; after canceling a big batch they would otherwise push out the tracks that did download), then
+ * done and skipped ones (their files stay; the job is only their record), then failed ones and the
+ * newest canceled ones (a retry may still want those: a track just canceled keeps its Retry).
+ */
+const EVICTION_ORDER: readonly (readonly EvictionGroup[])[] = [
+  ['canceled'],
+  ['done', 'skipped'],
+  ['failed', 'recently canceled'],
+]
 /** A job that itself caused this many rate-limit strikes fails with its last error (D8). */
 export const MAX_OWN_STRIKES = 3
 
@@ -169,6 +185,8 @@ type Entry = {
   source?: AudioSource
   cancelRequested?: true
   running?: Attempt
+  /** The order jobs last finished in (0 before): eviction keeps the newest canceled ones longer. */
+  finished: number
 }
 
 export function createQueue({
@@ -180,13 +198,13 @@ export function createQueue({
   clock = monotonicClock,
   now = Date.now,
   maxRetainedTerminal = DEFAULT_MAX_RETAINED_TERMINAL,
+  recentCanceled = DEFAULT_RECENT_CANCELED,
   newId = randomUUID,
   log = console,
 }: QueueOptions): Queue {
   checkConcurrency(initialConcurrency)
-  if (!(Number.isSafeInteger(maxRetainedTerminal) && maxRetainedTerminal >= 0)) {
-    throw new RangeError(`maxRetainedTerminal must be a non-negative integer`)
-  }
+  checkCount('maxRetainedTerminal', maxRetainedTerminal)
+  checkCount('recentCanceled', recentCanceled)
   let concurrency = initialConcurrency
   /** Every job, in creation order (the display order). */
   const jobs = new Map<string, Entry>()
@@ -197,6 +215,7 @@ export function createQueue({
   let terminal = 0
   let lastSeq = 0
   let firstSeq = 0
+  let lastFinished = 0
   let closing = false
   let closed: Promise<void> | undefined
   let pumpScheduled = false
@@ -208,8 +227,9 @@ export function createQueue({
   const stamp = (): string => new Date(now()).toISOString()
 
   function setPhase(entry: Entry, phase: Phase): void {
-    terminal +=
-      Number(isTerminalStatus(phase.status)) - Number(isTerminalStatus(entry.phase.status))
+    const finishes = isTerminalStatus(phase.status)
+    terminal += Number(finishes) - Number(isTerminalStatus(entry.phase.status))
+    if (finishes) entry.finished = ++lastFinished
     entry.phase = phase
   }
 
@@ -544,23 +564,33 @@ export function createQueue({
   }
 
   /**
-   * Removes finished jobs beyond the cap, in one `jobs.removed` (D17): oldest first, done, skipped
-   * and canceled ones before failed ones (a retry may still want those), and none of a batch that
-   * still has jobs to run. A big batch may hold more than the cap until it finishes.
+   * Removes finished jobs beyond the cap, in one `jobs.removed` (D17), in EVICTION_ORDER and oldest
+   * first within each group, and none of a batch that still has jobs to run. A big batch may hold
+   * more than the cap until it finishes. A job being canceled has nothing left to run: canceling a
+   * big batch must not push other batches' jobs out while its running jobs stop.
    */
   function evict(): void {
     if (terminal <= maxRetainedTerminal) return
     const unfinished = new Set<string>()
+    const canceled: number[] = []
     for (const entry of jobs.values()) {
-      if (!isTerminalStatus(entry.phase.status)) unfinished.add(entry.batchId)
+      if (entry.phase.status === 'canceled') canceled.push(entry.finished)
+      else if (!isTerminalStatus(entry.phase.status) && entry.cancelRequested !== true) {
+        unfinished.add(entry.batchId)
+      }
     }
+    // The canceled jobs that finished after this one are the `recentCanceled` newest.
+    const recentAfter = canceled.sort((a, b) => b - a)[recentCanceled] ?? 0
+    const groupOf = (entry: Entry): EvictionGroup =>
+      entry.phase.status === 'canceled' && entry.finished > recentAfter
+        ? 'recently canceled'
+        : entry.phase.status
     const ids: string[] = []
     const batchIds: string[] = []
-    for (const failed of [false, true]) {
+    for (const group of EVICTION_ORDER) {
       for (const entry of jobs.values()) {
         if (terminal <= maxRetainedTerminal) break
-        const { status } = entry.phase
-        if (!isTerminalStatus(status) || (status === 'failed') !== failed) continue
+        if (!group.includes(groupOf(entry))) continue
         if (unfinished.has(entry.batchId)) continue
         remove(entry, batchIds)
         ids.push(entry.id)
@@ -737,6 +767,7 @@ export function createQueue({
           strikes: 0,
           seq: 0,
           phase: { status: 'queued' },
+          finished: 0,
         }
         const error = refusal ?? (input === undefined ? NOT_A_LINK : undefined)
         if (error !== undefined) {
@@ -863,6 +894,12 @@ export function createQueue({
       })()
       return closed
     },
+  }
+}
+
+function checkCount(name: string, n: number): void {
+  if (!(Number.isSafeInteger(n) && n >= 0)) {
+    throw new RangeError(`${name} must be a non-negative integer, got ${n}`)
   }
 }
 

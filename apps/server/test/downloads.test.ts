@@ -799,8 +799,7 @@ describe('folders', () => {
     const failed = await app.waitForJob(renamedId, 'failed')
     expect(failed.error).toEqual({
       code: 'folder_unavailable',
-      message:
-        'The download folder was moved, renamed or its drive was disconnected. Choose it again.',
+      message: 'The download folder was moved, renamed or its drive was disconnected.',
     })
     // The job queued for the same folder failed in the same update; the other folder's ran.
     const update = app.events.find(

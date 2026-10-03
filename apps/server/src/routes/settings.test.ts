@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
@@ -9,6 +9,7 @@ import {
 } from '@dj-scraper/shared'
 import { Hono } from 'hono'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { type FolderOps, PRIVACY_MESSAGE } from '../fs/folders.ts'
 import { onError, onNotFound } from '../http/errors.ts'
 import { guard } from '../http/guard.ts'
 import { createSettingsStore, SETTINGS_FILE } from '../settings/store.ts'
@@ -20,11 +21,16 @@ const DEFAULT_FOLDER = '/Users/dj/Music/DJ Scraper'
 const defaults: Settings = { ...DEFAULT_SETTINGS, recentFolders: [], folder: DEFAULT_FOLDER }
 const quiet = { info: () => {}, warn: () => {}, error: () => {} }
 
+// Real folders in a temp dir (real paths: tmpdir() is a symlink away on macOS): `usb` is a usable
+// download folder. The default folder doesn't exist, as before the first download creates it.
 let root = ''
+let usb = ''
 let dataDir = ''
 let count = 0
 beforeAll(async () => {
-  root = await mkdtemp(path.join(tmpdir(), 'dj-scraper-settings-route-'))
+  root = await realpath(await mkdtemp(path.join(tmpdir(), 'dj-scraper-settings-route-')))
+  usb = path.join(root, 'USB')
+  await mkdir(usb)
 })
 afterAll(async () => {
   await rm(root, { recursive: true, force: true })
@@ -34,7 +40,13 @@ beforeEach(() => {
 })
 
 /** The routes as app.ts mounts them: under /api, behind the guard, with our error handlers. */
-async function setup({ withCallback = true } = {}) {
+async function setup({
+  withCallback = true,
+  folderOps,
+}: {
+  withCallback?: boolean
+  folderOps?: Partial<FolderOps>
+} = {}) {
   const settings = await createSettingsStore({
     dataDir,
     defaultFolder: DEFAULT_FOLDER,
@@ -45,7 +57,13 @@ async function setup({ withCallback = true } = {}) {
   app.use(guard({ port: PORT }))
   app.route(
     '/api',
-    settingsRoutes({ settings, onConcurrency: withCallback ? onConcurrency : undefined }),
+    settingsRoutes({
+      settings,
+      dataDirReal: dataDir,
+      defaultFolder: DEFAULT_FOLDER,
+      folderOps,
+      onConcurrency: withCallback ? onConcurrency : undefined,
+    }),
   )
   app.notFound(onNotFound)
   app.onError(onError)
@@ -101,9 +119,133 @@ describe('PUT /api/settings', () => {
 
   it('adds a new folder to the recent folders', async () => {
     const { app } = await setup()
-    expect(await settingsOf(await send(app, put({ folder: '/Volumes/USB' })))).toMatchObject({
-      folder: '/Volumes/USB',
-      recentFolders: ['/Volumes/USB'],
+    expect(await settingsOf(await send(app, put({ folder: usb })))).toMatchObject({
+      folder: usb,
+      recentFolders: [usb],
+    })
+  })
+
+  describe('a new folder', () => {
+    it('is read before the answer, so macOS asks for access when it is chosen', async () => {
+      const handle = { read: vi.fn(async () => null), close: vi.fn(async () => {}) }
+      const opendir = vi.fn(async (_dir: string) => handle)
+      const { app } = await setup({ folderOps: { opendir } })
+      await settingsOf(await send(app, put({ folder: usb })))
+      expect(opendir).toHaveBeenCalledExactlyOnceWith(usb)
+      expect(handle.read).toHaveBeenCalledOnce()
+    })
+
+    it.each([
+      [
+        'gone (a recent folder deleted since)',
+        async () => path.join(root, 'gone'),
+        {},
+        "That folder doesn't exist. Check the path, or that its drive is connected.",
+      ],
+      [
+        'a file',
+        async () => {
+          const file = path.join(root, 'set.mp3')
+          await writeFile(file, 'x')
+          return file
+        },
+        {},
+        "That path isn't a folder.",
+      ],
+      [
+        'inside the data dir',
+        async () => {
+          await mkdir(path.join(dataDir, 'jobs'), { recursive: true })
+          return path.join(dataDir, 'jobs')
+        },
+        {},
+        "That folder is inside DJ Scraper's own data folder. Choose another one.",
+      ],
+      [
+        'blocked by macOS privacy settings',
+        async () => usb,
+        {
+          opendir: async () => ({
+            read: () => Promise.reject(Object.assign(new Error('EPERM'), { code: 'EPERM' })),
+            close: async () => {},
+          }),
+        },
+        PRIVACY_MESSAGE,
+      ],
+    ] satisfies [string, () => Promise<string>, Partial<FolderOps>, string][])(
+      'answers 422 folder_unavailable when it is %s, and keeps the old one',
+      async (_label, folder, folderOps, message) => {
+        const chosen = await folder()
+        const { app, settings } = await setup({ folderOps })
+        expect(
+          await errorOf(await send(app, put({ folder: chosen, format: 'wav' }))),
+        ).toStrictEqual({ status: 422, code: 'folder_unavailable', message })
+        // Nothing of the request is saved, the other fields included.
+        expect(settings.get()).toStrictEqual(defaults)
+      },
+    )
+
+    it('saves PUTs in the order they came, while an earlier folder check is still waiting', async () => {
+      // The first folder's read waits (as for macOS's privacy prompt); the second's doesn't.
+      const slow = path.join(root, `slow-${count}`)
+      const fast = path.join(root, `fast-${count}`)
+      await mkdir(slow)
+      await mkdir(fast)
+      let answer = () => {}
+      const answered = new Promise<void>((resolve) => {
+        answer = resolve
+      })
+      const opendir = vi.fn(async (dir: string) => {
+        if (dir === slow) await answered
+        return { read: async () => null, close: async () => {} }
+      })
+      const { app, settings } = await setup({ folderOps: { opendir } })
+
+      const first = send(app, put({ folder: slow }))
+      await vi.waitFor(() => expect(opendir).toHaveBeenCalledWith(slow))
+      const second = send(app, put({ folder: fast, format: 'flac' }))
+      // The later PUT waits for the earlier one: nothing is saved yet, and its folder isn't read.
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(settings.get()).toStrictEqual(defaults)
+      expect(opendir).toHaveBeenCalledTimes(1)
+
+      answer()
+      expect(await settingsOf(await first)).toMatchObject({ folder: slow })
+      expect(await settingsOf(await second)).toMatchObject({ folder: fast, format: 'flac' })
+      expect(settings.get()).toMatchObject({ folder: fast, recentFolders: [fast, slow] })
+    })
+
+    it('keeps answering PUTs after one was refused', async () => {
+      const { app, settings } = await setup()
+      const refused = send(app, put({ folder: path.join(root, 'gone'), format: 'wav' }))
+      const next = send(app, put({ format: 'flac' }))
+      expect(await errorOf(await refused)).toMatchObject({
+        status: 422,
+        code: 'folder_unavailable',
+      })
+      expect(await settingsOf(await next)).toMatchObject({ format: 'flac' })
+      expect(settings.get()).toStrictEqual({ ...defaults, format: 'flac' })
+    })
+
+    it('may be the default folder although it is missing: its first download creates it', async () => {
+      const { app } = await setup()
+      await settingsOf(await send(app, put({ folder: usb })))
+      expect(await settingsOf(await send(app, put({ folder: DEFAULT_FOLDER })))).toMatchObject({
+        folder: DEFAULT_FOLDER,
+        recentFolders: [DEFAULT_FOLDER, usb],
+      })
+    })
+  })
+
+  it('checks no folder when the folder stays the same, so other settings save while it is gone', async () => {
+    const gone = path.join(root, `unplugged-${count}`)
+    await mkdir(gone)
+    const { app } = await setup()
+    await settingsOf(await send(app, put({ folder: gone })))
+    await rm(gone, { recursive: true })
+    expect(await settingsOf(await send(app, put({ folder: gone, format: 'flac' })))).toMatchObject({
+      folder: gone,
+      format: 'flac',
     })
   })
 
@@ -155,7 +297,7 @@ describe('PUT /api/settings', () => {
 
     it.each([
       ['concurrency stays the same', { concurrency: DEFAULT_SETTINGS.concurrency }],
-      ['other settings change', { format: 'wav', folder: '/Volumes/USB' }],
+      ['other settings change', { format: 'wav', folder: '/Users/dj/Music/DJ Scraper' }],
     ])('is not called when %s', async (_label, body) => {
       const { app, onConcurrency } = await setup()
       await settingsOf(await send(app, put(body)))

@@ -5,6 +5,8 @@ import {
   type CollectionEntry,
   CollectionEntrySchema,
   type CollectionKind,
+  type CollectionLink,
+  CollectionLinkSchema,
   CollectionSchema,
   classifyUrl,
   HttpUrlSchema,
@@ -210,7 +212,8 @@ function toTrack(info: Info, input: ValidUrl): Track {
 /**
  * What the listing says about each row. Rows past `limit`, rows that aren't tracks (sets on a
  * SoundCloud user page, playlists on a channel tab) and rows without an id or usable URL are left
- * out; repeats of a platform + id keep the first row.
+ * out; repeats of a platform + id keep the first row. The rows left out that are lists the user can
+ * open become `lists`, so a SoundCloud Sets or Albums tab isn't a dead end.
  */
 function toCollection(info: Info, { input, limit }: NormalizeContext): Collection {
   const { id } = info
@@ -218,6 +221,7 @@ function toCollection(info: Info, { input, limit }: NormalizeContext): Collectio
   const platform = platformOf(info.extractor_key, input.platform)
   const kind = collectionKind(info, input, platform, id)
   const listedOwner = info.uploader ?? info.channel
+  const url = info.webpage_url ?? info.original_url ?? input.url
   // A channel tab lists only that channel's uploads, but its flat rows don't name the channel.
   const rowContext: RowContext = {
     platform,
@@ -229,9 +233,15 @@ function toCollection(info: Info, { input, limit }: NormalizeContext): Collectio
   let notTracks = 0
   const seen = new Set<string>()
   const entries: CollectionEntry[] = []
+  const lists = new Map<string, CollectionLink>()
   for (const raw of rows.slice(0, limit)) {
     const entry = toEntry(raw, rowContext)
-    if (entry === NOT_A_TRACK) notTracks++
+    if (entry === NOT_A_TRACK) {
+      notTracks++
+      // Keyed by URL, the way a collection is identified; a link back to this page is no help.
+      const link = toListLink(raw)
+      if (link !== undefined && link.url !== url && !lists.has(link.url)) lists.set(link.url, link)
+    }
     if (typeof entry === 'string') {
       skipped++
       continue
@@ -245,7 +255,7 @@ function toCollection(info: Info, { input, limit }: NormalizeContext): Collectio
   const candidate = omitUndefined({
     id,
     platform,
-    url: info.webpage_url ?? info.original_url ?? input.url,
+    url,
     kind,
     title: info.title ?? id,
     owner: listedOwner ?? derivedOwner(info, platform, kind, entries),
@@ -256,6 +266,7 @@ function toCollection(info: Info, { input, limit }: NormalizeContext): Collectio
     durationSec: info.duration,
     truncated: rows.length > limit,
     skippedEntries: skipped > 0 ? skipped : undefined,
+    lists: lists.size > 0 ? [...lists.values()] : undefined,
     entries,
   })
   const checked = CollectionSchema.safeParse(candidate)
@@ -318,6 +329,23 @@ function isTrackRow(row: Row, collectionPlatform: Platform): boolean {
   if (key.startsWith('Youtube')) return key === 'Youtube'
   if (key.startsWith('Soundcloud')) return key === 'Soundcloud'
   return true
+}
+
+/**
+ * A row that isn't a track, as a list the user can open: its URL as listed (like a track row's, a
+ * secret set's token included) when its shape names a list, e.g. a set on a SoundCloud user page or
+ * a playlist on a channel tab. Its title only when it has one.
+ */
+function toListLink(raw: unknown): CollectionLink | undefined {
+  const parsed = RowSchema.safeParse(raw)
+  if (!parsed.success) return undefined
+  const { title } = parsed.data
+  const url = parsed.data.url ?? parsed.data.webpage_url
+  if (url === undefined) return undefined
+  const classified = classifyUrl(url)
+  if (!classified.ok || classified.guess !== 'collection') return undefined
+  const checked = CollectionLinkSchema.safeParse(omitUndefined({ url, title }))
+  return checked.success ? checked.data : undefined
 }
 
 /** yt-dlp's extractor key names the site; without one, trust the URL we classified. */

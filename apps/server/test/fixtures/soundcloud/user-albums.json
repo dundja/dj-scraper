@@ -1,0 +1,51 @@
+{
+  "_type": "playlist",
+  "id": "9615865",
+  "title": "The Royal Concept (Albums)",
+  "entries": [
+    {
+      "id": "10258832",
+      "title": "Royal EP",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/sets/royal-ep",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "id": "300048546",
+      "title": "Goldrushed [2013 Album]",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/sets/goldrushed-2013-album",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "id": "2284613",
+      "title": "The Royal Concept EP",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/sets/the-royal-concept-ep",
+      "__x_forwarded_for_ip": null
+    },
+    {
+      "id": "1395385",
+      "title": "The Royal Concept",
+      "_type": "url",
+      "url": "https://soundcloud.com/the-concept-band/sets/the-concept-1",
+      "__x_forwarded_for_ip": null
+    }
+  ],
+  "webpage_url": "https://soundcloud.com/the-concept-band/albums",
+  "original_url": "https://soundcloud.com/the-concept-band/albums",
+  "webpage_url_basename": "albums",
+  "webpage_url_domain": "soundcloud.com",
+  "extractor": "soundcloud:user",
+  "extractor_key": "SoundcloudUser",
+  "release_year": null,
+  "playlist_count": 4,
+  "epoch": 1791014895,
+  "__files_to_move": {},
+  "_version": {
+    "version": "2026.08.19",
+    "current_git_head": null,
+    "release_git_head": "594bd50c2c78ac432f81600d309fdc4e0a92d82c",
+    "repository": "yt-dlp/yt-dlp"
+  }
+}

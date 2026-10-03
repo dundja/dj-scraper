@@ -16,6 +16,8 @@ export {
   CollectionEntrySchema,
   type CollectionKind,
   CollectionKindSchema,
+  type CollectionLink,
+  CollectionLinkSchema,
   CollectionSchema,
 } from './collection.ts'
 export {
@@ -74,6 +76,7 @@ export {
   TrackRefSchema,
   templatePlaceholders,
 } from './download.ts'
+export { formatDuration } from './duration.ts'
 export {
   DENO_MIN_VERSION,
   FFMPEG_MIN_MAJOR,

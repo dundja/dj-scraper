@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { classifyUrl } from '@dj-scraper/shared'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { canHoldCover } from '../src/engine/finalize-plan.ts'
 import { killActiveGroups, type RunResult, run } from '../src/engine/run.ts'
 import { downloadArgs, resolveArgs } from '../src/engine/ytdlp-args.ts'
 import {
@@ -727,6 +728,7 @@ describe('fake yt-dlp: downloads', () => {
     ['youtube', 'mp3', URLS.video, 0, 'jNQXAC9IVRw.webm'],
     ['youtube', 'm4a', URLS.video, 0, 'jNQXAC9IVRw.m4a'],
     ['youtube', 'wav', URLS.video, 0, 'jNQXAC9IVRw.webm'],
+    ['youtube', 'original', URLS.video, 0, 'jNQXAC9IVRw.webm'],
     ['soundcloud', 'aiff', URLS.secretTrack, 0, '123998367.mp3'],
     ['soundcloud', 'm4a', SC_AAC, 0, '47127631.m4a'],
     ['soundcloud', 'mp3', GO_PLUS, 101, undefined],
@@ -741,13 +743,16 @@ describe('fake yt-dlp: downloads', () => {
         platform,
         format,
         jobDir,
-        writeThumbnail: format !== 'wav',
+        writeThumbnail: canHoldCover(format, platform),
         jsRuntime: process.execPath,
       })
       const { result } = await runDownload(ytdlp, argv)
       expect(result.exitCode, result.stderr).toBe(exit)
       if (file !== undefined) {
-        expect(lineJson(result.stdout, 'DONE ').filepath).toBe(path.join(jobDir, file))
+        const done = lineJson(result.stdout, 'DONE ')
+        expect(done.filepath).toBe(path.join(jobDir, file))
+        // A thumbnail only when it was asked for.
+        expect('thumbnails.-1.filepath' in done).toBe(canHoldCover(format, platform))
       }
     },
   )

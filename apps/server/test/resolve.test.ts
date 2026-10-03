@@ -348,6 +348,13 @@ const SUCCESS: Record<
       expect(c.skippedEntries).toBe(1)
       expect(c.entries).toHaveLength(11)
       expect(c.entries.some((entry) => entry.url.includes('/sets/'))).toBe(false)
+      // The set it skipped is offered to open.
+      expect(c.lists).toStrictEqual([
+        {
+          url: 'https://soundcloud.com/the-concept-band/sets/goldrushed-2013-album',
+          title: 'Goldrushed [2013 Album]',
+        },
+      ])
     },
   },
   'soundcloud/user-tracks.json': {
@@ -373,13 +380,39 @@ const SUCCESS: Record<
   },
   'soundcloud/user-sets.json': {
     url: 'https://soundcloud.com/the-concept-band/sets',
-    check: (r) =>
-      expect(asCollection(r)).toMatchObject({
+    check: (r) => {
+      const c = asCollection(r)
+      expect(c).toMatchObject({
         kind: 'channel',
         owner: 'The Royal Concept',
         entries: [],
         skippedEntries: 4,
-      }),
+      })
+      expect(c.lists?.map((list) => list.title)).toEqual([
+        'Goldrushed [2013 Album]',
+        'Royal EP',
+        'The Royal Concept EP',
+        'The Royal Concept',
+      ])
+    },
+  },
+  'soundcloud/user-albums.json': {
+    url: 'https://soundcloud.com/the-concept-band/albums',
+    check: (r) => {
+      const c = asCollection(r)
+      expect(c).toMatchObject({
+        kind: 'channel',
+        title: 'The Royal Concept (Albums)',
+        entries: [],
+        skippedEntries: 4,
+      })
+      expect(c.lists?.map((list) => list.url)).toEqual([
+        'https://soundcloud.com/the-concept-band/sets/royal-ep',
+        'https://soundcloud.com/the-concept-band/sets/goldrushed-2013-album',
+        'https://soundcloud.com/the-concept-band/sets/the-royal-concept-ep',
+        'https://soundcloud.com/the-concept-band/sets/the-concept-1',
+      ])
+    },
   },
   'soundcloud/user-reposts.json': {
     url: 'https://soundcloud.com/the-concept-band/reposts',
@@ -425,6 +458,16 @@ describe('POST /api/resolve with recorded fixtures', () => {
     const lookups = await app.lookups()
     expect(lookups).toHaveLength(1)
     expect(lookups[0]?.argv).toEqual(expect.arrayContaining(['--ignore-config', '-J', '--']))
+  })
+
+  it('opens a set that a sets tab links, as the web does with its url', async () => {
+    const app = await start()
+    const tab = asCollection(await resolveOk(app, 'https://soundcloud.com/the-concept-band/sets'))
+    const link = tab.lists?.find((list) => list.title === 'The Royal Concept EP')
+    expect(link).toBeDefined()
+    const set = asCollection(await resolveOk(app, link?.url ?? ''))
+    expect(set).toMatchObject({ id: '2284613', kind: 'album', title: 'The Royal Concept EP' })
+    expect(set.entries).toHaveLength(6)
   })
 })
 

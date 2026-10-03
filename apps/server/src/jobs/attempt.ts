@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { AudioSource, ErrorInfo, ValidUrl } from '@dj-scraper/shared'
 import { JOBS_DIR } from '../data-dir.ts'
 import { spawnFailure } from '../engine/binaries.ts'
+import { canHoldCover } from '../engine/finalize-plan.ts'
 import { type RunResult, run, SpawnError } from '../engine/run.ts'
 import { downloadArgs } from '../engine/ytdlp-args.ts'
 import { DATA_DISK_FULL, mapDownloadExit } from '../engine/ytdlp-errors.ts'
@@ -198,8 +199,8 @@ async function download(
         platform,
         format: options.format,
         jobDir: dirs.jobDir,
-        // D3: only for a target that can hold a cover.
-        writeThumbnail: options.embedArtwork && options.format !== 'wav',
+        // D3: only for a file that can hold a cover (not WAV, not YouTube's WebM original).
+        writeThumbnail: options.embedArtwork && canHoldCover(options.format, platform),
         jsRuntime: context.jsRuntime,
         ...(context.ffmpegLocation ? { ffmpegLocation: context.ffmpegLocation } : {}),
       }),

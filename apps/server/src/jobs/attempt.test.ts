@@ -335,6 +335,21 @@ describe('runAttempt: a download that works', () => {
     }
   })
 
+  it('asks for no cover for a YouTube original (Opus in WebM), but for other originals', async () => {
+    const { start, calls } = setup({ lines: recorded('youtube-ba') })
+    const original = { ...MP3, format: 'original' } as const
+    await start(request(YT_URL, { options: original }))
+    await start(request(SC_URL, { options: original }))
+    await start(request('https://example.com/mix.mp3', { options: original }))
+    expect(calls.map((call) => call.argv.includes('--write-thumbnail'))).toEqual([
+      false,
+      true,
+      true,
+    ])
+    // The selector stays the platform's best stream: "original" is never narrowed to fit a cover.
+    expect(calls[0]?.argv[calls[0].argv.indexOf('-f') + 1]).toBe('ba')
+  })
+
   it('uses the SoundCloud selector and break filter for a SoundCloud URL', async () => {
     const { start, calls, finalize } = setup({ lines: recorded('soundcloud-ba') })
     expect(codeOf(await start(request(SC_URL)))).toBe('done')

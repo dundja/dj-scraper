@@ -19,38 +19,40 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud. Everythi
 ## Core flows
 
 ### 1. Paste a link
-- Paste anywhere in the app (⌘V), drop a link, or type into the URL box.
+- Paste anywhere in the app (⌘V, outside other text fields), drop a link, or type into the URL box. Pasting a link loads it at once; a new link cancels the one still loading.
 - Instantly show the detected platform and a best guess (track or playlist) before the server answers.
-- Resolve on the server, showing a skeleton meanwhile. Targets: a single track in under 3 s, and a 200-track YouTube playlist listed in under 10 s.
-- A watch URL that also carries a playlist (`watch?v=…&list=…`) asks: **This track** or **Whole playlist**.
+- Resolve on the server, showing a skeleton meanwhile, with Cancel. After 3 s it shows the seconds elapsed, and a list says that big ones take a while (on YouTube, 5,000 videos ≈ 1 min). Targets: a single track in under 3 s, and a 200-track YouTube playlist listed in under 10 s.
+- A watch URL that also carries a playlist (`watch?v=…&list=…`) asks: **This track** or **Whole playlist** (or **Whole album**). For a mix the track is the default, and the mix loads only its first 50. If the track itself can't be loaded (private, age-restricted…), the error still offers the list.
 
 ### 2. Single track → download immediately
-- Show the track card: artwork, title, artist, duration, platform, and source quality (codec/bitrate when known).
-- Start downloading right away into the current target folder with the default format. Cancelling takes one click.
+- Show the track card: artwork, title, artist, duration, platform, and source quality (codec/bitrate when known; once the download starts, the stream it actually took).
+- Start downloading right away into the current target folder with the default format. The card then follows the download (queued, waiting, progress, done with what was written) with one button: Cancel, Retry or Reveal in Finder. Cancelling takes one click.
 - Setting: "Auto-download single tracks" (default on). When it's off, show a Download button instead.
 
 ### 3. Playlist → pick → download
-- Header: artwork, title, owner, track count, total duration.
-- Track list: checkbox, #, artwork, title, artist, duration, availability. All available tracks start selected.
+- Header: artwork, title, owner, track count ("50 of 214" when the list is cut), total duration ("≈" when some are unknown).
+- A page that lists sets or playlists instead of tracks (a SoundCloud user's Sets or Albums tab, a YouTube channel's Playlists tab) shows them as links; opening one loads it.
+- Track list: checkbox, #, artwork, title, artist, duration, availability. All available tracks start selected. A track listed twice is one track: selected together, downloaded once.
 - Selection:
   - select all / none / invert, and shift-click ranges
   - a text filter that keeps the selection
   - a live count and total duration of what's selected
 - Unavailable entries (private, deleted, region-blocked) show greyed out with a reason and can't be selected.
 - Stays smooth with 1,000+ tracks. Lists of up to 5,000 rows load whole, and longer ones show their first 5,000 and say so (a mix shows its first 50). SoundCloud sets list instantly; titles, durations and artwork fill in as rows load, paced to stay within SoundCloud's request budget.
-- One click on **Download N tracks** queues them into the target folder, optionally into a subfolder named after the playlist.
+- One click on **Download N tracks** queues them into the target folder (shown in the bar, changed in the header), in the chosen format, optionally into a subfolder named after the playlist.
 
 ### 4. Target folder
 - Always visible in the app header. It defaults to `~/Music/DJ Scraper` and remembers the last folder plus a few recent ones.
-- **Change…** opens the native macOS folder picker (shown by the local server).
-- Only the default folder is created when missing; a folder you name must exist. If it disappears during a batch (renamed, drive unplugged), its remaining tracks fail with that reason instead of recreating it.
+- **Choose folder…** opens the native macOS folder picker (shown by the local server).
+- Only the default folder is created when missing; a folder you name must exist. A folder is checked when you choose it, picked or from the recent ones: a missing or unusable one is refused then, and macOS asks for access to a protected folder (Desktop, Documents, Downloads, iCloud Drive, a USB or network drive) at that moment, not in the middle of a batch. If it disappears during a batch (renamed, drive unplugged), its remaining tracks fail with that reason instead of recreating it.
 
 ### 5. Download progress
 - Each track moves from queued → downloading (percent, speed, ETA) → processing (convert, tag) → done. It can also end as failed, canceled, or skipped (a file of that name is already there).
 - A track may show **waiting** before its download starts, with the time it waits until; YouTube enforces that delay.
 - Big batches are paced to stay under platform rate limits (YouTube allows roughly 300 tracks/hour without a login; SoundCloud downloads share their budget with filling in set rows). When a platform starts limiting, its queue shows **paused** until a given time, the track that hit the limit goes back to the front, and the queue resumes on its own.
 - Each finished track says what was written: format, bitrate, and whether the stream was copied as is or re-encoded.
-- Batch controls: overall progress, cancel one or all, retry failed, and **Reveal in Finder** for finished files.
+- The downloads panel stays beside the page: counts, overall progress, each batch with its folder and format, and every track's status.
+- Batch controls: cancel one or all, retry failed, clear finished (for one batch or all), and **Reveal in Finder** for finished files.
 - One failing track never stops the batch.
 - Errors are written for humans: "Private video", "Not available in your country", "Age-restricted: needs browser cookies", "Preview only (SoundCloud Go+)", …
 
@@ -60,7 +62,7 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud. Everythi
   - M4A/AAC: copied when the source is AAC; anything else is transcoded to AAC 256 kbps
   - AIFF: the lossless container to pick, since it keeps tags and artwork
   - WAV (no artwork, minimal tags) and FLAC (16-bit)
-  - Original (no conversion; Opus/WebM files won't load in DJ apps and can't hold artwork)
+  - Original (no conversion). From YouTube that's Opus/WebM, which DJ apps won't load and which gets no artwork; SoundCloud's MP3 or AAC keeps its artwork
 - Filename template (default `{artist} - {title}`).
 - Embed artwork (on). Write the source URL into the comment tag (on): the track's public page only, never a secret, short or unlisted link.
 - Skip already-downloaded tracks (on).

@@ -2,12 +2,13 @@
 
 A local web app for DJs. Paste a YouTube or SoundCloud link (track or playlist), review the metadata, pick tracks, and download them as DJ-ready audio files into a folder you choose. It runs only on this machine: a Vite/React UI at localhost plus a Node server that drives yt-dlp and ffmpeg.
 
-**Status:** Phases 0–2 are done.
+**Status:** Phases 0–3 are done.
 - Phase 0 (scaffold): `packages/shared` (the contract), `apps/server` (guard, engine health, spawn wrapper, serving the built UI) and `apps/web` (dark shell with live engine status), with `pnpm dev`, `pnpm start` and Vitest/Playwright tests.
 - Phase 1 (engine & resolve): `classifyUrl`, `POST /api/resolve`, `POST /api/resolve/entries`, the fake engine and `pnpm smoke`.
-- Phase 2 (download pipeline): the paced download queue, finalize (one ffmpeg pass plus our ID3 writer, every file read back), publishing that never overwrites, the data-dir lock and startup sweep, settings, the folder picker, reveal and `GET /api/events`. The web has typed client calls and one event stream feeding `['downloads']`, but no downloads UI yet.
+- Phase 2 (download pipeline): the paced download queue, finalize (one ffmpeg pass plus our ID3 writer, every file read back), publishing that never overwrites, the data-dir lock and startup sweep, settings, the folder picker, reveal and `GET /api/events`, with typed web client calls and one event stream feeding `['downloads']`.
+- Phase 3 (UI): paste, drop or type a link (instant badge, a cancelable resolve per paste); the track card auto-downloads; the collection view (virtualized table, selection, filter, SoundCloud rows filled in as they scroll into view, `Collection.lists` to open) with its download bar; the downloads panel beside the page; the header's folder picker (folders checked and read when chosen) and the format select; the engine banner; Playwright e2e of both flows on the fake engine (ADR-020 to ADR-025).
 
-Next is roadmap Phase 3 (UI): the web starts calling resolve and downloads. The current phase and next items are in `docs/roadmap.md`.
+Next is roadmap Phase 4 (DJ polish), with Phase 3's follow-ups at its end. The current phase and next items are in `docs/roadmap.md`.
 
 ## Where things are explained
 | Need | Read |

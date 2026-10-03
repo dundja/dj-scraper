@@ -186,7 +186,7 @@ The web enriches partial rows through `POST /api/resolve/entries`, which returns
 **Consequences.** No ETag, Last-Modified or Range support. Files in `apps/web/public` must have names inside the allowed character set. During a rebuild, which empties `dist`, requests can briefly get 404 until Vite finishes.
 
 ## ADR-013 — Resolve: one flat yt-dlp call, capped listings, `ambiguous` for a track inside a list
-*2026-10-02 · accepted*
+*2026-10-02 · accepted · amended by ADR-023 (`lists`)*
 
 **Context.** Pasting a link must answer quickly with what it is: a track, a list, or both (`watch?v=…&list=…`). The roadmap asked to reconcile the original 1,000-entry cap with "smooth with 1,000+ tracks". Live probes with yt-dlp 2026.08.19 found:
 - Listing 5,001 rows takes 38–56 s, and a 200-row playlist about 2 s.
@@ -212,7 +212,7 @@ The web enriches partial rows through `POST /api/resolve/entries`, which returns
 **Consequences.** Lists over 5,000 rows show their first 5,000 and say so. A big channel takes tens of seconds to list, so the UI needs a visible loading state. `Collection` gained `trackCount`, `durationSec`, `truncated` and `skippedEntries`, and `ambiguous` gained `collectionKind`.
 
 ## ADR-014 — Partial rows are enriched lazily, one yt-dlp lookup per row, within each platform's budget
-*2026-10-02 · accepted · implements ADR-008 · amended by ADR-017*
+*2026-10-02 · accepted · implements ADR-008 · amended by ADR-017 · the web side is ADR-022*
 
 **Context.** SoundCloud set rows come back bare from the flat listing (ADR-008). A per-track `yt-dlp -J` lookup takes about 1 s, half of it process start, and costs 3–5 SoundCloud API requests: one lookup plus one per stream format. SoundCloud allows about 600 requests per 10 min. Narrowing the formats with `--extractor-args soundcloud:formats=…` saves 1–2 requests, but a track without the chosen formats fails with "No video formats found!". Skipping formats entirely costs one request, but loses the source codec and bitrate and Go+ preview detection, and honest audio needs both.
 
@@ -234,7 +234,7 @@ The web enriches partial rows through `POST /api/resolve/entries`, which returns
 - Phase 2 should decide format narrowing together with the download argv, because the source shown at enrichment should match what the download picks.
 
 ## ADR-015 — yt-dlp only downloads; finalize converts, tags and adds artwork in one ffmpeg pass
-*2026-10-03 · accepted · supersedes ADR-006's "yt-dlp converts"; amends ADR-004 · amended 2026-10-03 (MP3 sources: measured duration, no `-xerror`)*
+*2026-10-03 · accepted · supersedes ADR-006's "yt-dlp converts"; amends ADR-004 · amended 2026-10-03 (MP3 sources: measured duration, no `-xerror`; no thumbnail for a YouTube original)*
 
 **Context.** ADR-006 had yt-dlp download and convert (`-x --audio-format …`) in the job dir. Live runs with yt-dlp 2026.08.19 and ffmpeg 8.0 showed that `-x`:
 - converts silently: a SoundCloud MP3 128 kbps source became AAC "160 kbps" for M4A (lossy to lossy, with a bigger number), and FLAC from Opus came out 24-bit;
@@ -245,7 +245,7 @@ The web enriches partial rows through `POST /api/resolve/entries`, which returns
 ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt input (a truncated WebM even with `-xerror`) and when the output already exists, also with `-n`.
 
 **Decision.**
-- **yt-dlp downloads the selected stream as is** (no `-x`) into `<dataDir>/jobs/<attemptId>`, plus `--write-thumbnail` when the target can hold a cover. The selectors are in ADR-017.
+- **yt-dlp downloads the selected stream as is** (no `-x`) into `<dataDir>/jobs/<attemptId>`, plus `--write-thumbnail` when the file can hold a cover (`canHoldCover`, see the amendment on YouTube originals). The selectors are in ADR-017.
 - **Finalize** (`engine/finalize.ts`; every decision is pure, in `engine/finalize-plan.ts`) works in `<jobDir>/finalize/` with fixed names: ffprobe the download → plan → cover pass → one audio pass → ffprobe the output → our ID3 tag for MP3 and AIFF (ADR-016).
 - **Codec plan.** Copy when the source already has the target codec, else encode, at the native sample rate:
 
@@ -273,6 +273,8 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 - *Estimated durations.* An MP3 without a Xing/Info header (VBR, or files stitched together) has no length in its header, so ffprobe estimates one from the first frame's bitrate: a 600 s VBR file probed as 2,413 s. Every check failed on it, every retry. Now, when the demuxer is `mp3`, finalize measures the length with one more ffmpeg pass that decodes nothing (`-nostats -progress pipe:1 … -map 0:a:0 -c:a copy -f null -`, the last `out_time_us`; about 150 MB/s) and uses it as the input's duration for the download check, the output check, the WAV/AIFF size guard and the audio pass's timeout. A truncated MP3 (a lost SoundCloud HLS fragment) still measures short and fails `network`. If the report has no time, ffprobe's value stands (logged); a failed or timed-out measuring pass fails like an unreadable download.
 - *`-xerror` on stitched MP3s.* Dynamic ad insertion concatenates MP3s, leaving the second file's ID3v2 tag mid-stream. ffmpeg skips it ("Header missing"); `-xerror` makes that fatal (exit 183), so the same file worked as MP3 (a copy) and failed as M4A, FLAC, WAV and AIFF. The audio pass now passes `-xerror` only when the source isn't MP3. The trade-off: junk inside an MP3 is no longer a hard failure, and a small damaged span (under the duration tolerance, e.g. 2 KB) can now pass; a bigger loss is still caught by the output's duration. `-xerror` stays for every other source (a corrupt FLAC decodes to exit 0 without it) and for the cover pass. It never caught truncation anyway (a truncated WebM exits 0 with it).
 
+**Amendment (2026-10-03): no thumbnail for a YouTube original.** `--write-thumbnail` went with every format but WAV, so a YouTube "original" fetched a thumbnail its WebM can't hold. yt-dlp fetches the thumbnail before it picks the stream (before the `START` print) and has no per-format thumbnail option, so the choice is made from the format and the platform alone: `canHoldCover(format, platform)` in `finalize-plan.ts` is false for WAV (from the muxer table) and for `original` on YouTube, whose `ba` was Opus 251 in WebM on every video checked live (yt-dlp 2026.08.19), and true otherwise. SoundCloud's MP3 or AAC original and another site's MP3, M4A or FLAC original keep their cover; another site's WebM or Ogg original still fetches a thumbnail it can't use. Making every original artless would drop the covers SoundCloud originals already get. The trade-off: a YouTube original that comes out AAC (no Opus offered; none seen) is an M4A without a cover.
+
 **Rejected.**
 - *`-x` with fixes* (`--postprocessor-args` for 16-bit FLAC and no source tags): the copy-or-encode decision stays where we can't see or report it, there is still no AIFF, and nothing proves the file is whole.
 - *Skipping the duration checks for MP3s*: it would drop the truncation backstop for SoundCloud's HLS MP3s, whose CBR estimate is exact.
@@ -282,7 +284,7 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 **Consequences.**
 - Each job runs two ffprobe calls and one or two ffmpeg passes: about 0.1 s for a copy, about 2 s to encode 5 minutes of MP3.
 - The rest of ADR-006 stands: a temp dir per attempt, our finalize owns the final file, and the job dir is removed after every attempt.
-- "Original" from YouTube is Opus in WebM, which no DJ app plays and which holds no cover.
+- "Original" from YouTube is Opus in WebM, which no DJ app plays and which holds no cover, so it fetches no thumbnail.
 - `test/fixtures/ffprobe/` pins the real ffprobe JSON of sources and outputs, and `test/finalize-real-ffmpeg.test.ts` (opt-in) runs the argv against the real ffmpeg.
 
 ## ADR-016 — The comment tag holds the track's public page URL; our own ID3v2.3 writer tags MP3 and AIFF
@@ -350,7 +352,7 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 - Pacing state lives in memory and starts fresh with each server.
 
 ## ADR-018 — One server holds the app data dir and sweeps what a previous one left; publishing never overwrites
-*2026-10-03 · accepted · details ADR-006's job dirs and move*
+*2026-10-03 · accepted · details ADR-006's job dirs and move · amended by ADR-024 (folders checked when chosen)*
 
 **Context.** Engine processes run in their own process groups (ADR-006), so they survive a crashed or SIGKILLed server and keep writing into its job dirs. A cross-volume copy can leave a part file in the user's folder. Two servers on one data dir (a `node --watch` restart overlapping the old server's shutdown, a second `pnpm start`) would kill each other's jobs if each swept at startup. On macOS, `rename` replaces an existing file silently, also when only the case or Unicode form of its name differs (APFS, exFAT), and FAT/exFAT have no hard links. The user's folder can be renamed or unplugged while a batch runs.
 
@@ -419,3 +421,120 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 - Each tab holds one connection for its lifetime, except while hidden.
 - Chromium logs its own console error for a failed `/api/events` request (a 404, or the proxy's 502), which the e2e console guard counts.
 - A short download may send a single `job.progress` before it switches to processing. There is no guaranteed 100 % event.
+
+## ADR-020 — The web UI: one page beside an always-visible downloads panel, a resolve per paste, auto-download from the track card
+*2026-10-03 · accepted*
+
+**Context.** Phase 3 builds the UI on the Phase 2 API (product.md, flows 1–5). A paste must answer fast and stay cancelable (a big list takes up to a minute), a single track downloads at once by default, and progress must stay in view while the next link is pasted. Things change under a mounted view: settings arrive late or change, a job's `jobs.added` lands after the create request has answered, and a job can leave the list (Clear finished, eviction, a server restart).
+
+**Decision.**
+- **Shell** (`routes/__root.tsx`): a header with the target folder (`FolderPicker`) and the engine chip, the `EngineBanner` under it (only when something is wrong), then the page (`<main>`) and the downloads (`<aside aria-label="Downloads">`). On lg+ the shell is the window's height, the panel is 24 rem wide on the right, and each column scrolls on its own; below lg they stack and the page scrolls. There is one route, `/`.
+- **Resolve** (`features/resolve/use-resolve.ts`): a `useMutation`, never a query. Each load gets its own AbortController, passed in the mutation's variables; a new load aborts the running one, and so do Cancel, Esc in the link box and leaving the page. No retries. Every load has a number, and the result view is keyed by it, so each paste mounts a fresh track card or collection. While a resolve runs, a skeleton replaces the last result. Every way in loads through the link box, Try again and the list fallback of a failed resolve too, so the box always shows the link being loaded (normalized). A refused load (text that isn't a link, a DRM service; pasted, dropped or typed) leaves a running resolve and a shown result alone, but clears a previous error, whose Try again would load the old link under the refused text.
+- **Track inside a list:** "This track" shows the track already in the `ambiguous` answer, with no second resolve; the list resolves `collectionUrl` with `mode: 'collection'`. A mix defaults to the track. When the track lookup fails in auto mode, the error still offers the list ("Open the playlist", album or mix).
+- **Auto-download** happens in the track card (`useTrackDownload`). Its `autoStart` is `settings.autoDownloadSingles` for a track that isn't unavailable, read once settings have loaded and frozen at mount; a ref keeps StrictMode to one request. The card then shows the job: "Queued…" until `jobs.added` arrives, the job's own `source` once it reports one, and "Download again" when a retry can't help, when a job it has seen leaves the list, or beside Retry when the job lost its folder (`folder_unavailable`: Retry keeps the job's folder, Download again uses the header's). After Download, Try again or Download again, focus moves to the card's download area (`data-slot="track-download"`), so Tab goes on to the job's action; an auto-start moves no focus.
+- **One action per job** (`job-actions.ts`): Cancel while queued or running, Retry for a canceled job or a failure `isRetryableError` allows, Reveal in Finder once done or skipped. It is one button whose action changes with the job, so keyboard focus stays on it.
+- **Settings** (`useUpdateSettings`) are optimistic: the change shows at once, the server's answer replaces it, and a failure puts the old value back and refetches, unless another update is still saving. Updates are sent one at a time, in the order they were made (mutation scope `settings`): a later one shows at once and waits for the earlier answer, which keeps the waiting changes on top. The server applies `PUT /api/settings` in arrival order too, so a slow folder check can't let an older folder be saved last.
+- **Downloads data:** components read `['downloads']` through `useDownloads`, `useJob`, `useJobIdsByTrack` and `useQueue`, which select what they need, so one job's progress re-renders only what shows that job (a collection row's chip reads its job by id). Mutation answers never go into it (ADR-019).
+- **Network mode:** every query and mutation runs with `networkMode: 'always'` (`lib/query-client.ts`). The API is on 127.0.0.1, so the browser's online state says nothing about reaching it, and TanStack's default would pause a settings change, a folder pick or a resolve while Wi-Fi is off.
+
+**Rejected.**
+- *A query keyed by the URL* for resolve: pasting the same link again must resolve again, and an answer is never shared or cached.
+- *Keeping the last result visible during a new resolve*: a skeleton is clearer, and the downloads panel keeps the history.
+- *An `autoStart` that follows the setting*: settings that arrive late (after an error) or change later must not start a download the user has been looking at.
+- *A downloads page* (the `routes/downloads.tsx` of the earlier layout): progress would leave the screen whenever the next link is pasted.
+
+**Consequences.**
+- Pasting a track twice queues it twice: the server maps the second to a job still running for the same folder and format, or it ends `skipped` at publish.
+- A track card shows a skeleton until settings have loaded. The header's folder picker loads them anyway.
+- There is no settings page yet: the format is set beside the track card's Download button and in the download bar, the subfolder switch in the download bar, the folder in the header (Phase 4 adds the page).
+
+## ADR-021 — Long lists: fixed-height virtualized rows, a div table with ARIA roles, a selection keyed by track
+*2026-10-03 · accepted*
+
+**Context.** A collection holds up to 5,000 rows (product.md: smooth with 1,000+), the downloads panel can hold thousands of jobs, and every running job sends about two progress events a second. A playlist can list one video twice, partial rows change as they fill in, and enrichment can find a selected row unavailable.
+
+**Decision.**
+- **Virtualization** with TanStack Virtual (`@tanstack/react-virtual`) and fixed row heights, so nothing is measured: collection rows are 44 px, the panel's batch headers and job rows 56 px, with an overscan of 8. Rows are memoized, and an unchanged row keeps its identity, so an update re-renders only the rows it touches; a download's progress re-renders only its row's status chip.
+- **Collection table** (`track-table.tsx`, `track-row.tsx`): divs with ARIA table roles (table, rowgroup, row, columnheader, cell), because the virtualized rows are absolutely positioned. The table is one Tab stop with roving focus: arrow keys, Page Up/Down, Home and End move between rows and scroll the virtualizer. A click anywhere on a row toggles it, shift-click sets the range from the last clicked row in the filtered order, and Space toggles the focused row's checkbox.
+- **Downloads panel** (`panel-list.tsx`): one virtualized `<ul>` of batch headers and job rows (`aria-setsize`, `aria-posinset`), newest batch first, each batch's jobs in creation order. The scroller isn't focusable; keyboard users reach rows through their buttons.
+- **Selection** (`selection.ts`, a pure reducer; `use-selection.ts`): a `Set` of `TrackKey`s (`platform:id`) plus the shift-click anchor. Every row that isn't unavailable starts selected, partial and `unknown` ones included. All, none and invert act on the rows the filter shows, and the filter keeps the selection. A row that can't be selected never enters it, and leaves it when enrichment finds it unavailable. Duplicate rows share one key, so they share one state and are sent once; React keys are row indexes.
+- **Download** sends the selected rows in table order, those the filter hides included, as `toTrackRef` of the enriched row.
+- `CollectionView` is keyed by the collection object (`instance-key.ts`), so a new resolve, even of the same URL, starts the selection, filter and enrichment over.
+
+**Rejected.**
+- *`<table>` elements*: absolutely positioned rows don't fit a table's layout.
+- *A focusable `role="list"` scroller* for the panel: Biome's `noNoninteractiveTabindex` and `useSemanticElements` refuse it.
+- *A selection by row*: a video a playlist lists twice would download twice.
+
+**Consequences.**
+- About 30 rows are in the DOM at 5,000 rows or jobs. Select all, invert or a filter keystroke took about 10 ms there in Phase 3's browser pass.
+- A focused row that scrolls far away unmounts and loses focus, the usual cost of virtualization.
+- `track-table.tsx` and `track-row.tsx` suppress Biome's `useSemanticElements` and `useFocusableInteractive`, with that reason.
+- jsdom lays nothing out, so tests stub the scroller's `offsetHeight` and `offsetWidth` (`stubTableViewport` in `features/collection/test-utils.ts`, and the panel's own test).
+
+## ADR-022 — The web fills partial rows from a session outside TanStack Query
+*2026-10-03 · accepted · the web side of ADR-014*
+
+**Context.** ADR-014 paces lookups on the server and leaves the client to show placeholders and to cancel requests for rows that scroll away. Which rows to ask for depends on the scroll position, each request needs an AbortController a scroll can trigger, and one list holds rows that are in flight, pending, failed or filled at once.
+
+**Decision.** `useEnrichment(entries)` (`features/collection/use-enrichment.ts`) is a thin binding over a session without React (`enrich-session.ts`, with the pure `enrich-plan.ts`, `enrich-merge.ts` and `enrich-retry.ts`): one session per `entries` array, read with `useSyncExternalStore`, started in an effect and stopped in its cleanup.
+- **Which rows:** each partial track gets one lookup, shared by duplicate rows. The rows in view are the rows the table shows (the filter applied), as collection indexes: the visible ones top-down, then the next 5 shown rows below and the 5 above, nearest first (`rowsInView` in `rows.ts`; the table reports them through `onRowsInViewChange` to `setRowsInView`). A row the filter hides is never looked up, even between two shown rows. Until the table reports, the first 15 rows count as visible.
+- **When:** 150 ms after the rows in view last changed, so a fast scroll asks for nothing it passes. A request holds 4 rows (`ENRICH_BATCH_SIZE`), at most 2 run at once, and the next goes out as one answers, so rows fill in a few at a time while the server paces them. `MAX_ENTRIES_PER_REQUEST` (25) is only the server's cap.
+- **Scrolled away:** a request is aborted as soon as none of its rows is in the range plus overscan. Its rows go back to pending, silently.
+- **Merging** is by platform + id. `ok` replaces the row with the full Track (`partial: false`), keeping the row's own platform and id, so selection keys and job chips don't change. An unavailable-type code (`unavailable`, `private`, `geo_blocked`, `age_restricted`, `login_required`, `preview_only`) marks the row unavailable with that reason. `rate_limited`, `network`, `unknown` and `canceled` fail the row, which is asked for again while it is in view: 30 s later, then after 1, 2, 4 and 8 min, then at most every 10 min (or when it scrolls back into view after that time). Any other code fails it for good. While the tab is hidden no retry or back-off timer is set; showing the tab plans again (`visibilitychange`). A row the answer leaves out fails like `unknown`, and a row whose URL is over `MAX_URL_LENGTH` fails at once.
+- **Whole request:** unreachable, a 5xx or a 429 sends its rows back to pending and backs off 2 s, doubling to 30 s. Requests that fail in the same outage share one back-off, and a successful request resets it and clears a pending one. Any other 4xx, or an answer off the contract, fails the batch's rows with that error; an answer off the contract counts as `unknown`, so its rows are asked again like any `unknown` row. Timing uses a monotonic clock (`performance.now`), like the server's limiter, so a wall-clock change can't stall it.
+- Only changed rows get new objects. Unmounting aborts every request and clears every timer, and a list without partial rows sets no timer and never re-renders on scroll.
+- **Nothing is cached in the browser.** Resolving the collection again asks again; the server's 30 min cache answers without spending SoundCloud's budget.
+
+**Rejected.**
+- *A TanStack query or mutation per batch*: batches follow the scroll and are aborted by it, and there is nothing to cache by key.
+- *Backing off on every failure*: a 4xx or a contract break would fail the same way forever.
+
+**Consequences.**
+- A failed row says "Couldn't load details" and stays selected and downloadable. Its job is named after its platform and id ("SoundCloud track 47127625") until the download's metadata arrives.
+- The collection's component tests replace `useEnrichment` with a stand-in (`useFakeEnrichment` in `features/collection/test-utils.ts`, through `vi.mock`); the hook has its own tests with fake timers, and `collection-enrichment.test.tsx` runs the real hook under the real table (no `vi.mock`, real timers).
+
+## ADR-023 — A collection links the lists its page shows instead of tracks (`Collection.lists`)
+*2026-10-03 · accepted · amends ADR-013*
+
+**Context.** A SoundCloud user's `/sets` and `/albums` tabs list only sets, so they resolved to empty collections that said only how many rows were skipped (`skippedEntries`), and a user page mixes sets in with its tracks. A YouTube channel's Playlists tab lists playlists the same way. The flat listing already gives each such row its URL.
+
+**Decision.**
+- `Collection` gains `lists?: CollectionLink[]` (`{ url, title? }`, at least one when present): the rows the listing skips, within the entry cap, whose URL classifies as a collection. They keep the listing's order, appear once per URL, never link back to the page itself, and carry a title only when it has text. A secret set's URL is kept whole, as a row's is. `skippedEntries` still counts every skipped row.
+- The rule is generic, not SoundCloud's (`toListLink` in `engine/ytdlp-parse.ts`): rows that are tracks, other sites, DRM services or URLs with credentials are counted but not linked.
+- The web calls them what the page does ("sets", "albums", "playlists") and opens one by resolving its URL in auto mode. A page with lists and no tracks shows the lists as its content; beside tracks, a header note links them.
+
+**Consequences.**
+- One more recorded fixture, `soundcloud/user-albums.json` (30 `-J` fixtures in all).
+- A secret set's link reaches the browser like any secret row URL, and is never logged.
+
+## ADR-024 — A download folder is checked and read when it is chosen
+*2026-10-03 · accepted · amends ADR-018*
+
+**Context.** ADR-018 checks the folder at enqueue and again before publishing. On macOS, the first read inside a protected folder (Desktop, Documents, Downloads, iCloud Drive, a removable or network volume) brings up a privacy prompt; with only those checks it appeared when a batch published its first file, and a refusal failed jobs then. A folder chosen from the recent folders wasn't checked at all, so a deleted one was accepted and failed only at the next download, against "a folder you name must exist" (product.md).
+
+**Decision.**
+- `checkPickedFolder` (`fs/folders.ts`) makes enqueue's checks (`resolveTargetFolder`: an existing, writable folder outside the data dir, with room for the longest file name), then reads one entry of the folder's real path. It never creates anything.
+- It runs when a folder is chosen: after the native picker returns a path (`POST /api/folders/pick`), and when `PUT /api/settings` changes `folder`, e.g. to a recent one. The answer waits for the read, and so for the user's answer to the prompt.
+- Every refusal is 422 `folder_unavailable` with enqueue's wording; what enqueue calls `invalid_request` (a path too long for the file names) is `folder_unavailable` here, since the folder is the problem. A privacy refusal (EPERM) names System Settings › Privacy & Security. A refused PUT saves nothing of the request.
+- Exceptions: EACCES on the read alone is accepted, since a write-only drop box still takes downloads (publishing never lists the folder); the default `~/Music/DJ Scraper` is accepted while missing, since its first download creates it; an unchanged `folder` isn't checked again, so other settings still save while its drive is out.
+
+**Rejected.** *Refusing a folder that can't be listed*: choosing a folder would be stricter than enqueue and publish.
+
+**Consequences.**
+- The picker's one-at-a-time lock (409) covers the dialog only, not the prompt after it: a second pick sent during the prompt opens a new dialog.
+- Access revoked after a folder was chosen is still found only at publish, job by job (a roadmap follow-up reads the folder at enqueue too).
+- Tests script the filesystem (`FolderOps.opendir`); a real prompt hasn't been checked live yet.
+
+## ADR-025 — Finished jobs are evicted canceled first, and a batch being canceled isn't spared
+*2026-10-03 · accepted (chosen by the assistant; easy to change)*
+
+**Context.** The server keeps at most 2,000 finished jobs (Phase 2). Beyond that it dropped the oldest done, skipped and canceled jobs before failed ones, and spared every batch that still had a job to run. In Phase 3's browser pass, canceling a 4,976-row batch evicted about 20 done jobs of older batches, whose track cards then said "No longer in the downloads list". Two causes: done and canceled jobs were one group, oldest first, so older batches' done jobs went before the new canceled ones; and the big batch's running jobs were only being canceled (`cancelRequested`), so the rule spared all of its canceled jobs.
+
+**Decision** (`EVICTION_ORDER` in `jobs/queue.ts`). Canceled jobs go first, except the 50 that finished most recently (`recentCanceled`, `DEFAULT_RECENT_CANCELED`); then done and skipped ones; then failed ones together with those 50 recently canceled ones (a retry may still want them). Oldest first within each group. A batch is spared only while it has a job to run that isn't being canceled.
+
+**Consequences.**
+- Canceling a big batch drops its own canceled jobs (all but its newest 50) before other batches' finished ones: in the case above, the done and failed jobs stay. Other batches' done jobs go only once more than about 1,950 finished jobs that aren't canceled are already kept.
+- A track the user just canceled keeps its Canceled row and its Retry at the cap; the oldest done or skipped record goes instead.
+- Once no older canceled job is left to drop, a done job's record (never its file) still goes before a failed one.
+- No e2e covers it, since it needs more than 2,000 finished jobs on the shared e2e server; `queue.test.ts` does.

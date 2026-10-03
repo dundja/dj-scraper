@@ -37,7 +37,7 @@ yt-dlp <base> -J --flat-playlist -I 1:<cap+1> [--no-playlist | --yes-playlist] -
 - **YouTube flat entries** carry id, url, title, duration (±1 s from the full extraction) and thumbnails (4 hqdefault sizes). Playlist and mix rows carry channel/uploader; **channel-tab rows don't** (only the collection's top level names the channel); album rows have `uploader = "<artist> - Topic"`.
   - `availability` and `live_status` are null on every flat entry. Private and deleted videos show up only as the exact titles `[Private video]` and `[Deleted video]`, with null duration/channel and the placeholder thumbnail `https://i.ytimg.com/img/no_thumbnail.jpg` (drop it). Match those titles exactly: real titles can start with `[` too (`[ORIGINAL] …`).
 - **SoundCloud set entries are bare:** id and url plus album fields (`album`, `album_artist`, `album_type`), with no title, duration, uploader or artwork. The url is the permalink for the first 5 rows and `https://api-v2.soundcloud.com/tracks/<id>` for the rest (secret sets append `?secret_token=…`, a credential: never log it). The set's `playlist_count` is its track count and its top-level `duration` the sum. Its `album_type` is SoundCloud's `set_type` (`'playlist'` when empty); we map album, ep, single and compilation to kind `album`. User pages give id, url and title only, and are titled `<username> (<Resource>)` (All, Tracks, Likes, …) with no uploader, so the owner comes from the title. Both become `partial` rows.
-  - User pages also list sets: `/<user>`, `/reposts` and `/likes` mix them in, and `/sets` and `/albums` hold only sets. A set row has **no `ie_key` key at all** and a `/sets/` URL. Keep only `ie_key == "Soundcloud"` rows and count the rest (`skippedEntries`).
+  - User pages also list sets: `/<user>`, `/reposts` and `/likes` mix them in, and `/sets` and `/albums` hold only sets. A set row has **no `ie_key` key at all** and a `/sets/` URL. Keep only `ie_key == "Soundcloud"` rows and count the rest (`skippedEntries`). Skipped rows whose URL classifies as a collection come back as `Collection.lists` (listing order, once per URL, never the page itself, within the cap), so `/sets` and `/albums` aren't dead ends; a YouTube channel's `/playlists` tab gets them too (ADR-023).
   - Fill partial rows with per-row `-J --flat-playlist --no-playlist -- <row url exactly as listed>` lookups (api-v2 URLs work as is): about 1 s each (0.5 s is process start) and 3–5 SoundCloud API requests with default formats. See ADR-014 for the pacing and budget.
 - **`watch?v=X&list=Y`:** yt-dlp returns the **playlist** by default. We answer `ambiguous`, then use `--no-playlist` for this track or `--yes-playlist` for the whole list.
 - **Mix/Radio (`list=RD…`)** keeps paging, so always cap it. Only `watch?v=X&list=RDX` lists a mix; `playlist?list=RD…` fails with "This playlist type is unviewable" (we rewrite `RD<video id>` to the watch form). When YouTube has no mix for the seed (e.g. `jNQXAC9IVRw`), yt-dlp warns "Unable to recognize playlist. Downloading just video" and returns `_type: video`, exit 0. `RDCLAK5uy_…` lists are finite YouTube Music playlists, not mixes.
@@ -55,7 +55,7 @@ Implemented in `engine/ytdlp-args.ts` (`downloadArgs`, `downloadSelector`) and `
 yt-dlp <base> --no-playlist -f <selector>
   --socket-timeout 20 --retries 3 --fragment-retries 3 --retry-sleep fragment:exp=1:8
   --abort-on-unavailable-fragments --max-filesize 2G
-  [--write-thumbnail]                          embedArtwork, and the format isn't wav
+  [--write-thumbnail]                          embedArtwork and canHoldCover: not WAV, not a YouTube original
   [--ffmpeg-location <FFMPEG_PATH>]            only when FFMPEG_PATH is set
   [SoundCloud:  --extractor-retries 0 --break-match-filters "format_id!*=preview"]
   [other sites: --match-filters "!is_live"]
@@ -85,6 +85,7 @@ yt-dlp <base> --no-playlist -f <selector>
   - `--max-filesize 2G`: enforced only by the plain HTTP downloader; HLS ignores it.
   - `--break-match-filters "format_id!*=preview"`: a Go+ preview stops with exit 101, both streams empty, nothing written (`soundcloud-preview-break`). `--match-filters` would exit 0 with no DONE line instead.
   - `--match-filters "!is_live"` (other sites): no endless live recording.
+  - `--write-thumbnail` only when the file can hold a cover (`canHoldCover(format, platform)` in `finalize-plan.ts`). The thumbnail is fetched before START, before the stream is known, and there is no per-format option, so the rule uses the format and platform: a YouTube original is `ba` = Opus 251 in WebM (checked live on three videos, 2026-10-03), so it fetches none; a SoundCloud original (MP3 or AAC) keeps its cover. A YouTube original that came out AAC would get no cover (not seen).
   - No `-o thumbnail:…` template: MoveFiles renames the file but DONE keeps the old path.
   - No `--sleep-*` flags: they are silent in quiet mode, and our queue paces (see Rate limits & pacing).
 - **What the job dir holds afterwards:** `<id>.<ext>` as downloaded (after yt-dlp's FixupM4a/FixupM3u8) and the thumbnail as served (YouTube WebP, SoundCloud JPEG or a placeholder PNG). Finalize works in `<jobDir>/finalize/`.

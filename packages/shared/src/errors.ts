@@ -14,6 +14,8 @@ export const ErrorCodeSchema = z.enum([
   'network',
   'engine_missing',
   'postprocess_failed',
+  'disk_full',
+  'folder_unavailable',
   'canceled',
   'invalid_request',
   'forbidden',

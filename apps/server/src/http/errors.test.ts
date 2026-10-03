@@ -13,6 +13,17 @@ const app = new Hono()
   .get('/rate-limited', () => {
     throw new ApiError('rate_limited', 'SoundCloud asks us to slow down.')
   })
+  .get('/disk-full', () => {
+    throw new ApiError('disk_full', 'The disk is full.')
+  })
+  .get('/folder-unavailable', () => {
+    throw new ApiError('folder_unavailable', 'The folder is gone.')
+  })
+  .get('/conflict', () => {
+    throw new ApiError('invalid_request', 'Only failed or canceled downloads can be retried.', {
+      status: 409,
+    })
+  })
   .get('/teapot', (c) => errorResponse(c, 'invalid_request', 'I am a teapot', 418))
   .get('/client-exception', () => {
     throw new HTTPException(413, { message: 'Payload Too Large' })
@@ -52,6 +63,11 @@ describe('ERROR_STATUS', () => {
       unknown: 500,
     })
   })
+
+  it('answers a full disk with 507 and an unusable download folder with 422', () => {
+    expect(ERROR_STATUS.disk_full).toBe(507)
+    expect(ERROR_STATUS.folder_unavailable).toBe(422)
+  })
 })
 
 describe('ApiError', () => {
@@ -66,18 +82,50 @@ describe('ApiError', () => {
       cause,
     })
   })
+
+  it.each(ErrorCodeSchema.options)('answers %s with its mapped status by default', (code) => {
+    expect(new ApiError(code, 'message').status).toBe(ERROR_STATUS[code])
+  })
+
+  it('takes a status override next to its cause, and passes only the cause on to Error', () => {
+    const cause = new Error('EEXIST')
+    const error = new ApiError('invalid_request', 'Already done.', { status: 409, cause })
+    expect(error).toMatchObject({ code: 'invalid_request', status: 409, cause })
+    expect(Object.keys(error)).not.toContain('cause')
+    expect(Object.getOwnPropertyDescriptor(error, 'cause')?.enumerable).toBe(false)
+  })
+
+  it('has no cause when none is given', () => {
+    expect('cause' in new ApiError('not_found', 'Not found', { status: 404 })).toBe(false)
+  })
 })
 
 describe('onError', () => {
   it.each([
     ['/api-error', 503, 'engine_missing', 'yt-dlp is not installed.'],
     ['/rate-limited', 429, 'rate_limited', 'SoundCloud asks us to slow down.'],
+    ['/disk-full', 507, 'disk_full', 'The disk is full.'],
+    ['/folder-unavailable', 422, 'folder_unavailable', 'The folder is gone.'],
   ])(
     'answers an ApiError thrown in %s with its status and code',
     async (path, status, code, message) => {
       expect(await errorOf(await app.request(path))).toEqual({ status, code, message })
     },
   )
+
+  it('answers an ApiError with its status override instead of the mapped one', async () => {
+    expect(await errorOf(await app.request('/conflict'))).toEqual({
+      status: 409,
+      code: 'invalid_request',
+      message: 'Only failed or canceled downloads can be retried.',
+    })
+  })
+
+  it('does not log an ApiError, overridden or not', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    for (const path of ['/api-error', '/disk-full', '/conflict']) await app.request(path)
+    expect(log).not.toHaveBeenCalled()
+  })
 
   it('keeps the status of a 4xx HTTPException from Hono middleware, in our body shape', async () => {
     expect(await errorOf(await app.request('/client-exception'))).toEqual({

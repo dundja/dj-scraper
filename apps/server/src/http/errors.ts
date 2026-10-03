@@ -18,6 +18,8 @@ export const ERROR_STATUS = {
   network: 502,
   engine_missing: 503,
   postprocess_failed: 500,
+  disk_full: 507,
+  folder_unavailable: 422,
   canceled: 409,
   invalid_request: 400,
   forbidden: 403,
@@ -25,14 +27,25 @@ export const ERROR_STATUS = {
   unknown: 500,
 } as const satisfies Record<ErrorCode, ContentfulStatusCode>
 
-/** Throw from routes and services; `onError` turns it into `{ error: { code, message } }`. */
+export type ApiErrorOptions = ErrorOptions & {
+  /** Answer with this status instead of the code's ERROR_STATUS, e.g. 409 for a retry of a done job. */
+  status?: ContentfulStatusCode
+}
+
+/**
+ * Throw from routes and services; `onError` turns it into `{ error: { code, message } }` with
+ * `status`: the code's ERROR_STATUS unless the options override it.
+ */
 export class ApiError extends Error {
   override name = 'ApiError'
   readonly code: ErrorCode
+  readonly status: ContentfulStatusCode
 
-  constructor(code: ErrorCode, message: string, options?: ErrorOptions) {
-    super(message, options)
+  constructor(code: ErrorCode, message: string, options: ApiErrorOptions = {}) {
+    const { status, ...errorOptions } = options
+    super(message, errorOptions)
     this.code = code
+    this.status = status ?? ERROR_STATUS[code]
   }
 }
 
@@ -44,7 +57,7 @@ export const errorResponse = (
 ) => c.json({ error: { code, message } } satisfies ApiErrorBody, status)
 
 export const onError: ErrorHandler = (error, c) => {
-  if (error instanceof ApiError) return errorResponse(c, error.code, error.message)
+  if (error instanceof ApiError) return errorResponse(c, error.code, error.message, error.status)
   // Hono's own middleware (e.g. bodyLimit) throws HTTPException: keep its status, use our body.
   if (error instanceof HTTPException && error.status < 500) {
     return errorResponse(c, 'invalid_request', error.message || 'Bad request', error.status)

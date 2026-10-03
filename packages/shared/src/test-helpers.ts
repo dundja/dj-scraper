@@ -1,5 +1,6 @@
 // Test-only helpers and fixtures. Not exported from index.ts; never import from runtime code.
 import type * as z from 'zod'
+import type { Batch, Job, JobStatus, TrackRef } from './download.ts'
 import type { FfmpegHealth, FfprobeHealth, Health, JsRuntime, YtdlpHealth } from './health.ts'
 
 /** Paths of the issues a failed parse reports; empty when the parse succeeds. */
@@ -80,3 +81,109 @@ export const healthy = {
   ffprobe: brewFfprobe,
   jsRuntimes: [brewDeno, brewNode],
 } satisfies Health
+
+/**
+ * A valid RFC 9562 version-4 UUID, distinct for every integer `n` in [0, 2^48):
+ * `testUuid(1)` is `00000000-0000-4000-8000-000000000001`. z.uuid() checks the version and variant
+ * digits, so made-up ids such as `job-1` or `00000000-0000-0000-0000-000000000001` fail where these pass.
+ */
+export function testUuid(n: number): string {
+  if (!Number.isSafeInteger(n) || n < 0 || n >= 2 ** 48) {
+    throw new RangeError(`testUuid needs an integer in [0, 2^48), got ${n}`)
+  }
+  return `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`
+}
+
+// Downloads: two refs, one batch and a job in every status. Ids come from testUuid.
+
+/** A YouTube track as the review screen sends it: display fields known, the stream not needed. */
+export const youtubeRef = {
+  platform: 'youtube',
+  id: 'dQw4w9WgXcQ',
+  url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  title: 'Rick Astley - Never Gonna Give You Up (Official Music Video)',
+  artist: 'Rick Astley',
+  uploader: 'Rick Astley',
+  durationSec: 213,
+  thumbnailUrl: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
+  availability: 'available',
+} satisfies TrackRef
+
+/** A SoundCloud set row as `--flat-playlist` lists it, never enriched: id and an API URL only. */
+export const soundcloudRowRef = {
+  platform: 'soundcloud',
+  id: '1234567893',
+  url: 'https://api-v2.soundcloud.com/tracks/1234567893',
+} satisfies TrackRef
+
+export const testBatch = {
+  id: testUuid(100),
+  label: 'Summer 2026',
+  folder: '/Users/dj/Music/DJ Scraper/Summer 2026',
+  format: 'mp3',
+  createdAt: '2026-10-02T08:00:00.000Z',
+} satisfies Batch
+
+const jobBase = {
+  batchId: testBatch.id,
+  track: youtubeRef,
+  format: 'mp3',
+  folder: testBatch.folder,
+  attempt: 1,
+  createdAt: '2026-10-02T08:00:00.000Z',
+} satisfies Omit<Job, 'id' | 'status'>
+
+const startedAt = '2026-10-02T08:00:05.000Z'
+const finishedAt = '2026-10-02T08:00:41.250Z'
+const youtubeOpus = { codec: 'opus', bitrateKbps: 135.817 }
+const outputPath =
+  '/Users/dj/Music/DJ Scraper/Summer 2026/Rick Astley - Never Gonna Give You Up.mp3'
+
+/** One valid job per status, with the fields that state allows filled in. */
+export const jobsByStatus = {
+  queued: { ...jobBase, id: testUuid(1), status: 'queued' },
+  downloading: {
+    ...jobBase,
+    id: testUuid(2),
+    status: 'downloading',
+    startedAt,
+    source: youtubeOpus,
+    progress: {
+      percent: 42.5,
+      downloadedBytes: 1_712_128,
+      totalBytes: 4_028_536,
+      speedBps: 851_200,
+      etaSec: 3,
+    },
+  },
+  processing: { ...jobBase, id: testUuid(3), status: 'processing', startedAt, source: youtubeOpus },
+  done: {
+    ...jobBase,
+    id: testUuid(4),
+    status: 'done',
+    startedAt,
+    source: youtubeOpus,
+    outputPath,
+    output: {
+      ext: 'mp3',
+      codec: 'mp3',
+      bitrateKbps: 320,
+      sampleRateHz: 48_000,
+      channels: 2,
+      encoded: true,
+    },
+    finishedAt,
+  },
+  skipped: { ...jobBase, id: testUuid(5), status: 'skipped', startedAt, outputPath, finishedAt },
+  failed: {
+    ...jobBase,
+    id: testUuid(6),
+    track: soundcloudRowRef,
+    status: 'failed',
+    attempt: 2,
+    startedAt,
+    error: { code: 'network', message: 'The connection dropped. Retry to try again.' },
+    finishedAt,
+  },
+  canceled: { ...jobBase, id: testUuid(7), status: 'canceled', finishedAt },
+} satisfies { [S in JobStatus]: Extract<Job, { status: S }> }

@@ -1,14 +1,30 @@
+import { existsSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { ConfigError, DEFAULT_WEB_DIST, loadConfig } from './config.ts'
+import {
+  ConfigError,
+  DEFAULT_WEB_DIST,
+  defaultDataDir,
+  defaultDownloadFolder,
+  loadConfig,
+} from './config.ts'
 
 /** The repo root, from this file (apps/server/src). */
 const REPO = path.resolve(import.meta.dirname, '../../..')
 
+/** A home folder injected in place of os.homedir(). */
+const HOME = '/Users/dj'
+const homedir = () => HOME
+
 /** The ConfigError loadConfig throws, or a failure if it doesn't throw one. */
-function configError(env: NodeJS.ProcessEnv, argv: readonly string[] = []): ConfigError {
+function configError(
+  env: NodeJS.ProcessEnv,
+  argv: readonly string[] = [],
+  deps: Parameters<typeof loadConfig>[2] = { homedir },
+): ConfigError {
   try {
-    loadConfig(env, argv)
+    loadConfig(env, argv, deps)
   } catch (error) {
     if (error instanceof ConfigError) return error
     throw error
@@ -18,13 +34,20 @@ function configError(env: NodeJS.ProcessEnv, argv: readonly string[] = []): Conf
 
 describe('loadConfig', () => {
   it('defaults to port 4747, production mode, the web build in the repo and no overrides', () => {
-    expect(loadConfig({}, [])).toStrictEqual({
+    expect(loadConfig({}, [], { homedir })).toStrictEqual({
       port: 4747,
       dev: false,
       open: false,
       webDist: path.join(REPO, 'apps', 'web', 'dist'),
+      dataDir: '/Users/dj/Library/Application Support/DJ Scraper',
+      homeDir: '/Users/dj',
       engine: {},
     })
+  })
+
+  it('takes the home folder from os.homedir() unless one is injected', () => {
+    expect(loadConfig({}, []).homeDir).toBe(os.homedir())
+    expect(loadConfig({}, []).dataDir).toBe(defaultDataDir(os.homedir()))
   })
 
   it('finds the web build from the source location, not the cwd', async () => {
@@ -111,6 +134,7 @@ describe('loadConfig', () => {
       YTDLP_COOKIES: 'secret',
       PORT: '5000',
       DJS_WEB_DIST: '/tmp/dist',
+      DJS_DATA_DIR: '/tmp/data',
     }
     expect(loadConfig(env, []).engine).toStrictEqual({ PATH: '/usr/bin' })
   })
@@ -127,6 +151,53 @@ describe('loadConfig', () => {
     expect(loadConfig({ DJS_WEB_DIST: '' }, []).webDist).toBe(DEFAULT_WEB_DIST)
   })
 
+  it('keeps the app data dir in an absolute DJS_DATA_DIR', () => {
+    const config = loadConfig({ DJS_DATA_DIR: '/tmp/djs-test/data' }, [], { homedir })
+    expect(config).toMatchObject({ dataDir: '/tmp/djs-test/data', homeDir: HOME })
+  })
+
+  it('treats an empty DJS_DATA_DIR as unset', () => {
+    expect(loadConfig({ DJS_DATA_DIR: '' }, [], { homedir }).dataDir).toBe(defaultDataDir(HOME))
+  })
+
+  it('moves the data dir and the default folder with the home folder', () => {
+    const config = loadConfig({}, [], { homedir: () => '/private/tmp/home' })
+    expect(config.homeDir).toBe('/private/tmp/home')
+    expect(config.dataDir).toBe('/private/tmp/home/Library/Application Support/DJ Scraper')
+    expect(defaultDownloadFolder(config.homeDir)).toBe('/private/tmp/home/Music/DJ Scraper')
+  })
+
+  // What keeps a spawned server off the user's real folders: test/helpers.ts serverEnv sets HOME.
+  it('follows HOME through os.homedir()', () => {
+    vi.stubEnv('HOME', '/private/tmp/dj-scraper-home')
+    try {
+      expect(loadConfig({}, [])).toMatchObject({
+        homeDir: '/private/tmp/dj-scraper-home',
+        dataDir: '/private/tmp/dj-scraper-home/Library/Application Support/DJ Scraper',
+      })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('creates no directories', () => {
+    const home = path.join(os.tmpdir(), `dj-scraper-config-${process.pid}-${Date.now()}`)
+    const config = loadConfig({}, [], { homedir: () => home })
+    expect(existsSync(home)).toBe(false)
+    expect(existsSync(config.dataDir)).toBe(false)
+  })
+
+  it.each([
+    ['empty', ''],
+    ['relative', 'Users/dj'],
+    ['~', '~'],
+  ])('rejects a home folder that is %s', (_label, home) => {
+    const error = configError({}, [], { homedir: () => home })
+    expect(error.message).toBe(
+      `The home folder must be an absolute path, not ${JSON.stringify(home)} (check HOME)`,
+    )
+  })
+
   it.each([
     ['YTDLP_PATH', 'bin/yt-dlp'],
     ['YTDLP_PATH', './yt-dlp'],
@@ -135,6 +206,8 @@ describe('loadConfig', () => {
     ['FFMPEG_PATH', 'ffmpeg'],
     ['DJS_WEB_DIST', 'apps/web/dist'],
     ['DJS_WEB_DIST', '~/dist'],
+    ['DJS_DATA_DIR', 'data'],
+    ['DJS_DATA_DIR', '~/Library/Application Support/DJ Scraper'],
   ])('rejects a relative %s %j (it would depend on the cwd)', (name, value) => {
     const error = configError({ [name]: value })
     expect(error.message).toContain(name)
@@ -147,9 +220,22 @@ describe('loadConfig', () => {
       YTDLP_PATH: 'yt-dlp',
       FFMPEG_PATH: 'ffmpeg',
       DJS_WEB_DIST: 'dist',
+      DJS_DATA_DIR: 'data',
     })
-    for (const name of ['PORT', 'YTDLP_PATH', 'FFMPEG_PATH', 'DJS_WEB_DIST']) {
+    for (const name of ['PORT', 'YTDLP_PATH', 'FFMPEG_PATH', 'DJS_WEB_DIST', 'DJS_DATA_DIR']) {
       expect(error.message).toContain(name)
     }
+  })
+})
+
+describe('defaultDataDir', () => {
+  it('is Library/Application Support/DJ Scraper in the home folder', () => {
+    expect(defaultDataDir('/Users/dj')).toBe('/Users/dj/Library/Application Support/DJ Scraper')
+  })
+})
+
+describe('defaultDownloadFolder', () => {
+  it('is Music/DJ Scraper in the home folder', () => {
+    expect(defaultDownloadFolder('/Users/dj')).toBe('/Users/dj/Music/DJ Scraper')
   })
 })

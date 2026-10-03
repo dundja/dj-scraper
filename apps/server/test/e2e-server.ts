@@ -7,6 +7,8 @@
 // - The engine is a healthy fake: a temp dir holding fake yt-dlp (today's version), ffmpeg and
 //   ffprobe (the 8.0 brew fixtures) is the server's whole PATH, so GET /api/health is ok, with node
 //   as the JS runtime. Nothing real is found and nothing touches the network.
+// - Its data dir (DJS_DATA_DIR) and home folder (HOME) are in the same temp dir, so it never touches
+//   the user's ~/Library/Application Support/DJ Scraper or ~/Music.
 // - SIGINT, SIGTERM and SIGHUP are passed on to the server. When it exits, the temp dir is removed
 //   and this script exits with the server's code.
 //
@@ -25,6 +27,7 @@ import {
   engineFixture,
   makeTempDir,
   SERVER_DIR,
+  serverEnv,
   todaysYtdlpVersion,
   writeFakeTool,
 } from './helpers.ts'
@@ -73,11 +76,12 @@ await writeFakeTool(bin, 'ffprobe', {
   argv: PROBE_ARGV.ffprobe,
   stdout: engineFixture('ffprobe-version-8.0-brew.txt'),
 })
+const dirs = await serverEnv(tempDir)
 console.log(`[e2e-server] Fake engine in ${bin}, UI from ${webDist}`)
 
 server = spawn(process.execPath, ['src/index.ts'], {
   cwd: SERVER_DIR,
-  env: { PATH: bin, PORT: String(port.data), DJS_WEB_DIST: webDist },
+  env: { PATH: bin, PORT: String(port.data), DJS_WEB_DIST: webDist, ...dirs },
   stdio: ['ignore', 'inherit', 'inherit'],
 })
 server.once('error', (error) => fail(`Cannot start the server: ${error.message}`))

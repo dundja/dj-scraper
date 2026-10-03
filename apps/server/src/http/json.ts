@@ -10,25 +10,43 @@ export const JSON_BODY_LIMIT_BYTES = 64 * 1024
 /** At most this many Zod issues go into the 400 message; the rest are counted. */
 const MAX_ISSUES_SHOWN = 3
 
+const KIB = 1024
+const MIB = 1024 * KIB
+
+/** `8 MiB`, `64 KiB` or `100 bytes`: the largest unit that divides the limit exactly. */
+function formatLimit(bytes: number): string {
+  if (bytes % MIB === 0) return `${bytes / MIB} MiB`
+  if (bytes % KIB === 0) return `${bytes / KIB} KiB`
+  return `${bytes} bytes`
+}
+
 /**
- * Mount before `readJson` on JSON routes. Over the limit, Hono throws an HTTPException 413, which
- * `onError` answers as `invalid_request` with this status.
+ * A body size limit for JSON routes; mount it before `readJson`. Over `maxBytes`, Hono throws an
+ * HTTPException 413, which `onError` answers as `invalid_request` with this status and a message
+ * naming the limit. Chunked bodies are cut off once they pass it.
  */
-export const jsonBodyLimit: MiddlewareHandler = bodyLimit({
-  maxSize: JSON_BODY_LIMIT_BYTES,
-  onError: () => {
-    throw new HTTPException(413, {
-      message: `The request body is larger than ${JSON_BODY_LIMIT_BYTES / 1024} KiB`,
-    })
-  },
-})
+export function jsonBodyLimitOf(maxBytes: number): MiddlewareHandler {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new RangeError(`A body limit must be a positive whole number of bytes, not ${maxBytes}`)
+  }
+  const message = `The request body is larger than ${formatLimit(maxBytes)}`
+  return bodyLimit({
+    maxSize: maxBytes,
+    onError: () => {
+      throw new HTTPException(413, { message })
+    },
+  })
+}
+
+/** The limit for the routes whose bodies are small: JSON_BODY_LIMIT_BYTES (64 KiB). */
+export const jsonBodyLimit: MiddlewareHandler = jsonBodyLimitOf(JSON_BODY_LIMIT_BYTES)
 
 /**
  * Reads the body as JSON and validates it with a shared schema; returns the parsed output (defaults
  * applied). Malformed JSON, a body that isn't an object, or a failed check → 400 `invalid_request`.
  */
 export async function readJson<S extends z.ZodType>(c: Context, schema: S): Promise<z.output<S>> {
-  // jsonBodyLimit has already enforced the size. Parse separately so malformed JSON maps to
+  // jsonBodyLimit(Of) has already enforced the size. Parse separately so malformed JSON maps to
   // invalid_request.
   const text = await c.req.text()
   let body: unknown

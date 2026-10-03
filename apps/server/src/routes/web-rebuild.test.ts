@@ -4,7 +4,7 @@ import path from 'node:path'
 import type { Health } from '@dj-scraper/shared'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createApp } from '../app.ts'
-import { UNUSED_RESOLVE_DEPS } from '../resolve/unused.ts'
+import { UNUSED_DEPS } from '../stubs.ts'
 
 // A file found by the lookup can vanish before it is read: `pnpm build` empties the dist dir while
 // the server runs. Only readFile is faked, to fail as if that happened.
@@ -44,7 +44,7 @@ const get = (target: string) =>
       port: 4747,
       health: { current: async () => health, recheck: async () => health },
       webRoot: dist,
-      ...UNUSED_RESOLVE_DEPS,
+      ...UNUSED_DEPS,
     }).request(`http://127.0.0.1:4747${target}`, { headers: { host: '127.0.0.1:4747' } }),
   )
 

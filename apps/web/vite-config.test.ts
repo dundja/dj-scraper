@@ -1,6 +1,7 @@
 // @vitest-environment node
+import { EventEmitter } from 'node:events'
 import { SECURITY_HEADERS, SERVER_PORT } from '@dj-scraper/shared'
-import type { Plugin, ViteDevServer } from 'vite'
+import type { Plugin, ProxyOptions, ViteDevServer } from 'vite'
 import { describe, expect, it, vi } from 'vitest'
 import config from './vite.config.ts'
 
@@ -14,6 +15,42 @@ describe('the Vite dev server config', () => {
     expect(server.proxy?.['/api']).toEqual({
       target: `http://127.0.0.1:${SERVER_PORT}`,
       changeOrigin: false,
+      configure: expect.any(Function),
+    })
+  })
+
+  describe('when the server dies in the middle of a response (an open event stream)', () => {
+    /** The /api proxy as Vite sets it up, with the server's response arriving for `res`. */
+    function proxyResponse() {
+      const options = server.proxy?.['/api']
+      if (typeof options !== 'object' || options.configure === undefined) {
+        throw new Error('The /api proxy has no configure hook')
+      }
+      const proxy = new EventEmitter()
+      type Proxy = Parameters<NonNullable<ProxyOptions['configure']>>[0]
+      options.configure(proxy as unknown as Proxy, options)
+      const proxyRes = Object.assign(new EventEmitter(), { complete: false })
+      const res = { destroy: vi.fn() }
+      proxy.emit('proxyRes', proxyRes, {}, res)
+      return { proxyRes, res }
+    }
+
+    it("destroys the browser's response, so the EventSource sees the drop and reconnects", () => {
+      // http-proxy-3 pipes the response but never ends the browser's side when the source aborts.
+      const { proxyRes, res } = proxyResponse()
+
+      proxyRes.emit('close')
+
+      expect(res.destroy).toHaveBeenCalledTimes(1)
+    })
+
+    it('leaves a response that arrived complete alone', () => {
+      const { proxyRes, res } = proxyResponse()
+
+      proxyRes.complete = true
+      proxyRes.emit('close')
+
+      expect(res.destroy).not.toHaveBeenCalled()
     })
   })
 

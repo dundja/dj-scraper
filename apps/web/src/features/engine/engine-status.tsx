@@ -33,9 +33,11 @@ export function EngineStatus() {
           render={<Button variant="ghost" size="sm" aria-label={text} className="-mr-1.5" />}
         >
           <EngineStateIcon kind={state.kind} tone={summary.tone} />
-          <span>{summary.label}</span>
+          {/* Below sm the icon says it, and the folder beside it keeps the room; the button's
+              name and the live region below still say it in words. */}
+          <span className="max-sm:hidden">{summary.label}</span>
           {summary.detail !== undefined && (
-            <span className="text-muted-foreground">· {summary.detail}</span>
+            <span className="text-muted-foreground max-sm:hidden">· {summary.detail}</span>
           )}
           <ChevronDown aria-hidden className="text-muted-foreground" />
         </PopoverTrigger>

@@ -34,6 +34,16 @@ export const CollectionEntrySchema = z.discriminatedUnion('partial', [
 ])
 export type CollectionEntry = z.infer<typeof CollectionEntrySchema>
 
+/**
+ * A list linked from a collection's page instead of a track, e.g. a set on a SoundCloud user's
+ * Sets or Albums tab. Resolve its `url` to open it.
+ */
+export const CollectionLinkSchema = z.object({
+  url: HttpUrlSchema,
+  title: z.string().min(1).optional(),
+})
+export type CollectionLink = z.infer<typeof CollectionLinkSchema>
+
 /** Identified by its `url`: `id` repeats across a channel's or user's tabs. */
 export const CollectionSchema = z.object({
   id: z.string().min(1),
@@ -51,6 +61,8 @@ export const CollectionSchema = z.object({
   truncated: z.boolean(),
   /** Rows left out because they aren't tracks, e.g. sets listed on a SoundCloud user page. */
   skippedEntries: z.int().positive().optional(),
+  /** The skipped rows that are lists with a URL, in listing order (SoundCloud user pages and tabs). */
+  lists: z.array(CollectionLinkSchema).min(1).optional(),
   entries: z.array(CollectionEntrySchema),
 })
 export type Collection = z.infer<typeof CollectionSchema>

@@ -5,6 +5,8 @@ import {
   CollectionEntrySchema,
   type CollectionKind,
   CollectionKindSchema,
+  type CollectionLink,
+  CollectionLinkSchema,
   CollectionSchema,
 } from './collection.ts'
 import type { Platform } from './platform.ts'
@@ -129,6 +131,30 @@ const soundcloudUserPage = {
   entries: [userTracksEntry],
 } satisfies Collection
 
+const setLink = {
+  url: 'https://soundcloud.com/some-artist/sets/summer-2026',
+  title: 'Summer 2026',
+} satisfies CollectionLink
+
+/** A set listed without a title: its URL alone opens it. */
+const untitledSetLink = {
+  url: 'https://soundcloud.com/some-artist/sets/winter-2026',
+} satisfies CollectionLink
+
+/** A SoundCloud user's Sets tab: no tracks, only the sets it lists, to open one by one. */
+const soundcloudSetsTab = {
+  id: '987654321',
+  platform: 'soundcloud',
+  url: 'https://soundcloud.com/some-artist/sets',
+  kind: 'channel',
+  title: 'Some Artist (Sets)',
+  owner: 'Some Artist',
+  truncated: false,
+  skippedEntries: 2,
+  lists: [setLink, untitledSetLink],
+  entries: [],
+} satisfies Collection
+
 /** A playlist longer than the listing cap: the platform's count exceeds the rows listed. */
 const truncatedPlaylist = {
   id: 'PLbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
@@ -170,6 +196,7 @@ const optionalFields = [
   'trackCount',
   'durationSec',
   'skippedEntries',
+  'lists',
 ] as const
 const urlFields = ['url', 'thumbnailUrl'] as const
 const nonEmptyStringFields = ['id', 'title', 'owner'] as const
@@ -276,6 +303,11 @@ describe('CollectionSchema', () => {
     ['a SoundCloud set with some entries enriched', partlyEnrichedSet],
     ['a SoundCloud user /tracks page', soundcloudUserTracks],
     ['a SoundCloud user page with skipped sets', soundcloudUserPage],
+    [
+      'a SoundCloud user page linking the sets it skipped',
+      { ...soundcloudUserPage, lists: [setLink] },
+    ],
+    ['a SoundCloud Sets tab: no entries, only lists', soundcloudSetsTab],
     ['a YouTube mix cut at the mix cap', youtubeMix],
     ['a playlist cut at the listing cap', truncatedPlaylist],
     ['a playlist without entries', emptyPlaylist],
@@ -387,6 +419,27 @@ describe('CollectionSchema', () => {
     expect(CollectionSchema.parse(input)).toStrictEqual(partlyEnrichedSet)
   })
 
+  it('rejects an empty lists array (omit it instead)', () => {
+    expect(issuePaths(CollectionSchema, { ...soundcloudSetsTab, lists: [] })).toEqual([['lists']])
+  })
+
+  it.each([
+    ['null', null],
+    ['a single link', setLink],
+  ])('rejects lists that are %s', (_label, lists) => {
+    expect(issuePaths(CollectionSchema, { ...soundcloudSetsTab, lists })).toEqual([['lists']])
+  })
+
+  it('rejects bare URLs in place of links', () => {
+    const input = { ...soundcloudSetsTab, lists: [setLink.url] }
+    expect(issuePaths(CollectionSchema, input)).toEqual([['lists', 0]])
+  })
+
+  it('validates every link and reports the index of a bad one', () => {
+    const input = { ...soundcloudSetsTab, lists: [setLink, { ...setLink, url: 'javascript:x' }] }
+    expect(issuePaths(CollectionSchema, input)).toEqual([['lists', 1, 'url']])
+  })
+
   it('makes exactly the documented fields optional', () => {
     expectTypeOf<OptionalKeys<Collection>>().toEqualTypeOf<(typeof optionalFields)[number]>()
     expectTypeOf<Exclude<keyof Collection, OptionalKeys<Collection>>>().toEqualTypeOf<
@@ -400,7 +453,47 @@ describe('CollectionSchema', () => {
     expectTypeOf<Collection['trackCount']>().toEqualTypeOf<number | undefined>()
     expectTypeOf<Collection['durationSec']>().toEqualTypeOf<number | undefined>()
     expectTypeOf<Collection['skippedEntries']>().toEqualTypeOf<number | undefined>()
+    expectTypeOf<Collection['lists']>().toEqualTypeOf<CollectionLink[] | undefined>()
     expectTypeOf<Collection['kind']>().toEqualTypeOf<CollectionKind>()
     expectTypeOf<Collection['platform']>().toEqualTypeOf<Platform>()
+  })
+})
+
+describe('CollectionLinkSchema', () => {
+  it.each([
+    ['a set with its title', setLink],
+    ['a set without a title', untitledSetLink],
+    [
+      'a secret set, its token kept',
+      { url: 'https://soundcloud.com/some-artist/sets/promo/s-AbCdEfGhIjK', title: 'Promo' },
+    ],
+    ['a YouTube playlist', { url: 'https://www.youtube.com/playlist?list=PLx', title: 'Mixes' }],
+  ])('parses %s unchanged', (_label, link) => {
+    expect(CollectionLinkSchema.parse(link)).toStrictEqual(link)
+  })
+
+  it('requires url', () => {
+    expect(issuePaths(CollectionLinkSchema, without(setLink, 'url'))).toEqual([['url']])
+  })
+
+  it.each(nonHttpUrls)('rejects %s as the url', (url) => {
+    expect(issuePaths(CollectionLinkSchema, { ...setLink, url })).toEqual([['url']])
+  })
+
+  it.each([
+    ['empty', ''],
+    ['null (normalizers must drop yt-dlp nulls)', null],
+    ['a number', 2026],
+  ])('rejects a title that is %s', (_label, title) => {
+    expect(issuePaths(CollectionLinkSchema, { ...setLink, title })).toEqual([['title']])
+  })
+
+  it('strips unknown keys such as a row’s yt-dlp _type and id', () => {
+    const input = { ...setLink, _type: 'url', id: '1876543210' }
+    expect(CollectionLinkSchema.parse(input)).toStrictEqual(setLink)
+  })
+
+  it('types a link as a url and an optional title', () => {
+    expectTypeOf<CollectionLink>().toEqualTypeOf<{ url: string; title?: string | undefined }>()
   })
 })

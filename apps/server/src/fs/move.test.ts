@@ -406,7 +406,7 @@ describe('createPublish (scripted)', () => {
       await stepError(
         createPublish(disk.ops)(request()),
         'folder_unavailable',
-        'The download folder was moved, renamed or its drive was disconnected. Choose it again.',
+        'The download folder was moved, renamed or its drive was disconnected.',
       )
       expect(disk.calls.some((call) => call.startsWith('link'))).toBe(false)
     })

@@ -1,0 +1,39 @@
+{
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "flac",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 2,
+      "disposition": {
+        "attached_pic": 0
+      }
+    },
+    {
+      "index": 1,
+      "codec_name": "mjpeg",
+      "codec_type": "video",
+      "disposition": {
+        "attached_pic": 1
+      },
+      "tags": {
+        "comment": "Cover (front)",
+        "title": "Album cover"
+      }
+    }
+  ],
+  "format": {
+    "format_name": "flac",
+    "duration": "19.005542",
+    "bit_rate": "229493",
+    "tags": {
+      "title": "Me at the zoo",
+      "artist": "jawed",
+      "comment": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      "encoder": "Lavf62.3.100"
+    }
+  }
+}

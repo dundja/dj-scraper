@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { HealthSchema, healthProblems } from '@dj-scraper/shared'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { StepError } from '../jobs/types.ts'
 import {
   checkExecutable,
   checkFf,
@@ -13,6 +14,7 @@ import {
   type EngineEnv,
   ffprobeCandidates,
   findOnPath,
+  locateEngine,
   locateFfmpeg,
   locateYtdlp,
   type Probe,
@@ -337,6 +339,60 @@ describe('locateFfmpeg', () => {
     expect(await locateFfmpeg({ FFMPEG_PATH: gone, PATH: onPath })).toMatchObject({
       ffmpeg: { kind: 'broken', path: gone, message: `FFMPEG_PATH: ${gone} does not exist.` },
       ffprobe: { kind: 'broken', path: path.join(root, 'ff/gone/ffprobe') },
+    })
+  })
+})
+
+describe('locateEngine', () => {
+  /** The StepError it throws, as { code, message }. */
+  const failure = async (env: EngineEnv) => {
+    const error = await locateEngine(env).then(
+      () => undefined,
+      (reason: unknown) => reason,
+    )
+    if (!(error instanceof StepError)) throw new Error('expected a StepError')
+    return error.info
+  }
+
+  it('finds all three without running them', async () => {
+    const bin = await binDir('engine/all', ['yt-dlp', 'ffmpeg', 'ffprobe'])
+    expect(await locateEngine({ PATH: bin })).toEqual({
+      ytdlp: path.join(bin, 'yt-dlp'),
+      ffmpeg: path.join(bin, 'ffmpeg'),
+      ffprobe: path.join(bin, 'ffprobe'),
+    })
+  })
+
+  it('takes the overrides', async () => {
+    const ff = await binDir('engine/ff', ['ffmpeg', 'ffprobe'])
+    const ytdlp = await file('engine/override/yt-dlp')
+    expect(await locateEngine({ YTDLP_PATH: ytdlp, FFMPEG_PATH: ff })).toEqual({
+      ytdlp,
+      ffmpeg: path.join(ff, 'ffmpeg'),
+      ffprobe: path.join(ff, 'ffprobe'),
+    })
+  })
+
+  it.each([
+    [['ffmpeg', 'ffprobe'], 'yt-dlp is not on PATH. Run `brew install yt-dlp` or set YTDLP_PATH.'],
+    [['yt-dlp', 'ffprobe'], 'ffmpeg is not on PATH. Run `brew install ffmpeg` or set FFMPEG_PATH.'],
+    [['yt-dlp', 'ffmpeg'], 'ffprobe is not on PATH. Run `brew install ffmpeg` or set FFMPEG_PATH.'],
+  ] as const)('is engine_missing with %o only', async (names, message) => {
+    const bin = await binDir(unique('engine/some'), names)
+    expect(await failure({ PATH: bin })).toEqual({ code: 'engine_missing', message })
+  })
+
+  it('names the variable, never the path, for a broken override', async () => {
+    const bin = await binDir('engine/broken-path', ['yt-dlp', 'ffmpeg', 'ffprobe'])
+    const gone = path.join(root, 'engine/secret-place/yt-dlp')
+    expect(await failure({ YTDLP_PATH: gone, PATH: bin })).toEqual({
+      code: 'engine_missing',
+      message: "YTDLP_PATH doesn't point at a working yt-dlp. Fix it, then retry.",
+    })
+    const notExecutable = await file('engine/secret-place/ffmpeg', 0o644)
+    expect(await failure({ FFMPEG_PATH: notExecutable, PATH: bin })).toEqual({
+      code: 'engine_missing',
+      message: "FFMPEG_PATH doesn't point at a working ffmpeg. Fix it, then retry.",
     })
   })
 })

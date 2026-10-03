@@ -1,17 +1,25 @@
 import { type ErrorCode, type ErrorInfo, urlRejectionMessage } from '@dj-scraper/shared'
+import { POSTPROCESS_LINE } from './ytdlp-progress.ts'
 
 /**
  * Pure: a failed yt-dlp run → a typed `ErrorInfo` with a message written for humans
  * ("Private video.", "Not available in your country.", …). Every pattern is backed by a fixture in
- * test/fixtures/errors/ (see its README for which ones are recorded and which are synthetic).
+ * test/fixtures/errors/ or test/fixtures/downloads/ (see their READMEs for which ones are recorded
+ * and which are synthetic).
  *
  * How stderr is read:
  * - Exit code 2 is an option error: yt-dlp rejected our argv before doing anything. That is a bug
  *   on our side, or a yt-dlp too old to know a flag we pass.
  * - Only `ERROR:` lines decide. yt-dlp puts the reason on the ERROR line itself; the lines after it
  *   (geo's "This video is available in …", "You might want to use a VPN …") only add advice.
+ *   One exception: a download that gives up retrying prints `ERROR: \r[download] Got error: …`, and
+ *   the `\r` splits the line, so an empty ERROR line takes the `[download] …` line after it as its
+ *   reason. Such a transfer error is read with `TRANSFER_PATTERNS` first: the track was found, so a
+ *   4xx on its media is a refused request, never "removed".
  * - With several ERROR lines, the LAST one that maps to a specific code wins. yt-dlp prints the
  *   failure that ended the run last, and a trailing generic ERROR mustn't hide an earlier reason.
+ *   `FALLBACK_PATTERNS` (e.g. "fragment 3 not found, unable to continue", which follows the real
+ *   transfer error) count only when no ERROR line is specific.
  * - WARNING lines decide only through `WARNING_HINTS`, and only when the ERROR itself is generic
  *   (it maps to `unknown`). Each hint has a fixture where yt-dlp reports the real reason as a
  *   warning only; e.g. SoundCloud's 401 for original files is a WARNING plus "Requested format is
@@ -19,13 +27,19 @@ import { type ErrorCode, type ErrorInfo, urlRejectionMessage } from '@dj-scraper
  * - `preview_only` never comes from stderr. yt-dlp doesn't treat a Go+ preview as an error: a
  *   `--match-filters` rejection is silent in quiet mode (preview-filter.log is stdout under
  *   `--no-quiet`), and an excluding `-f` gives the generic "Requested format is not available"
- *   (preview-format-unavailable.log). Detect previews from the formats instead.
+ *   (preview-format-unavailable.log). Resolve detects previews from the formats; a download's
+ *   `--break-match-filters` exits 101 silently, which `mapDownloadExit` reads.
+ * - `PP …` lines (a download's postprocessor progress, on stderr in quiet mode) are never quoted.
+ * - Messages never hold paths: the job dir (when given) and any quoted absolute path, as Python's
+ *   `OSError` prints one (`[Errno 13] Permission denied: '/…'`), are cut out of stderr first.
  * - The text is assumed free of ANSI codes, because `baseArgs` always passes `--color never`.
  */
 
 export type YtdlpFailure = {
   stderr: string
   exitCode: number | null
+  /** The download's job dir: cut out of any text a message quotes. */
+  jobDir?: string
 }
 
 /** One table row. `match` runs on yt-dlp's reason text: no `ERROR:`, `[extractor] <id>: ` or bug-report tail. */
@@ -39,6 +53,9 @@ export type ErrorPattern = {
 export const MAX_QUOTED_LENGTH = 300
 
 const UPDATE_HINT = 'Updating yt-dlp may help.'
+/** The words for a full data-dir drive, as the attempt and finalize use them. */
+/** A full drive under the app data dir, wherever it shows up (yt-dlp, ffmpeg, our own writes). */
+export const DATA_DISK_FULL = "The drive with DJ Scraper's data is full."
 
 /**
  * Checked in order; the first match wins, so the more specific rows come first:
@@ -49,6 +66,8 @@ const UPDATE_HINT = 'Updating yt-dlp may help.'
  * - `geo_blocked` goes before `unavailable`: "This video is not available from your location", and
  *   YouTube's "Video unavailable. … who has blocked it in your country on copyright grounds."
  * - `engine_missing` goes before `postprocess_failed`: "Postprocessing: ffprobe and ffmpeg not found".
+ * - `disk_full` goes before `postprocess_failed` and `network`: a fixup's "Postprocessing: … No space
+ *   left on device", and the fragment downloader's "Unable to download video: [Errno 28] …".
  * - `network` comes last, because the specific HTTP codes above also say "Unable to download …".
  * Rows with code `unknown` only give a common failure a readable message.
  */
@@ -84,6 +103,13 @@ export const ERROR_PATTERNS: readonly ErrorPattern[] = [
     code: 'canceled',
     match: /\binterrupted by user\b/i,
     message: 'Canceled.',
+  },
+  {
+    code: 'disk_full',
+    // ENOSPC and macOS's EDQUOT (69, "Disc quota exceeded"): yt-dlp writes only into the job dir,
+    // which is in the data dir (local-enospc-write, local-enospc-open, local-enospc-hls).
+    match: /\[Errno (?:28|69)\]|\bNo space left on device\b|\bDis[ck] quota exceeded\b/i,
+    message: DATA_DISK_FULL,
   },
   {
     code: 'rate_limited',
@@ -177,6 +203,14 @@ export const ERROR_PATTERNS: readonly ErrorPattern[] = [
   },
   {
     code: 'network',
+    // A transfer cut short: IncompleteRead's text without its class name (local-cut, often as a
+    // transfer error), ContentTooShortError and its report, and an empty body (local-no-data).
+    match:
+      /\bbytes read, \d+ more expected\b|\bDownloaded \d+ bytes, expected \d+ bytes\b|\bcontent too short\b|\bDid not get any data blocks\b/i,
+    message: 'The connection dropped during the download. Try again.',
+  },
+  {
+    code: 'network',
     match:
       /\bunable to download\b|\btimed out\b|\bconnection (?:reset|refused|aborted)\b|\bfailed to (?:resolve|establish a new connection)\b|\bname resolution\b|\bnetwork is unreachable\b|\bremote end closed connection\b|\bTransportError\b|\bIncompleteRead\b|\bcertificate verify failed\b/i,
     message: "Couldn't connect. Check your internet connection and try again.",
@@ -193,18 +227,63 @@ export const WARNING_HINTS: readonly ErrorPattern[] = [
   },
 ]
 
+const PART_FAILED = "Part of the file couldn't be downloaded. Try again."
+
+/**
+ * Checked before `ERROR_PATTERNS` for a transfer error: `[download] Got error: …` (a fragment that
+ * failed all its retries, local-hls-404 and local-hls-429, or a plain download that gave up on a
+ * 5xx), or `unable to download video data: …` (a plain download whose request was refused,
+ * local-progressive-429). The track was found and its stream picked, so any other 4xx is a refused
+ * or expired media request: worth a retry, never `unavailable` or a login.
+ */
+export const TRANSFER_PATTERNS: readonly ErrorPattern[] = [
+  {
+    code: 'rate_limited',
+    match: /\bHTTP Error 429\b/i,
+    message: 'Too many requests: the platform is limiting downloads. Try again later.',
+  },
+  {
+    code: 'network',
+    match: /^unable to download video data: HTTP Error (?:4\d\d|5\d\d)\b/i,
+    message: 'The platform refused the download. Try again; if it keeps failing, update yt-dlp.',
+  },
+  {
+    code: 'network',
+    match: /\bHTTP Error (?:4\d\d|5\d\d)\b/i,
+    message: PART_FAILED,
+  },
+]
+
+/** Consulted only when no ERROR line maps to a specific code; same matching rules. */
+export const FALLBACK_PATTERNS: readonly ErrorPattern[] = [
+  {
+    code: 'network',
+    // The trailer after a fragment's transfer error, which says why.
+    match: /\bfragment \d+ not found\b/i,
+    message: PART_FAILED,
+  },
+]
+
 /** Maps a non-zero yt-dlp exit to an error. Unknown failures become `unknown`, keeping yt-dlp's last ERROR line. */
-export function mapYtdlpError({ stderr, exitCode }: YtdlpFailure): ErrorInfo {
-  const lines = stderr.split(/\r\n|\r|\n/).map((line) => line.trimEnd())
+export function mapYtdlpError({ stderr, exitCode, jobDir }: YtdlpFailure): ErrorInfo {
+  const lines = splitLines(withoutPaths(stderr, jobDir))
   if (exitCode === 2) return optionsRejected(lines)
 
-  const errors = reasonsAfter(lines, 'ERROR:')
+  const errors = errorReasons(lines)
   const last = errors.at(-1)
   if (last === undefined) return noErrorLine(lines, exitCode)
 
-  const mapped = errors.map((reason) => lookUp(reason, ERROR_PATTERNS))
+  const mapped = errors.map(
+    (reason) =>
+      (reason.transfer ? lookUp(reason, TRANSFER_PATTERNS) : undefined) ??
+      lookUp(reason, ERROR_PATTERNS),
+  )
   const specific = mapped.findLast((info) => info !== undefined && info.code !== 'unknown')
   if (specific) return specific
+  const fallback = errors
+    .map((reason) => lookUp(reason, FALLBACK_PATTERNS))
+    .findLast((info) => info !== undefined)
+  if (fallback) return fallback
   const hint = reasonsAfter(lines, 'WARNING:')
     .map((reason) => lookUp(reason, WARNING_HINTS))
     .findLast((info) => info !== undefined)
@@ -212,12 +291,64 @@ export function mapYtdlpError({ stderr, exitCode }: YtdlpFailure): ErrorInfo {
   return mapped.at(-1) ?? unknownFrom(last)
 }
 
+/** A SoundCloud Go+ track without a subscription (resolve marks it, the break filter stops it). */
+export const PREVIEW_ONLY: ErrorInfo = {
+  code: 'preview_only',
+  message: 'Only a 30-second preview is available: the full track needs SoundCloud Go+.',
+}
+
+/** yt-dlp's exit code when `--max-downloads` or a `--break-*` option stopped the run. */
+export const EXIT_STOPPED_EARLY = 101
+
+export type DownloadFailure = YtdlpFailure & {
+  /** The run passed `--break-match-filters` with the preview filter (SoundCloud downloads). */
+  breakFilter: boolean
+}
+
+/**
+ * Maps a failed download run (`downloadArgs`). The preview break filter stops a Go+ track silently
+ * with exit 101: no ERROR line, nothing written (soundcloud-preview-break). Any other 101 is
+ * unexpected, since downloads pass no other `--break-*` or `--max-downloads` option. A list URL
+ * that got through can end the same way (soundcloud-list-break); the attempt tells it apart by
+ * START's `playlist_id` before it maps the exit.
+ */
+export function mapDownloadExit({
+  exitCode,
+  stderr,
+  breakFilter,
+  jobDir,
+}: DownloadFailure): ErrorInfo {
+  if (exitCode !== EXIT_STOPPED_EARLY) return mapYtdlpError({ stderr, exitCode, jobDir })
+  const hasError = splitLines(stderr).some((line) => line.startsWith('ERROR:'))
+  if (breakFilter && !hasError) return PREVIEW_ONLY
+  return {
+    code: 'unknown',
+    message: `yt-dlp stopped early without downloading the track (exit code ${EXIT_STOPPED_EARLY}).`,
+  }
+}
+
 type Reason = {
   /** yt-dlp's message with whitespace collapsed and without its prefixes or bug-report tail. */
   text: string
   /** yt-dlp asked for a bug report, which usually means the extractor is out of date. */
   reportBug: boolean
+  /**
+   * A download's transfer error (`[download] Got error: …`, `unable to download video data: …`),
+   * read with `TRANSFER_PATTERNS` first.
+   */
+  transfer?: boolean
 }
+
+/**
+ * `FileDownloader.report_retry` gives up with `report_error('\r[download] Got error: …')`, so the
+ * reason arrives as the line after an empty `ERROR: ` (yt_dlp/downloader/common.py, 2026.08.19).
+ */
+const TRANSFER_CONTINUATION = /^\[download\] Got error:\s*/
+/**
+ * `YoutubeDL.dl` reports a plain (non-fragment) download that failed outright as `unable to
+ * download video data: <error>`: the media request, after a successful extraction.
+ */
+const MEDIA_DATA_FAILED = /^unable to download video data:/i
 
 /**
  * `[youtube] jNQXAC9IVRw: `, `[soundcloud:user] some-user: `, `[DRM] `. Noise for humans, and an id
@@ -229,11 +360,49 @@ const BUG_REPORT_TAIL = /;?\s*please report this issue on\b/i
 /** optparse's last line on exit 2: "yt-dlp: error: no such option: --foo". */
 const OPTION_ERROR = /^\S+: error: (.+)$/
 
+function splitLines(stderr: string): string[] {
+  return stderr.split(/\r\n|\r|\n/).map((line) => line.trimEnd())
+}
+
+/**
+ * A quoted absolute path within one line, as Python's `OSError` prints it: `'/…'`, or `"/…"` when
+ * the path holds a `'` (backslash escapes allowed).
+ */
+const QUOTED_PATH = /(['"])\/(?:\\.|(?!\1)[^\\\r\n])*\1/g
+
+/** stderr without the job dir (`…/x.part`) and without quoted absolute paths (`'…'`). */
+function withoutPaths(stderr: string, jobDir: string | undefined): string {
+  const cut = jobDir === undefined || jobDir === '' ? stderr : stderr.split(jobDir).join('…')
+  return cut.replace(QUOTED_PATH, (_path, quote: string) => `${quote}…${quote}`)
+}
+
 function reasonsAfter(lines: readonly string[], prefix: 'ERROR:' | 'WARNING:'): Reason[] {
   return lines
     .filter((line) => line.startsWith(prefix))
     .map((line) => reasonOf(line.slice(prefix.length)))
 }
+
+/**
+ * The ERROR lines' reasons, an empty ERROR glued to the transfer error that follows it (or on the
+ * same line, should the `\r` ever be gone).
+ */
+function errorReasons(lines: readonly string[]): Reason[] {
+  return lines.flatMap((line, index) => {
+    if (!line.startsWith('ERROR:')) return []
+    const raw = line.slice('ERROR:'.length).trim()
+    const next = lines[index + 1]
+    const transfer =
+      raw === '' && next !== undefined && TRANSFER_CONTINUATION.test(next) ? next : raw
+    if (!TRANSFER_CONTINUATION.test(transfer)) {
+      const reason = reasonOf(raw)
+      return [MEDIA_DATA_FAILED.test(reason.text) ? { ...reason, transfer: true } : reason]
+    }
+    return [{ ...reasonOf(transfer.replace(TRANSFER_CONTINUATION, '')), transfer: true }]
+  })
+}
+
+/** A line worth quoting when there is no ERROR line: not blank, not a download's `PP …` line. */
+const quotable = (line: string) => line.trim() !== '' && !POSTPROCESS_LINE.test(line)
 
 function reasonOf(raw: string): Reason {
   let text = raw.trim().replace(EXTRACTOR_PREFIX, '')
@@ -255,7 +424,7 @@ function unknownFrom({ text, reportBug }: Reason): ErrorInfo {
 
 /** Killed, crashed (a Python traceback) or exited with warnings only: say so, with its last words. */
 function noErrorLine(lines: readonly string[], exitCode: number | null): ErrorInfo {
-  const lastLine = lines.findLast((line) => line.trim() !== '')
+  const lastLine = lines.findLast(quotable)
   const detail = lastLine === undefined ? '' : reasonOf(lastLine.replace(/^WARNING:/, '')).text
   const what =
     exitCode === null
@@ -271,7 +440,7 @@ function noErrorLine(lines: readonly string[], exitCode: number | null): ErrorIn
 function optionsRejected(lines: readonly string[]): ErrorInfo {
   const detail =
     lines.map((line) => OPTION_ERROR.exec(line)?.[1]).findLast((text) => text !== undefined) ??
-    lines.findLast((line) => line.trim() !== '')?.trim()
+    lines.findLast(quotable)?.trim()
   const why = detail === undefined ? '' : ` (${quote(detail)})`
   return {
     code: 'unknown',

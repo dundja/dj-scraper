@@ -9,6 +9,7 @@ import type {
   ToolSource,
   YtdlpHealth,
 } from '@dj-scraper/shared'
+import { type EngineBins, StepError } from '../jobs/types.ts'
 import { type RunResult, run, SpawnError } from './run.ts'
 import {
   isSupportedNode,
@@ -149,6 +150,32 @@ async function fromOverride(file: string, variable: string): Promise<Located> {
   return state === 'ok'
     ? { kind: 'found', path: file, source: 'env' }
     : { kind: 'broken', path: file, source: 'env', message: problem[state] }
+}
+
+/**
+ * yt-dlp, ffmpeg and ffprobe for a download, found as the health check finds them (an override,
+ * else PATH) but without running them: cheap enough for every request and every attempt, so
+ * installing a tool needs no restart. Throws `StepError('engine_missing')`, whose message names no
+ * path (it ends up in a job's error).
+ */
+export async function locateEngine(env: EngineEnv): Promise<EngineBins> {
+  const [ytdlp, ff] = await Promise.all([locateYtdlp(env), locateFfmpeg(env)])
+  return {
+    ytdlp: usable('yt-dlp', ytdlp, 'YTDLP_PATH'),
+    ffmpeg: usable('ffmpeg', ff.ffmpeg, 'FFMPEG_PATH'),
+    ffprobe: usable('ffprobe', ff.ffprobe, 'FFMPEG_PATH'),
+  }
+}
+
+function usable(name: string, located: Located, variable: string): string {
+  if (located.kind === 'found') return located.path
+  // A missing tool's message names no path; a broken override's does.
+  throw new StepError(
+    'engine_missing',
+    located.kind === 'missing'
+      ? located.message
+      : `${variable} doesn't point at a working ${name}. Fix it, then retry.`,
+  )
 }
 
 /** Why a finished probe failed, in words; null when it exited 0 (then parse its stdout). */

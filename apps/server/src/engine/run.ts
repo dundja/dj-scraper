@@ -1,6 +1,7 @@
 import { type ChildProcessByStdio, spawn } from 'node:child_process'
 import type { Readable } from 'node:stream'
 import { StringDecoder } from 'node:string_decoder'
+import { errnoCode } from '../util/errno.ts'
 
 /**
  * The only module that spawns processes (see apps/server/CLAUDE.md).
@@ -15,8 +16,9 @@ import { StringDecoder } from 'node:string_decoder'
  * Settling rules:
  * - Rejects only when no process could be started (`SpawnError`, or `signal.reason` when the
  *   signal is already aborted), or when a line callback throws (after the group is stopped).
- * - Otherwise resolves once the child's stdio has closed, so the process group is gone (or was
- *   SIGKILLed) and every line callback has run. Callers may then delete the job dir.
+ * - Otherwise resolves once the child's stdio has closed and the rest of its process group was
+ *   SIGKILLed (always: members that don't hold our pipes would otherwise outlive it), and every
+ *   line callback has run. Callers may then delete the job dir.
  */
 
 const STOP_SIGNAL: NodeJS.Signals = 'SIGINT'
@@ -185,8 +187,10 @@ export async function run(
       clearTimeout(killTimer)
       clearTimeout(orphanTimer)
       signal?.removeEventListener('abort', onAbort)
-      // After a stop, sweep group members that don't hold our pipes (ignored if none are left).
-      if (stopping) killGroup(pid, 'SIGKILL')
+      // Always sweep group members that don't hold our pipes (ignored if none are left): after a
+      // stop, and after a normal exit too, since yt-dlp's own ffmpeg can outlive a python that
+      // died abnormally. Callers delete the job dir next, so nothing may still write into it.
+      killGroup(pid, 'SIGKILL')
       stdout.end()
       stderr.end()
 
@@ -217,11 +221,6 @@ function killGroup(pid: number, signal: NodeJS.Signals): void {
     const code = errnoCode(error)
     if (code !== 'ESRCH' && code !== 'EPERM') throw error
   }
-}
-
-function errnoCode(error: unknown): string | undefined {
-  if (typeof error !== 'object' || error === null || !('code' in error)) return undefined
-  return typeof error.code === 'string' ? error.code : undefined
 }
 
 function isTimeoutError(reason: unknown): boolean {

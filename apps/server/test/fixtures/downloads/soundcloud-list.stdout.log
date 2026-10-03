@@ -1,0 +1,2 @@
+START {"format_id": "hls_aac_160k", "acodec": "mp4a.40.2", "abr": 160, "protocol": "m3u8_native", "playlist_id": "2284613"}
+START {"format_id": "hls_aac_160k", "acodec": "mp4a.40.2", "abr": 160, "protocol": "m3u8_native", "playlist_id": "2284613"}

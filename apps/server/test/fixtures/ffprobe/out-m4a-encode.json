@@ -1,0 +1,35 @@
+{
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "44100",
+      "channels": 2,
+      "bit_rate": "218547",
+      "disposition": {
+        "attached_pic": 0
+      },
+      "tags": {
+        "language": "und",
+        "handler_name": "SoundHandler",
+        "vendor_id": "[0][0][0][0]"
+      }
+    }
+  ],
+  "format": {
+    "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+    "duration": "9.873991",
+    "bit_rate": "221161",
+    "tags": {
+      "major_brand": "M4A ",
+      "minor_version": "512",
+      "compatible_brands": "M4A isomiso2",
+      "title": "Dl Test Video '' Ä↭",
+      "artist": "Youtube",
+      "encoder": "Lavf62.3.100"
+    }
+  }
+}

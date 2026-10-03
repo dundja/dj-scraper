@@ -251,6 +251,29 @@ describe('run: stopping', () => {
     expect(await isAlive(await gc.pid)).toBe(false)
   })
 
+  it('SIGKILLs the rest of the group after a normal exit (a grandchild without our pipes)', async () => {
+    // Like yt-dlp's ffmpeg after python dies abnormally: in the group, but holding no pipe of ours,
+    // so 'close' doesn't wait for it.
+    const grandchild = "console.log('GC ' + process.pid); setInterval(() => {}, 1000)"
+    const gc = grandchildPid()
+    const result = await run(
+      node,
+      js(`
+        const gc = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: ['ignore', 'pipe', 'ignore'] })
+        gc.stdout.once('data', (chunk) => { process.stdout.write(chunk); gc.unref(); gc.stdout.destroy(); process.exit(0) })
+      `),
+      { killGraceMs: 60_000, onStdoutLine: gc.onStdoutLine },
+    )
+    expect(result).toMatchObject({ exitCode: 0, aborted: false, timedOut: false })
+    const pid = await gc.pid
+    await expect.poll(() => isAlive(pid), { timeout: 2000 }).toBe(false)
+  })
+
+  it('ignores a group already gone at close', async () => {
+    const result = await run(node, js('process.exitCode = 0'))
+    expect(result).toMatchObject({ exitCode: 0, signal: null })
+  })
+
   it('rejects without spawning when the signal is already aborted', async () => {
     const controller = new AbortController()
     controller.abort(new Error('canceled before start'))

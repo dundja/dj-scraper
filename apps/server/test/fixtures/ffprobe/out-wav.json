@@ -1,0 +1,28 @@
+{
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "pcm_s16le",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 2,
+      "bit_rate": "1536000",
+      "disposition": {
+        "attached_pic": 0
+      }
+    }
+  ],
+  "format": {
+    "format_name": "wav",
+    "duration": "19.005542",
+    "bit_rate": "1536069",
+    "tags": {
+      "artist": "jawed",
+      "comment": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      "title": "Me at the zoo",
+      "encoder": "Lavf62.3.100"
+    }
+  }
+}

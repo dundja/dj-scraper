@@ -19,6 +19,7 @@ import {
   youtubeListKind,
 } from '@dj-scraper/shared'
 import * as z from 'zod'
+import { lenient, omitUndefined } from '../util/fields.ts'
 
 /**
  * Pure: yt-dlp `-J` info JSON → our Track / Collection. yt-dlp's JSON is distrusted: it is read
@@ -41,9 +42,6 @@ export type Normalized =
 export class InfoParseError extends Error {
   override name = 'InfoParseError'
 }
-
-/** Extractors change their fields over time: a missing, null or wrongly typed value is just absent. */
-const lenient = <T extends z.ZodType>(schema: T) => schema.optional().catch(undefined)
 
 /** Trimmed, non-empty text: the contract rejects `''`. */
 const Text = lenient(z.string().trim().min(1))
@@ -121,6 +119,8 @@ const PLACEHOLDER_THUMBNAILS = [
 ]
 /** SoundCloud's original file: only for a logged-in user, and only when the uploader allows it. */
 const SOUNDCLOUD_ORIGINAL_FORMAT = 'download'
+/** SoundCloud's `hls_opus_64k`: ranked above its AAC and MP3, but no DJ app plays Opus (D7). */
+const SOUNDCLOUD_SKIPPED_CODEC = 'opus'
 /**
  * The set types SoundCloud labels as releases. yt-dlp copies a set's `set_type` to `album_type`,
  * and an unlabelled set becomes `'playlist'`: `'album_type': ('set_type', {str}, {lambda x: x or
@@ -329,10 +329,21 @@ function platformOf(extractorKey: string | undefined, fallback: Platform): Platf
 }
 
 /**
- * Platform metadata first (`track`, `artist`/`artists`); otherwise "Artist - Title" is split at
- * its first dash. YouTube's placeholder titles stay whole.
+ * Title and artist the way resolve shows them: the platform's own fields (`track`, `artist`/`artists`),
+ * else the title split at its first dash. YouTube's placeholder titles stay whole. Exported for
+ * finalize, so a file is named like its row.
  */
-function artistAndTitle(row: Row, platform: Platform): { title?: string; artist?: string } {
+export function trackNames(
+  fields: Pick<Row, 'track' | 'title' | 'artist' | 'artists'>,
+  platform: Platform,
+): { title?: string; artist?: string } {
+  return artistAndTitle(fields, platform)
+}
+
+function artistAndTitle(
+  row: Pick<Row, 'track' | 'title' | 'artist' | 'artists'>,
+  platform: Platform,
+): { title?: string; artist?: string } {
   const title = row.track ?? row.title
   const artist = row.artist ?? row.artists?.find((name) => name !== undefined)
   if (artist !== undefined || title === undefined) return { title, artist }
@@ -386,20 +397,27 @@ function isPreviewOnly(info: Info): boolean {
 }
 
 /**
- * The stream behind `-f ba`: yt-dlp sorts formats worst → best, so the last audio-only one, minus
- * previews, DRM and SoundCloud's login-only original. Its codec and bitrate as reported, or
- * nothing: never more quality than the stream has.
+ * The stream a download takes (`downloadSelector` in ytdlp-args.ts): yt-dlp sorts formats worst →
+ * best, so the last audio-only one, minus previews, DRM and SoundCloud's login-only original. On
+ * SoundCloud that is `ba[acodec!=opus]/ba`: its 64k Opus only when there is nothing else. Its codec
+ * and bitrate as reported, or nothing: never more quality than the stream has.
  */
 function audioSource(formats: (Format | undefined)[], platform: Platform): AudioSource | undefined {
-  for (let index = formats.length - 1; index >= 0; index--) {
-    const format = formats[index]
-    if (format === undefined || format.vcodec !== 'none') continue
-    if (format.acodec === undefined || format.acodec === 'none') continue
-    if (isPreview(format) || format.has_drm === true) continue
-    if (platform === 'soundcloud' && format.format_id === SOUNDCLOUD_ORIGINAL_FORMAT) continue
-    return omitUndefined({ codec: format.acodec, bitrateKbps: format.abr ?? format.tbr })
-  }
-  return undefined
+  const audio = formats.filter(
+    (format): format is Format =>
+      format !== undefined &&
+      format.vcodec === 'none' &&
+      format.acodec !== undefined &&
+      format.acodec !== 'none' &&
+      !isPreview(format) &&
+      format.has_drm !== true &&
+      !(platform === 'soundcloud' && format.format_id === SOUNDCLOUD_ORIGINAL_FORMAT),
+  )
+  const best =
+    platform === 'soundcloud'
+      ? (audio.findLast((format) => format.acodec !== SOUNDCLOUD_SKIPPED_CODEC) ?? audio.at(-1))
+      : audio.at(-1)
+  return best && omitUndefined({ codec: best.acodec, bitrateKbps: best.abr ?? best.tbr })
 }
 
 /**
@@ -499,11 +517,6 @@ function youtubeAlbumArtist(entries: readonly CollectionEntry[]): string | undef
 function nonEmpty(text: string | undefined): string | undefined {
   const trimmed = text?.trim()
   return trimmed ? trimmed : undefined
-}
-
-/** Optional contract fields are omitted, not present with `undefined`. */
-function omitUndefined<T extends object>(value: T): T {
-  return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined)) as T
 }
 
 /** Paths and messages only: issue values could carry titles or URLs. */

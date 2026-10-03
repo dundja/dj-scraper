@@ -298,6 +298,101 @@
       "stderr": "errors/soundcloud-429-info.log",
       "exit": 1,
       "note": "Synthetic log, made-up URL: 429 on the first (info JSON) request."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      "args": [["-f", "ba"]],
+      "download": "youtube-ba",
+      "exit": 0,
+      "note": "YouTube's ba (Opus 251) for every format but M4A. Without --write-thumbnail the fake leaves the thumbnail out of DONE."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      "args": [["-f", "ba[ext=m4a]/ba"]],
+      "download": "youtube-m4a",
+      "exit": 0,
+      "note": "The M4A selector picks AAC 140 on the same video."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=DLWAITING01",
+      "download": "youtube-ba-wait",
+      "exit": 0,
+      "note": "Synthetic START available_at {NOW+3}, made-up URL: the fake waits 3 s (FAKE_YTDLP_WAIT_MS shortens it) before the first DL line."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=DLNOTHUMB01",
+      "download": "youtube-ba-nothumb",
+      "exit": 0,
+      "note": "Made-up URL: recorded without --write-thumbnail, so DONE names an unfetched maxresdefault.webp and no file."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=DLCANCEL001",
+      "download": "youtube-cancel-download",
+      "exit": 1,
+      "hangAfter": 3,
+      "note": "Made-up URL: hangs after the second DL line with the .webm.part written; SIGINT answers like the recording."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=DLCANCELFIX",
+      "download": "youtube-cancel-fixup",
+      "exit": 1,
+      "hangAfter": 4,
+      "note": "Made-up URL: hangs after `PP FixupM4a started`, the downloaded .m4a in place; SIGINT answers like the recording."
+    },
+    {
+      "url": "https://soundcloud.com/jaimemf/youtube-dl-test-video-a-y-baw/s-8Pjrp",
+      "download": "soundcloud-ba",
+      "exit": 0,
+      "note": "Both SoundCloud selectors pick http_mp3_0_0 on this secret track; its thumbnail is the default_avatar placeholder."
+    },
+    {
+      "url": "https://soundcloud.com/dj-scraper-fake/hls-mp3",
+      "download": "soundcloud-hls",
+      "exit": 0,
+      "note": "Made-up URL: recorded on the secret track with a forced HLS selector that the server never builds."
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/knocked-up-mastered",
+      "download": "soundcloud-hls-aac",
+      "probe": "ffprobe/src-soundcloud-hls-aac-m4a.json",
+      "exit": 0
+    },
+    {
+      "url": "https://soundcloud.com/the-concept-band/world-on-fire-1",
+      "args": [["--break-match-filters", "format_id!*=preview"]],
+      "download": "soundcloud-preview-break",
+      "exit": 101,
+      "note": "Go+ preview formats only: the break filter ends the run silently with exit 101."
+    },
+    {
+      "url": "https://soundcloud.com/dj-scraper-fake/list-in-disguise",
+      "download": "soundcloud-list",
+      "exit": 0,
+      "note": "Made-up track URL for a set's run (recorded with -I 2,6 --skip-download): two STARTs with playlist_id, no DL, no DONE."
+    },
+    {
+      "url": "https://soundcloud.com/dj-scraper-fake/list-break",
+      "download": "soundcloud-list-break",
+      "exit": 101,
+      "note": "Made-up track URL for a set's run (recorded with -I 2:3 --skip-download): one START with playlist_id, then row 3's preview breaks it."
+    },
+    {
+      "url": "http://127.0.0.1:4799/missing/master.m3u8",
+      "download": "local-hls-404",
+      "exit": 1,
+      "note": "Recorded offline against a local server; nothing is contacted. Fragment 3 answered 404."
+    },
+    {
+      "url": "http://127.0.0.1:4799/limited/master.m3u8",
+      "download": "local-hls-429",
+      "exit": 1,
+      "note": "Recorded offline against a local server; nothing is contacted. Fragment 3 answered 429."
+    },
+    {
+      "url": "http://127.0.0.1:4799/flaky/tone.mp3",
+      "download": "local-progressive-429",
+      "exit": 1,
+      "note": "Recorded offline against a local server; nothing is contacted. The download request answered 429."
     }
   ]
 }

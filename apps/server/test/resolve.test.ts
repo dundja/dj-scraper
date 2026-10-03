@@ -18,7 +18,14 @@ import { run } from '../src/engine/run.ts'
 import { JSON_BODY_LIMIT_BYTES } from '../src/http/json.ts'
 import { OUT_OF_SCOPE_MESSAGE } from '../src/resolve/input.ts'
 import { planResolve } from '../src/resolve/plan.ts'
-import { type FakeYtdlpRule, freePort, makeTempDir, SERVER_DIR, writeFakeYtdlp } from './helpers.ts'
+import {
+  type FakeYtdlpRule,
+  freePort,
+  makeTempDir,
+  SERVER_DIR,
+  serverEnv,
+  writeFakeYtdlp,
+} from './helpers.ts'
 import {
   jsonBody,
   type ResolveApp,
@@ -577,6 +584,11 @@ const ERRORS: Record<string, [ErrorCode, number]> = {
   'ffmpeg-missing.log': ['engine_missing', 503],
   'interrupted.log': ['canceled', 409],
   'invalid-url.log': ['invalid_url', 400],
+  'local-cut.log': ['network', 502],
+  'local-enospc-hls.log': ['disk_full', 507],
+  'local-enospc-open.log': ['disk_full', 507],
+  'local-enospc-write.log': ['disk_full', 507],
+  'local-no-data.log': ['network', 502],
   'network-timeout.log': ['network', 502],
   'postprocess-conversion.log': ['postprocess_failed', 500],
   'postprocess-no-codec.log': ['postprocess_failed', 500],
@@ -756,7 +768,7 @@ describe('the real entry point', () => {
     })
     const done = run(process.execPath, ['src/index.ts'], {
       cwd: SERVER_DIR,
-      env: { PATH: dir, PORT: String(port), ...fake.env },
+      env: { PATH: dir, PORT: String(port), ...fake.env, ...(await serverEnv(root)) },
       signal: controller.signal,
       onStdoutLine: (line) => {
         if (line.includes('DJ Scraper on')) listening()

@@ -1,0 +1,22 @@
+{
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "pcm_s16be",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 2,
+      "bit_rate": "1536000",
+      "disposition": {
+        "attached_pic": 0
+      }
+    }
+  ],
+  "format": {
+    "format_name": "aiff",
+    "duration": "19.005542",
+    "bit_rate": "1536022"
+  }
+}

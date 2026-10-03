@@ -1,0 +1,44 @@
+{
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "44100",
+      "channels": 2,
+      "bit_rate": "127999",
+      "disposition": {
+        "attached_pic": 0
+      },
+      "tags": {
+        "language": "und",
+        "handler_name": "SoundHandler",
+        "vendor_id": "[0][0][0][0]"
+      }
+    },
+    {
+      "index": 1,
+      "codec_name": "mjpeg",
+      "codec_type": "video",
+      "disposition": {
+        "attached_pic": 1
+      }
+    }
+  ],
+  "format": {
+    "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+    "duration": "19.063583",
+    "bit_rate": "147168",
+    "tags": {
+      "major_brand": "M4A ",
+      "minor_version": "512",
+      "compatible_brands": "M4A isomiso2",
+      "title": "Me at the zoo",
+      "artist": "jawed",
+      "encoder": "Lavf62.3.100",
+      "comment": "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+    }
+  }
+}

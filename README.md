@@ -2,7 +2,7 @@
 
 Paste a YouTube or SoundCloud link (a single track or a whole playlist) and pick what you want. You get DJ-ready audio files (MP3 320, AIFF, M4A, …) with tags and artwork, in the folder you choose. Runs locally on your Mac; nothing is hosted.
 
-> **Status:** early development. The scaffold (roadmap Phase 0) and the engine & resolve step (Phase 1) are done: the local server, a dark app shell that shows whether yt-dlp and ffmpeg are ready, and a server that resolves YouTube and SoundCloud links into tracks and playlists (try `pnpm smoke`). Next is the download pipeline (Phase 2); pasting links in the UI comes in Phase 3. See [docs/roadmap.md](docs/roadmap.md).
+> **Status:** early development. The scaffold (roadmap Phase 0), the engine & resolve step (Phase 1) and the download pipeline (Phase 2) are done: a dark app shell that shows whether yt-dlp and ffmpeg are ready, and a local server that resolves YouTube and SoundCloud links into tracks and playlists and downloads them as tagged files into a folder, with live progress, cancel and retry (try `pnpm smoke` and `pnpm smoke --download`). Pasting links and downloading from the UI come next, in Phase 3. See [docs/roadmap.md](docs/roadmap.md).
 
 ## Prerequisites (macOS)
 - **Node.js 24 LTS**: `nvm install` (reads `.nvmrc`). Also **pnpm 12**: `brew install pnpm`. The repo pins its exact pnpm version, and older Homebrew pnpm (e.g. 10.17) can't switch to it, so run `brew upgrade pnpm` if pnpm commands fail with `ENOEXEC`.
@@ -17,6 +17,7 @@ pnpm install
 pnpm start      # builds the UI, serves it on http://127.0.0.1:4747 and opens your browser
 pnpm dev        # for development: http://localhost:5173 with hot reload + the server on :4747
 pnpm smoke      # resolve sample YouTube/SoundCloud links with the real yt-dlp (uses the network)
+pnpm smoke --download  # download two short sample tracks into a temp folder and check the files
 ```
 
 ## Docs

@@ -2,7 +2,12 @@
 
 A local web app for DJs. Paste a YouTube or SoundCloud link (track or playlist), review the metadata, pick tracks, and download them as DJ-ready audio files into a folder you choose. It runs only on this machine: a Vite/React UI at localhost plus a Node server that drives yt-dlp and ffmpeg.
 
-**Status:** Phase 0 (scaffold) is done: `packages/shared` (the contract), `apps/server` (guard, engine health, spawn wrapper, serving the built UI) and `apps/web` (dark shell with live engine status), with `pnpm dev`, `pnpm start` and Vitest/Playwright tests. Phase 1 (engine & resolve) is done on the server: `classifyUrl`, `POST /api/resolve`, `POST /api/resolve/entries`, the fake engine and `pnpm smoke`; the UI starts calling them in Phase 3. Next is roadmap Phase 2 (download pipeline). The current phase and next items are in `docs/roadmap.md`.
+**Status:** Phases 0–2 are done.
+- Phase 0 (scaffold): `packages/shared` (the contract), `apps/server` (guard, engine health, spawn wrapper, serving the built UI) and `apps/web` (dark shell with live engine status), with `pnpm dev`, `pnpm start` and Vitest/Playwright tests.
+- Phase 1 (engine & resolve): `classifyUrl`, `POST /api/resolve`, `POST /api/resolve/entries`, the fake engine and `pnpm smoke`.
+- Phase 2 (download pipeline): the paced download queue, finalize (one ffmpeg pass plus our ID3 writer, every file read back), publishing that never overwrites, the data-dir lock and startup sweep, settings, the folder picker, reveal and `GET /api/events`. The web has typed client calls and one event stream feeding `['downloads']`, but no downloads UI yet.
+
+Next is roadmap Phase 3 (UI): the web starts calling resolve and downloads. The current phase and next items are in `docs/roadmap.md`.
 
 ## Where things are explained
 | Need | Read |
@@ -35,6 +40,7 @@ pnpm test         # Vitest unit + integration, no network
 pnpm test:e2e     # build the UI + Playwright (Chromium, WebKit) against the fake engine, port 4849
 pnpm test:e2e:install # download the Playwright browsers once (network)
 pnpm smoke ['<url>' …] # live resolve against real YouTube/SoundCloud (network); no URL = sample set, --entries N, --mode, --json
+pnpm smoke --download [--format f]… [--keep] [--bare] ['<url>' …] # live download through the real pipeline into a temp dir, files read back
 ```
 To scope a script to one package: `pnpm --filter @dj-scraper/<web|server|shared> <script>`. Biome is scoped by path instead: `pnpm check apps/web`.
 
@@ -42,7 +48,7 @@ To scope a script to one package: `pnpm --filter @dj-scraper/<web|server|shared>
 ```
 ./                 package.json, pnpm-workspace.yaml, tsconfig.base.json, biome.json
 apps/web/          React SPA
-apps/server/       Hono API, resolve, yt-dlp/ffmpeg engine (download queue in Phase 2)
+apps/server/       Hono API, resolve, download queue and pacing, yt-dlp/ffmpeg engine, finalize, settings
 packages/shared/   Zod schemas + pure helpers used by both
 docs/              product, architecture, decisions, roadmap
 .claude/           agents, skills, hooks, settings
@@ -74,11 +80,14 @@ docs/              product, architecture, decisions, roadmap
 The full playbook is in the `ytdlp` skill.
 - yt-dlp breaks when YouTube changes. Suspect an outdated yt-dlp first (`brew upgrade yt-dlp`, or a nightly build via `YTDLP_PATH`).
 - YouTube needs a JS runtime. Brew's yt-dlp brings deno, and we also pass `--js-runtimes node:<process.execPath>`.
-- `--audio-quality` defaults to ~130 kbps VBR, so MP3 320 needs `--audio-quality 320K`.
-- `-x` can't produce AIFF, and `--embed-thumbnail` fails on WAV and AIFF. Our finalize step handles AIFF and artwork.
-- `--print` implies `--quiet`, so without `--progress` there is no progress output.
-- Cancel with SIGINT to the process group (spawned `detached`). SIGTERM can orphan ffmpeg.
-- `--flat-playlist` entries of SoundCloud sets are bare (id + url). Enrich them lazily within SoundCloud's ~600 requests/10 min budget.
+- We never pass `-x`. It converts without saying so (MP3 to AAC for M4A, 24-bit FLAC from Opus), leaks the source's tags and can't make AIFF. yt-dlp only downloads the stream; finalize converts, tags and adds the cover in one ffmpeg pass (ADR-015).
+- `--print` implies `--quiet`: without `--progress` there is no progress output, and a wait YouTube forces before the download is silent. Our `before_dl` START print carries `available_at` for the "waiting" state.
+- Without `--abort-on-unavailable-fragments`, a failed HLS fragment is skipped silently: exit 0, DONE printed, and a shorter file. With it, the reason arrives as `ERROR: \r[download] Got error: …`, split across two lines.
+- ffmpeg 8 can't write an ID3 `COMM` frame: any comment key becomes `TXXX:comment`. MP3 and AIFF tags therefore come from our own ID3v2.3 writer (`engine/id3.ts`, ADR-016).
+- `-vn` also drops a cover mapped with `-map 1:v:0`. Map streams explicitly and never pass `-vn`.
+- ffmpeg can exit 0 on truncated input and when the output already exists (even with `-n`). Finalize reads every output back with ffprobe: codec, tags, cover and duration.
+- Cancel with SIGINT to the process group (spawned `detached`). SIGTERM can orphan ffmpeg. `run.ts` SIGKILLs the group when a run closes, and the startup sweep kills groups a dead server left (ADR-018).
+- `--flat-playlist` entries of SoundCloud sets are bare (id + url). Enrich them lazily within SoundCloud's ~600 requests/10 min budget, which downloads share (ADR-017).
 - `watch?v=…&list=…` defaults to the whole playlist, so we ask. `list=RD…` mixes never end, so we cap them.
-- SoundCloud originals need the uploader's permission and a login. Go+ tracks without a subscription are 30-second previews (`preview_only`).
-- No DJ app plays Opus. YouTube's AAC stream (format 140) can be kept as M4A without re-encoding.
+- SoundCloud originals need the uploader's permission and a login. Go+ tracks without a subscription are 30-second previews (`preview_only`): `--break-match-filters "format_id!*=preview"` makes yt-dlp exit 101 silently.
+- No DJ app plays Opus. YouTube's AAC stream (format 140) is copied as M4A, and an MP3 source stays at its own bitrate.

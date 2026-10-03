@@ -43,24 +43,26 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud. Everythi
 ### 4. Target folder
 - Always visible in the app header. It defaults to `~/Music/DJ Scraper` and remembers the last folder plus a few recent ones.
 - **Change…** opens the native macOS folder picker (shown by the local server).
+- Only the default folder is created when missing; a folder you name must exist. If it disappears during a batch (renamed, drive unplugged), its remaining tracks fail with that reason instead of recreating it.
 
 ### 5. Download progress
-- Each track moves from queued → downloading (percent, speed, ETA) → processing (convert, tag) → done. It can also end as failed, canceled, or skipped (already exists).
-- A track may show **waiting** for a few seconds before it starts; YouTube enforces that delay.
-- Big batches are paced to stay under platform rate limits (YouTube allows roughly 300 tracks/hour without a login). When a platform starts limiting, its queue pauses and resumes on its own.
+- Each track moves from queued → downloading (percent, speed, ETA) → processing (convert, tag) → done. It can also end as failed, canceled, or skipped (a file of that name is already there).
+- A track may show **waiting** before its download starts, with the time it waits until; YouTube enforces that delay.
+- Big batches are paced to stay under platform rate limits (YouTube allows roughly 300 tracks/hour without a login; SoundCloud downloads share their budget with filling in set rows). When a platform starts limiting, its queue shows **paused** until a given time, the track that hit the limit goes back to the front, and the queue resumes on its own.
+- Each finished track says what was written: format, bitrate, and whether the stream was copied as is or re-encoded.
 - Batch controls: overall progress, cancel one or all, retry failed, and **Reveal in Finder** for finished files.
 - One failing track never stops the batch.
 - Errors are written for humans: "Private video", "Not available in your country", "Age-restricted: needs browser cookies", "Preview only (SoundCloud Go+)", …
 
 ### 6. Settings
 - Format:
-  - **MP3 320 kbps (default)**
-  - M4A/AAC (no re-encode when the source is AAC)
+  - **MP3 (default)**: 320 kbps when re-encoded; an MP3 source keeps its bitrate (often 128 kbps on SoundCloud), because re-encoding it could only lose quality
+  - M4A/AAC: copied when the source is AAC; anything else is transcoded to AAC 256 kbps
   - AIFF: the lossless container to pick, since it keeps tags and artwork
-  - WAV (no artwork, minimal tags) and FLAC
-  - Original (no conversion; Opus/WebM files won't load in DJ apps)
+  - WAV (no artwork, minimal tags) and FLAC (16-bit)
+  - Original (no conversion; Opus/WebM files won't load in DJ apps and can't hold artwork)
 - Filename template (default `{artist} - {title}`).
-- Embed artwork (on). Write the source URL into the comment tag (on).
+- Embed artwork (on). Write the source URL into the comment tag (on): the track's public page only, never a secret, short or unlisted link.
 - Skip already-downloaded tracks (on).
 - Parallel downloads (default 3).
 - Auto-download single tracks (on).
@@ -72,13 +74,14 @@ Every stream is lossy:
 - SoundCloud without a login: AAC 160 kbps at best, otherwise MP3 128 kbps.
 - SoundCloud originals (often WAV or FLAC) exist only when the uploader enables downloads, and fetching them needs a SoundCloud login.
 
-Converting to MP3 320 or AIFF improves compatibility with DJ software, not quality. The UI shows the source codec and bitrate, and uses an original file whenever one is available.
+Converting to MP3 320 or AIFF improves compatibility with DJ software, not quality. The UI shows the source codec and bitrate, and uses an original file whenever one is available. Every finished file reports what it really is, read back from the file: an MP3 source is never re-encoded to look like "320", and an M4A made from a non-AAC source is marked as re-encoded.
 
 ## Metadata & files
-- Tags: title, artist, album (when known), year, artwork, and the source URL in the comment.
-- Artist/title come from platform metadata when present (YouTube Music, SoundCloud). Otherwise they're split from "Artist - Title" video titles. Noise like "(Official Video)", "[HD]" and "(Lyrics)" is cleaned up with a preview (Phase 4).
+- Tags: title, artist, album and year (when the platform has release data; never the upload date), artwork, and the source URL in the comment.
+- The comment holds the track's public page on YouTube or SoundCloud. A SoundCloud secret link, a short link or an unlisted video gets no comment, so a shared file never leaks a private link. Other sites get none either.
+- Artist/title come from platform metadata when present (YouTube Music, SoundCloud). Otherwise they're split from "Artist - Title" video titles, and failing that the uploader is the artist (without YouTube's " - Topic"). Noise like "(Official Video)", "[HD]" and "(Lyrics)" is cleaned up with a preview (Phase 4).
 - SoundCloud Go+ tracks that only offer 30-second previews are flagged and never saved as if they were the full track.
-- Filenames are safe on macOS and Windows. Existing files are never overwritten silently.
+- Filenames are safe on macOS, Windows and FAT/exFAT USB sticks. An existing file of the same name, in any letter case, is never overwritten: the track is skipped and your file stays as it was.
 
 ## Non-goals (v1)
 - DRM-protected services, and paywalled or private content the user can't already access.

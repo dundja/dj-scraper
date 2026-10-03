@@ -902,7 +902,7 @@ describe('createQueue: eviction', () => {
   })
 
   it('removes done, skipped and canceled jobs before failed ones, oldest first', async () => {
-    const { queue, add, take, callOf } = setup({ maxRetainedTerminal: 2 })
+    const { queue, add, take, callOf } = setup({ maxRetainedTerminal: 2, recentCanceled: 0 })
     add([refused(1, UNAVAILABLE)])
     const [done] = add([yt(2)]).jobIds
     await flush()
@@ -922,6 +922,93 @@ describe('createQueue: eviction', () => {
     add([refused(5, PRIVATE)])
     expect(summary(take())).toEqual(['jobs.added 0c:failed', 'jobs.removed 02 | 01'])
     expect(queue.snapshot().jobs.map((j) => j.id)).toEqual([testUuid(7), testUuid(12)])
+  })
+
+  it('removes canceled jobs before done and skipped ones but the newest few: canceling a big batch keeps what was downloaded', async () => {
+    const { queue, add, take, callOf } = setup({ maxRetainedTerminal: 4, recentCanceled: 1 })
+    const removed = () => take().filter((event) => event.type === 'jobs.removed')
+    const [failed] = add([refused(1, UNAVAILABLE)]).jobIds
+    const first = add([yt(2)])
+    const [done] = first.jobIds
+    await flush()
+    callOf(done).finish({ kind: 'done', outputPath: '/d.mp3', output: OUTPUT, track: {} })
+    await flush()
+    const [skipped] = add([yt(3)]).jobIds
+    await flush()
+    callOf(skipped).finish({ kind: 'skipped', outputPath: '/s.mp3', track: {} })
+    await flush()
+    const big = add([yt(4), yt(5), yt(6), yt(7)])
+    const [running, q1, q2, q3] = big.jobIds
+    await flush()
+    take()
+    // The queued jobs are canceled at once: six finished, over the cap. The batch still has a job,
+    // but one being canceled, so nothing in it is left to run: its canceled jobs go first, oldest
+    // first, all but the newest one.
+    expect(queue.cancelMany({ scope: 'batch', batchId: big.batchId ?? '' })).toBe(4)
+    expect(removed()).toEqual([{ type: 'jobs.removed', ids: [q1, q2], batchIds: [] }])
+    // The running one ends canceled and is now the newest: the one kept before goes.
+    callOf(running).finish({ kind: 'canceled' })
+    await flush()
+    expect(removed()).toEqual([{ type: 'jobs.removed', ids: [q3], batchIds: [] }])
+    // Only the newest canceled job left: the oldest done or skipped one goes, the failed ones stay.
+    const [newer] = add([refused(8, PRIVATE)]).jobIds
+    expect(removed()).toEqual([{ type: 'jobs.removed', ids: [done], batchIds: [first.batchId] }])
+    expect(queue.snapshot().jobs.map((j) => [j.id, j.status])).toEqual([
+      [failed, 'failed'],
+      [skipped, 'skipped'],
+      [running, 'canceled'],
+      [newer, 'failed'],
+    ])
+  })
+
+  it('keeps a track the user just canceled, and its Retry, until no done or skipped job is left', async () => {
+    // The default window of newest canceled jobs.
+    const { queue, add, take, callOf, status } = setup({ maxRetainedTerminal: 2 })
+    const removed = () => take().filter((event) => event.type === 'jobs.removed')
+    const done: AttemptOutcome = { kind: 'done', outputPath: '/x.mp3', output: OUTPUT, track: {} }
+    const one = add([yt(1)])
+    await flush()
+    callOf(one.jobIds[0]).finish(done)
+    await flush()
+    const two = add([yt(2)])
+    await flush()
+    callOf(two.jobIds[0]).finish(done)
+    await flush()
+    const [running] = add([yt(3)]).jobIds
+    const [queued] = add([yt(4)]).jobIds
+    await flush()
+    take()
+    // A queued single is canceled at once: the oldest done job goes instead of it.
+    queue.cancel(queued ?? '')
+    expect(removed()).toEqual([
+      { type: 'jobs.removed', ids: [one.jobIds[0]], batchIds: [one.batchId] },
+    ])
+    // So does a running one once its attempt stops.
+    queue.cancel(running ?? '')
+    callOf(running).finish({ kind: 'canceled' })
+    await flush()
+    expect(removed()).toEqual([
+      { type: 'jobs.removed', ids: [two.jobIds[0]], batchIds: [two.batchId] },
+    ])
+    expect([status(running), status(queued)]).toEqual(['canceled', 'canceled'])
+    expect(queue.retryMany({ scope: 'all' }, ['canceled'])).toBe(2)
+    expect([status(running), status(queued)]).toEqual(['queued', 'queued'])
+  })
+
+  it('removes the newest canceled jobs along with failed ones, oldest first', async () => {
+    const { queue, add, take, callOf } = setup({ maxRetainedTerminal: 2 })
+    const removed = () => take().filter((event) => event.type === 'jobs.removed')
+    const [oldFailure] = add([refused(1, UNAVAILABLE)]).jobIds
+    const [canceled] = add([yt(2)]).jobIds
+    await flush()
+    queue.cancel(canceled ?? '')
+    callOf(canceled).finish({ kind: 'canceled' })
+    await flush()
+    const [failure] = add([refused(3, PRIVATE)]).jobIds
+    expect(removed().flatMap((event) => event.ids)).toEqual([oldFailure])
+    const [newest] = add([refused(4, PRIVATE)]).jobIds
+    expect(removed().flatMap((event) => event.ids)).toEqual([canceled])
+    expect(queue.snapshot().jobs.map((j) => j.id)).toEqual([failure, newest])
   })
 })
 
@@ -1034,6 +1121,15 @@ describe('createQueue: pacing', () => {
 
   it.each([0, 7, 2.5])('refuses the concurrency %s', (concurrency) => {
     expect(() => setup({ concurrency })).toThrow(RangeError)
+  })
+
+  it.each([
+    { maxRetainedTerminal: -1 },
+    { maxRetainedTerminal: 1.5 },
+    { recentCanceled: -1 },
+    { recentCanceled: 1.5 },
+  ])('refuses the eviction option %o', (options) => {
+    expect(() => setup(options)).toThrow(RangeError)
   })
 })
 

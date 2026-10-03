@@ -1,3 +1,7 @@
+import { type Budget, createTokenBucket, type TokenBucket } from '../pacing/token-bucket.ts'
+
+export type { Budget } from '../pacing/token-bucket.ts'
+
 /** Resolves after `ms`. Injected so pacing tests can run on a fake clock. */
 export type Sleep = (ms: number) => Promise<void>
 
@@ -10,19 +14,17 @@ export const defaultSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(r
  */
 export const monotonicClock = (): number => performance.now()
 
-/**
- * A token bucket on call starts: `burst` calls may start at once, then one more per `refillMs`.
- * It is full when the limiter is created, and a waiting call takes the next token in FIFO order.
- */
-export type Budget = { burst: number; refillMs: number }
-
 export type LimiterOptions = {
   /** At most this many calls run at once. */
   concurrency: number
   /** The least time between two call starts (pacing). Default 0. */
   minIntervalMs?: number
-  /** Caps starts over longer stretches than `minIntervalMs`. Default: none. */
-  budget?: Budget
+  /**
+   * Caps starts over longer stretches than `minIntervalMs`: a `Budget` gets a bucket of its own,
+   * full when the limiter is created; a `TokenBucket` instance is shared with its other holders.
+   * A waiting call takes the next token in FIFO order among this limiter's calls. Default: none.
+   */
+  budget?: Budget | TokenBucket
   /** Default `monotonicClock`. */
   clock?: () => number
   sleep?: Sleep
@@ -61,12 +63,7 @@ export function createLimiter({
   if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
     throw new RangeError(`concurrency must be a positive integer, got ${concurrency}`)
   }
-  if (
-    budget !== undefined &&
-    !(Number.isSafeInteger(budget.burst) && budget.burst >= 1 && budget.refillMs > 0)
-  ) {
-    throw new RangeError('budget needs a positive integer burst and a positive refillMs')
-  }
+  const bucket = budget === undefined || isTokenBucket(budget) ? budget : createTokenBucket(budget)
   type Waiter = {
     start: () => void
     fail: (reason: unknown) => void
@@ -76,18 +73,7 @@ export function createLimiter({
   const queue: Waiter[] = []
   let active = 0
   let lastStart = Number.NEGATIVE_INFINITY
-  /**
-   * The budget as a theoretical arrival time (GCRA): each start pushes it `refillMs` further, and
-   * a start is allowed while it is at most `burst - 1` refills ahead of now. The same as a bucket
-   * of `burst` tokens that refills one per `refillMs`, without counting fractions of a token.
-   */
-  let budgetAt = Number.NEGATIVE_INFINITY
   let sleeping = false
-
-  const budgetWait = (now: number): number => {
-    if (budget === undefined) return 0
-    return Math.max(budgetAt, now) - (budget.burst - 1) * budget.refillMs - now
-  }
 
   const pump = (): void => {
     for (;;) {
@@ -99,14 +85,12 @@ export function createLimiter({
       }
       if (active >= concurrency) return
       const now = clock()
-      // An injected clock may step back (the default never does): move the pacing state back with
-      // it, or the next start would wait out the step.
-      if (lastStart > now) {
-        const step = lastStart - now
-        lastStart -= step
-        budgetAt -= step
-      }
-      const wait = Math.max(lastStart + minIntervalMs - now, budgetWait(now))
+      // An injected clock may step back (the default never does): move the gap back with it, or
+      // the next start would wait out the step. The bucket moves its own state back.
+      if (lastStart > now) lastStart = now
+      // A shared bucket can also be emptied by its other holders while this limiter sleeps: the
+      // wait is measured again after every sleep.
+      const wait = Math.max(lastStart + minIntervalMs - now, bucket?.waitMs(now) ?? 0)
       if (wait > 0) {
         if (!sleeping) {
           sleeping = true
@@ -120,7 +104,7 @@ export function createLimiter({
       queue.shift()
       active++
       lastStart = now
-      if (budget !== undefined) budgetAt = Math.max(budgetAt, now) + budget.refillMs
+      bucket?.take(now)
       next.start()
     }
   }
@@ -202,3 +186,6 @@ export function createLimiter({
     },
   }
 }
+
+const isTokenBucket = (budget: Budget | TokenBucket): budget is TokenBucket =>
+  'take' in budget && typeof budget.take === 'function'

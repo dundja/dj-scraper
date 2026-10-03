@@ -1,0 +1,26 @@
+{
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "mp3",
+      "codec_type": "audio",
+      "sample_rate": "44100",
+      "channels": 2,
+      "bit_rate": "128000",
+      "disposition": {
+        "attached_pic": 0
+      },
+      "tags": {
+        "encoder": "LAME3.99r"
+      },
+      "side_data_list": [{}]
+    }
+  ],
+  "format": {
+    "format_name": "mp3",
+    "duration": "9.873991",
+    "bit_rate": "128679"
+  }
+}

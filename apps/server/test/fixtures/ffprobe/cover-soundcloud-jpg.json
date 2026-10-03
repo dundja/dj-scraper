@@ -1,0 +1,19 @@
+{
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "mjpeg",
+      "codec_type": "video",
+      "disposition": {
+        "attached_pic": 0
+      }
+    }
+  ],
+  "format": {
+    "format_name": "image2",
+    "duration": "0.040000",
+    "bit_rate": "34244200"
+  }
+}

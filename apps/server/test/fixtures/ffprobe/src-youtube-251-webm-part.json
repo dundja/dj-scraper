@@ -1,0 +1,27 @@
+{
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "opus",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 2,
+      "disposition": {
+        "attached_pic": 0
+      },
+      "tags": {
+        "language": "eng"
+      }
+    }
+  ],
+  "format": {
+    "format_name": "matroska,webm",
+    "duration": "19.021000",
+    "bit_rate": "27132",
+    "tags": {
+      "encoder": "google/video-file"
+    }
+  }
+}

@@ -995,6 +995,56 @@ describe('tolerance: tracks', () => {
     })
   })
 
+  // Synthetic: no recorded SoundCloud track lists Opus any more, but yt-dlp still knows the format
+  // and ranks it first (acodec opus > aac > mp3). Downloads ask for `ba[acodec!=opus]/ba`.
+  describe('SoundCloud Opus', () => {
+    const soundcloudInput = classified('https://soundcloud.com/user/song')
+    const scSource = (formats: unknown[]) =>
+      track(
+        { extractor_key: 'Soundcloud', webpage_url: 'https://soundcloud.com/user/song', formats },
+        soundcloudInput,
+      ).source
+    const format = (format_id: string, acodec: string, abr: number, protocol = 'm3u8_native') => ({
+      format_id,
+      ext: acodec === 'opus' ? 'opus' : acodec === 'mp3' ? 'mp3' : 'm4a',
+      acodec,
+      vcodec: 'none',
+      abr,
+      protocol,
+    })
+    // As yt-dlp sorts them, worst to best (track.json's list plus the Opus stream).
+    const formats = [
+      format('hls_mp3_0_0', 'mp3', 128),
+      format('http_mp3_0_0', 'mp3', 128, 'http'),
+      format('hls_aac_96k', 'mp4a.40.2', 96),
+      format('hls_opus_64k', 'opus', 64),
+    ]
+
+    it('skips hls_opus_64k for the stream behind it, as the download does', () => {
+      expect(scSource(formats)).toStrictEqual({ codec: 'mp4a.40.2', bitrateKbps: 96 })
+    })
+
+    it('takes the Opus stream when nothing else is left, like the selector’s `/ba`', () => {
+      expect(scSource([format('hls_opus_64k', 'opus', 64)])).toStrictEqual({
+        codec: 'opus',
+        bitrateKbps: 64,
+      })
+    })
+
+    it('still skips previews and the original when it falls back to Opus', () => {
+      const preview = format('hls_mp3_0_0_preview', 'mp3', 128)
+      const original = { format_id: 'download', vcodec: 'none', acodec: 'wav', abr: 1411 }
+      expect(scSource([preview, format('hls_opus_64k', 'opus', 64), original])).toStrictEqual({
+        codec: 'opus',
+        bitrateKbps: 64,
+      })
+    })
+
+    it('keeps YouTube’s Opus: only SoundCloud’s is skipped', () => {
+      expect(track({ formats }).source).toStrictEqual({ codec: 'opus', bitrateKbps: 64 })
+    })
+  })
+
   describe('source', () => {
     const audio = (format_id: string, fields: Record<string, unknown> = {}) => ({
       format_id,

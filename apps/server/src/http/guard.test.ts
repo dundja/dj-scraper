@@ -1,7 +1,7 @@
 import { ApiErrorBodySchema, type Health } from '@dj-scraper/shared'
 import { describe, expect, it } from 'vitest'
 import { createApp } from '../app.ts'
-import { UNUSED_RESOLVE_DEPS } from '../resolve/unused.ts'
+import { UNUSED_DEPS } from '../stubs.ts'
 import { isJson } from './guard.ts'
 
 // Not the default 4747, so the guard is shown to use the port it was given.
@@ -18,9 +18,9 @@ const health: Health = {
 }
 const stubHealth = { current: async () => health, recheck: async () => health }
 
-const prod = createApp({ port: PORT, health: stubHealth, ...UNUSED_RESOLVE_DEPS })
+const prod = createApp({ port: PORT, health: stubHealth, ...UNUSED_DEPS })
 // pnpm dev: Vite on 5173 proxies /api here and forwards the browser's Host and Origin unchanged.
-const dev = createApp({ port: PORT, devPort: 5173, health: stubHealth, ...UNUSED_RESOLVE_DEPS })
+const dev = createApp({ port: PORT, devPort: 5173, health: stubHealth, ...UNUSED_DEPS })
 
 type Case = {
   name: string

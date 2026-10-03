@@ -3,7 +3,7 @@ import { PortSchema, SECURITY_HEADERS, SERVER_PORT, WEB_DEV_PORT } from '@dj-scr
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, type ProxyOptions } from 'vite'
 import * as z from 'zod'
 import { devExit } from './dev-exit.ts'
 import { devGuard } from './dev-guard.ts'
@@ -16,6 +16,19 @@ const serverPort = (() => {
   if (!parsed.success) throw new Error(`Invalid PORT "${port}": ${z.prettifyError(parsed.error)}`)
   return parsed.data
 })()
+
+/**
+ * Vite's proxy (http-proxy-3) pipes the server's response into the browser's but never ends it when
+ * the server dies mid-response, so an open event stream would hang without an error and never
+ * reconnect. Destroying the browser's response lets the EventSource see the drop (D12).
+ */
+const endCutResponses: ProxyOptions['configure'] = (proxy) => {
+  proxy.on('proxyRes', (proxyRes, _req, res) => {
+    proxyRes.on('close', () => {
+      if (!proxyRes.complete) res.destroy()
+    })
+  })
+}
 
 export default defineConfig({
   plugins: [
@@ -49,6 +62,7 @@ export default defineConfig({
         // own check is looser (it lets file:*, *-extension:* and any IP through), and changeOrigin
         // would hide the browser's Host behind 127.0.0.1:<port>.
         changeOrigin: false,
+        configure: endCutResponses,
       },
     },
   },

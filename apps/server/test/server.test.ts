@@ -3,8 +3,8 @@ import { ApiErrorBodySchema, type Health, HealthSchema } from '@dj-scraper/share
 import { afterEach, describe, expect, it } from 'vitest'
 import { createApp } from '../src/app.ts'
 import type { HealthCheck } from '../src/engine/health.ts'
-import { UNUSED_RESOLVE_DEPS } from '../src/resolve/unused.ts'
 import { HOSTNAME, type RunningServer, startServer } from '../src/server.ts'
+import { UNUSED_DEPS } from '../src/stubs.ts'
 import { rawRequest as raw } from './helpers.ts'
 
 const health: Health = {
@@ -24,7 +24,7 @@ afterEach(async () => {
 })
 
 async function start(
-  makeApp = (port: number) => createApp({ port, health: stubHealth, ...UNUSED_RESOLVE_DEPS }),
+  makeApp = (port: number) => createApp({ port, health: stubHealth, ...UNUSED_DEPS }),
 ) {
   const server = await startServer(0, makeApp)
   running.push(server)
@@ -57,7 +57,7 @@ describe('startServer', () => {
     const ports: number[] = []
     const { port } = await start((p) => {
       ports.push(p)
-      return createApp({ port: p, health: stubHealth, ...UNUSED_RESOLVE_DEPS })
+      return createApp({ port: p, health: stubHealth, ...UNUSED_DEPS })
     })
     expect(ports).toEqual([port])
   })
@@ -72,7 +72,7 @@ describe('startServer', () => {
     let built = false
     const error = await startServer(port, (p) => {
       built = true
-      return createApp({ port: p, health: stubHealth, ...UNUSED_RESOLVE_DEPS })
+      return createApp({ port: p, health: stubHealth, ...UNUSED_DEPS })
     }).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(Error)
     expect(error).toMatchObject({ code: 'EADDRINUSE' })
@@ -166,7 +166,7 @@ describe('the guard over a real socket', () => {
 describe('RunningServer.close', () => {
   it('resolves promptly while a keep-alive connection is idle', async () => {
     const server = await startServer(0, (port) =>
-      createApp({ port, health: stubHealth, ...UNUSED_RESOLVE_DEPS }),
+      createApp({ port, health: stubHealth, ...UNUSED_DEPS }),
     )
     const socket = await connect(server.port, HOSTNAME)
     const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()))
@@ -193,7 +193,7 @@ describe('RunningServer.close', () => {
       recheck: async () => health,
     }
     const server = await startServer(0, (port) =>
-      createApp({ port, health: hanging, ...UNUSED_RESOLVE_DEPS }),
+      createApp({ port, health: hanging, ...UNUSED_DEPS }),
     )
     const request = fetch(`http://127.0.0.1:${server.port}/api/health`)
     await handlerEntered
@@ -206,7 +206,7 @@ describe('RunningServer.close', () => {
 
   it('stops accepting new connections', async () => {
     const server = await startServer(0, (port) =>
-      createApp({ port, health: stubHealth, ...UNUSED_RESOLVE_DEPS }),
+      createApp({ port, health: stubHealth, ...UNUSED_DEPS }),
     )
     await server.close()
     await expect(connect(server.port, HOSTNAME)).rejects.toMatchObject({ code: 'ECONNREFUSED' })

@@ -1,14 +1,23 @@
 import {
+  CancelJobsRequestSchema,
+  ClearJobsRequestSchema,
   type Collection,
+  type DownloadRequest,
+  DownloadRequestSchema,
   type EntryResult,
+  FolderPickRequestSchema,
   type ResolveEntriesRequest,
   ResolveEntriesRequestSchema,
   type ResolveEntriesResponse,
   ResolveRequestSchema,
   type ResolveResult,
+  RetryJobsRequestSchema,
+  SettingsUpdateSchema,
   type Track,
 } from '@dj-scraper/shared'
+import { soundcloudRowRef, testUuid, youtubeRef } from '@dj-scraper/shared/test-helpers'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { doneJob, failedJob, jobWith, queuedJob, settings } from '@/test/downloads.ts'
 import { fakeApi, json, jsonBody, networkError, noAnswer, text } from '@/test/fake-api.ts'
 import { healthWith, healthy } from '@/test/health.ts'
 import { ApiError, api } from './api.ts'
@@ -524,4 +533,362 @@ describe('resolve failures', () => {
       })
     },
   )
+})
+
+// Downloads, settings and the folder picker: request shapes the shared schemas read back, and the
+// answers validated on the way in.
+
+const downloadRequest = {
+  items: [youtubeRef, soundcloudRowRef],
+  folder: '/Users/dj/Music/DJ Scraper',
+  options: {
+    format: 'mp3',
+    filenameTemplate: '{artist} - {title}',
+    embedArtwork: true,
+    sourceUrlComment: true,
+    subfolder: 'Summer 2026',
+  },
+  label: 'Summer 2026',
+} satisfies DownloadRequest
+
+const created = { batchId: testUuid(100), jobIds: [testUuid(1), testUuid(4)], duplicates: 0 }
+
+describe('api.createDownloads', () => {
+  it('posts the request as its exact JSON body to /api/downloads, which the server reads back as the same request', async () => {
+    server.on('POST /api/downloads', () => json(created))
+
+    await expect(api.createDownloads(downloadRequest)).resolves.toEqual(created)
+
+    const [call] = server.callsTo('POST /api/downloads')
+    expect(call?.headers.get('Content-Type')).toBe('application/json')
+    expect(call?.headers.get('Accept')).toBe('application/json')
+    expect(call?.body).toBe(JSON.stringify(downloadRequest))
+    expect(DownloadRequestSchema.parse(jsonBody(call))).toEqual(downloadRequest)
+  })
+
+  it('returns a response without a batch when every item was a duplicate', async () => {
+    const allDuplicates = { jobIds: [testUuid(1), testUuid(1)], duplicates: 2 }
+    server.on('POST /api/downloads', () => json(allDuplicates))
+
+    await expect(api.createDownloads(downloadRequest)).resolves.toEqual(allDuplicates)
+  })
+
+  it.each([
+    {
+      status: 422,
+      code: 'folder_unavailable',
+      message: 'The folder /Volumes/USB is not there any more. Plug the drive in or pick another.',
+    },
+    {
+      status: 503,
+      code: 'engine_missing',
+      message: 'ffprobe is not on PATH. Run `brew install ffmpeg` or set FFMPEG_PATH.',
+    },
+  ] as const)('reports $code ($status) as an api error', async ({ status, code, message }) => {
+    server.on('POST /api/downloads', () => json({ error: { code, message } }, status))
+
+    const error = await rejection(api.createDownloads(downloadRequest))
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ kind: 'api', status, code, message })
+  })
+
+  it('reports job ids that are not UUIDs as an invalid response', async () => {
+    server.on('POST /api/downloads', () => json({ ...created, jobIds: ['job-1'] }))
+
+    const error = await rejection(api.createDownloads(downloadRequest))
+
+    expect(error).toMatchObject({
+      kind: 'invalid_response',
+      status: 200,
+      message: 'Unexpected response from POST /api/downloads.',
+    })
+  })
+})
+
+describe.each([
+  {
+    name: 'api.cancelDownload',
+    action: 'cancel',
+    call: api.cancelDownload,
+    answer: jobWith({ ...queuedJob, status: 'downloading', cancelRequested: true }),
+  },
+  {
+    name: 'api.retryDownload',
+    action: 'retry',
+    call: api.retryDownload,
+    answer: jobWith({ id: failedJob.id, status: 'queued', attempt: 3 }),
+  },
+] as const)('$name', ({ action, call, answer }) => {
+  const route = `POST /api/downloads/${queuedJob.id}/${action}` as const
+
+  it(`posts to /api/downloads/<id>/${action} with Content-Type: application/json and no body, and returns the job`, async () => {
+    server.on(route, () => json(answer))
+
+    await expect(call(queuedJob.id)).resolves.toEqual(answer)
+
+    const [sent] = server.callsTo(route)
+    expect(sent?.headers.get('Content-Type')).toBe('application/json')
+    expect(sent?.body).toBeUndefined()
+  })
+
+  it('keeps the id to one path segment', async () => {
+    server.on(`POST /api/downloads/..%2Fsettings/${action}`, () =>
+      json({ error: { code: 'not_found', message: 'No such download.' } }, 404),
+    )
+
+    const error = await rejection(call('../settings'))
+
+    expect(error).toMatchObject({ kind: 'api', status: 404, code: 'not_found' })
+  })
+
+  it('reports a body that is not a job as an invalid response', async () => {
+    server.on(route, () => json({ ...answer, status: 'paused' }))
+
+    const error = await rejection(call(queuedJob.id))
+
+    expect(error).toMatchObject({
+      kind: 'invalid_response',
+      message: `Unexpected response from ${route}.`,
+    })
+  })
+})
+
+describe('api.retryDownload failures', () => {
+  it('reports retrying a finished job as the server says it (409 invalid_request)', async () => {
+    const message = 'Only failed or canceled downloads can be retried.'
+    server.on(`POST /api/downloads/${doneJob.id}/retry`, () =>
+      json({ error: { code: 'invalid_request', message } }, 409),
+    )
+
+    const error = await rejection(api.retryDownload(doneJob.id))
+
+    expect(error).toMatchObject({ kind: 'api', status: 409, code: 'invalid_request', message })
+  })
+})
+
+describe('api.revealDownload', () => {
+  const route = `POST /api/downloads/${doneJob.id}/reveal` as const
+
+  it('posts to /api/downloads/<id>/reveal and resolves on 204 No Content', async () => {
+    server.on(route, () => new Response(null, { status: 204 }))
+
+    await expect(api.revealDownload(doneJob.id)).resolves.toBeUndefined()
+
+    const [call] = server.callsTo(route)
+    expect(call?.headers.get('Content-Type')).toBe('application/json')
+    expect(call?.headers.get('Accept')).toBe('application/json')
+    expect(call?.body).toBeUndefined()
+  })
+
+  it('reports a file that is gone as an api error (404 not_found)', async () => {
+    const message = 'The file is not there any more.'
+    server.on(route, () => json({ error: { code: 'not_found', message } }, 404))
+
+    const error = await rejection(api.revealDownload(doneJob.id))
+
+    expect(error).toMatchObject({ kind: 'api', status: 404, code: 'not_found', message })
+  })
+
+  it.each([
+    { name: 'a 200 with a JSON body', reply: () => json(doneJob) },
+    { name: 'an empty 200', reply: () => text('', 200) },
+  ])('reports $name as an invalid response: the contract is 204', async ({ reply }) => {
+    server.on(route, reply)
+
+    const error = await rejection(api.revealDownload(doneJob.id))
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({
+      kind: 'invalid_response',
+      status: 200,
+      message: `Unexpected response from ${route}.`,
+    })
+  })
+
+  it('reports the Vite proxy while the server is down (502) as unreachable', async () => {
+    server.on(route, () => text('', 502))
+
+    const error = await rejection(api.revealDownload(doneJob.id))
+
+    expect(error).toMatchObject({ kind: 'unreachable', status: 502 })
+  })
+
+  it("rejects with the signal's reason, not an ApiError, when aborted", async () => {
+    server.on(route, noAnswer)
+    const controller = new AbortController()
+
+    const request = api.revealDownload(doneJob.id, controller.signal)
+    controller.abort()
+    const error = await rejection(request)
+
+    expect(error).not.toBeInstanceOf(ApiError)
+    expect(error).toBe(controller.signal.reason)
+  })
+})
+
+describe('bulk job actions', () => {
+  it.each([
+    {
+      route: 'POST /api/downloads/cancel',
+      call: () => api.cancelDownloads({ target: { scope: 'batch', batchId: testUuid(100) } }),
+      body: { target: { scope: 'batch', batchId: testUuid(100) } },
+      schema: CancelJobsRequestSchema,
+    },
+    {
+      route: 'POST /api/downloads/retry',
+      call: () =>
+        api.retryDownloads({
+          target: { scope: 'jobs', ids: [testUuid(6), testUuid(7)] },
+          statuses: ['failed', 'canceled'],
+        }),
+      body: {
+        target: { scope: 'jobs', ids: [testUuid(6), testUuid(7)] },
+        statuses: ['failed', 'canceled'],
+      },
+      schema: RetryJobsRequestSchema,
+    },
+    {
+      route: 'POST /api/downloads/clear',
+      call: () => api.clearDownloads({ target: { scope: 'all' } }),
+      body: { target: { scope: 'all' } },
+      schema: ClearJobsRequestSchema,
+    },
+  ] as const)(
+    '$route posts its scope as the exact JSON body and returns the count',
+    async ({ route, call, body, schema }) => {
+      server.on(route, () => json({ count: 2 }))
+
+      await expect(call()).resolves.toEqual({ count: 2 })
+
+      const [sent] = server.callsTo(route)
+      expect(sent?.headers.get('Content-Type')).toBe('application/json')
+      expect(sent?.body).toBe(JSON.stringify(body))
+      expect(schema.parse(jsonBody(sent))).toEqual(body)
+    },
+  )
+
+  it('leaves statuses out of a retry when the caller does, so the server retries failed jobs', async () => {
+    server.on('POST /api/downloads/retry', () => json({ count: 1 }))
+
+    await api.retryDownloads({ target: { scope: 'all' } })
+
+    const sent = jsonBody(server.callsTo('POST /api/downloads/retry')[0])
+    expect(sent).toEqual({ target: { scope: 'all' } })
+    expect(RetryJobsRequestSchema.parse(sent)).toEqual({
+      target: { scope: 'all' },
+      statuses: ['failed'],
+    })
+  })
+
+  it('reports a count that is not a whole number as an invalid response', async () => {
+    server.on('POST /api/downloads/clear', () => json({ count: -1 }))
+
+    const error = await rejection(api.clearDownloads({ target: { scope: 'all' } }))
+
+    expect(error).toMatchObject({ kind: 'invalid_response', status: 200 })
+  })
+})
+
+describe('api.getSettings and api.updateSettings', () => {
+  it('reads GET /api/settings without a body', async () => {
+    server.on('GET /api/settings', () => json(settings))
+
+    await expect(api.getSettings()).resolves.toEqual(settings)
+
+    const [call] = server.callsTo('GET /api/settings')
+    expect(call?.headers.has('Content-Type')).toBe(false)
+    expect(call?.body).toBeUndefined()
+  })
+
+  it('PUTs only the changed fields and returns the settings as saved', async () => {
+    const saved = { ...settings, format: 'aiff', concurrency: 2 } as const
+    server.on('PUT /api/settings', () => json(saved))
+    const patch = { format: 'aiff', concurrency: 2 } as const
+
+    await expect(api.updateSettings(patch)).resolves.toEqual(saved)
+
+    const [call] = server.callsTo('PUT /api/settings')
+    expect(call?.method).toBe('PUT')
+    expect(call?.headers.get('Content-Type')).toBe('application/json')
+    expect(call?.body).toBe(JSON.stringify(patch))
+    expect(SettingsUpdateSchema.parse(jsonBody(call))).toEqual(patch)
+  })
+
+  it('reports a refused template as an api error', async () => {
+    const message = 'The template must contain {title} or {id}'
+    server.on('PUT /api/settings', () => json({ error: { code: 'invalid_request', message } }, 400))
+
+    const error = await rejection(api.updateSettings({ filenameTemplate: '{artist}' }))
+
+    expect(error).toMatchObject({ kind: 'api', status: 400, code: 'invalid_request', message })
+  })
+
+  it('reports settings that break the contract as an invalid response', async () => {
+    server.on('GET /api/settings', () => json({ ...settings, concurrency: 0 }))
+
+    const error = await rejection(api.getSettings())
+
+    expect(error).toMatchObject({
+      kind: 'invalid_response',
+      message: 'Unexpected response from GET /api/settings.',
+    })
+  })
+})
+
+describe('api.pickFolder', () => {
+  it.each([
+    { name: 'a picked folder', answer: { path: '/Volumes/USB/Sets' } },
+    { name: 'a canceled dialog', answer: { canceled: true } },
+  ] as const)('posts {} by default and returns $name', async ({ answer }) => {
+    server.on('POST /api/folders/pick', () => json(answer))
+
+    await expect(api.pickFolder()).resolves.toEqual(answer)
+
+    const [call] = server.callsTo('POST /api/folders/pick')
+    expect(call?.headers.get('Content-Type')).toBe('application/json')
+    expect(call?.body).toBe('{}')
+  })
+
+  it('sends the folder to start in', async () => {
+    server.on('POST /api/folders/pick', () => json({ canceled: true }))
+    const request = { startIn: '/Users/dj/Music/DJ Scraper' }
+
+    await api.pickFolder(request)
+
+    const sent = jsonBody(server.callsTo('POST /api/folders/pick')[0])
+    expect(FolderPickRequestSchema.parse(sent)).toEqual(request)
+  })
+
+  it('reports a second picker while one is open as an api error (409)', async () => {
+    const message = 'The folder picker is already open.'
+    server.on('POST /api/folders/pick', () =>
+      json({ error: { code: 'invalid_request', message } }, 409),
+    )
+
+    const error = await rejection(api.pickFolder())
+
+    expect(error).toMatchObject({ kind: 'api', status: 409, code: 'invalid_request', message })
+  })
+
+  it('reports a relative path as an invalid response', async () => {
+    server.on('POST /api/folders/pick', () => json({ path: 'Music' }))
+
+    const error = await rejection(api.pickFolder())
+
+    expect(error).toMatchObject({ kind: 'invalid_response', status: 200 })
+  })
+
+  it("rejects with the signal's reason when the user closes the app's dialog", async () => {
+    server.on('POST /api/folders/pick', noAnswer)
+    const controller = new AbortController()
+    const reason = new DOMException('The settings dialog closed', 'AbortError')
+
+    const request = api.pickFolder({}, controller.signal)
+    controller.abort(reason)
+    const error = await rejection(request)
+
+    expect(error).not.toBeInstanceOf(ApiError)
+    expect(error).toBe(reason)
+  })
 })

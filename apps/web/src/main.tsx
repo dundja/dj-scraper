@@ -2,10 +2,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRouter, RouterProvider } from '@tanstack/react-router'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { startEvents } from '@/lib/events.ts'
 import { routeTree } from './routeTree.gen.ts'
 import './styles.css'
 
 const queryClient = new QueryClient()
+// One event stream per tab for the app's lifetime, started here rather than in an effect, which
+// StrictMode runs twice. It feeds ['downloads'] and flips the engine chip when the server drops.
+startEvents(queryClient)
 
 const router = createRouter({
   routeTree,

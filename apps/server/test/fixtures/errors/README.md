@@ -1,6 +1,6 @@
 # yt-dlp error fixtures
 
-Recorded 2026-10-02 on macOS 26.5.1 (arm64) with Homebrew yt-dlp **2026.08.19**, without cookies or a login, from a Serbian IP. Each `.log` is **stderr verbatim** (WARNING lines included) unless the Stream column says otherwise. stdout was empty unless noted.
+Recorded 2026-10-02 and 2026-10-03 on macOS 26.5.1 (arm64) with Homebrew yt-dlp **2026.08.19**, without cookies or a login, from a Serbian IP. Each `.log` is **stderr verbatim** (WARNING lines included) unless the Stream column says otherwise. stdout was empty unless noted.
 
 Base argv for every recording:
 ```
@@ -49,6 +49,17 @@ Recorded 2026-10-02 with the same yt-dlp 2026.08.19 and base argv, without netwo
 | `postprocess-conversion.log` | `file://…/tone.mp3` | download argv with `--audio-format wav` instead of mp3, no `--audio-quality`/`--embed-metadata`, plus `--postprocessor-args "ExtractAudio:-af nosuchfilter"` to make ffmpeg fail | 1 | stderr | `ERROR: Postprocessing: audio conversion failed: Error opening output files: Filter not found`. The text after `failed: ` is ffmpeg's last stderr line. |
 | `interrupted.log` | `http://127.0.0.1:<port>/x` (a local socket that accepts and never answers) | `-J --flat-playlist --socket-timeout 20`, then SIGINT to the process group after 2 s | 1 | stderr | An empty line, then `ERROR: Interrupted by user`: what our cancel path produces. |
 | `connection-refused.log` | `http://127.0.0.1:9/x` (closed port) | `-J --flat-playlist --socket-timeout 20` | 1 | stderr | `ERROR: [generic] x: Unable to download webpage: HTTPConnection(…): Failed to establish a new connection: [Errno 61] Connection refused (caused by TransportError(…))`. |
+
+## Recorded offline with the download argv
+Recorded 2026-10-03 with the same yt-dlp 2026.08.19, spawned with `src/engine/ytdlp-args.ts`'s `downloadArgs` verbatim (platform `other`, format `mp3`, no thumbnail: selector `ba/b`, `--match-filters '!is_live'`) against a Node HTTP server on `127.0.0.1:<port>`. Only stderr is kept; stdout held START and the DL lines. `{JOBDIR}` stands for the absolute job dir (`<scratch>/jobs/<uuid>`); tests put a real-looking one back. The full-disk cases used a job dir on a 2 MB HFS+ disk image (`hdiutil create -size 2m -fs HFS+ -layout NONE`, attached with `-nobrowse`); the source was 4.8 MB (150 s of pink noise, MP3 256k), the HLS one 120 s of AAC 256k in 13 segments of 10 s.
+
+| File | Server | Exit | Notes |
+|---|---|---|---|
+| `local-enospc-write.log` | `/big.mp3`, 200 with `Content-Length` | 1 | The disk filled up mid-transfer: two empty lines, then `ERROR: unable to write data: [Errno 28] No space left on device` (`downloader/http.py` 277). The `.part` was 1.9 MB. |
+| `local-enospc-open.log` | the same, the disk filled by another file after the job dir was made | 1 | `ERROR: unable to open for writing: [Errno 28] No space left on device: '{JOBDIR}/big.mp3.part'` (`http.py` 270): Python's `OSError` text quotes the path. |
+| `local-enospc-hls.log` | `/hls/index.m3u8` (fragments) | 1 | `ERROR: Unable to download video: [Errno 28] No space left on device`: the fragment downloader's `OSError` becomes `UnavailableVideoError` (`YoutubeDL.py` 3600), whose text starts like the network row's "Unable to download". |
+| `local-cut.log` | `/cut.mp3`: `Content-Length` 97,009, every response cut after 50,000 bytes | 1 | `ERROR: \r[download] Got error: 50000 bytes read, 47009 more expected. Giving up after 3 retries`: `IncompleteRead`'s text without its class name (`networking/exceptions.py` 76–84), through the `\r` transfer form. |
+| `local-no-data.log` | `/empty.mp3`: 200 with a body for the extraction request, then 200 with no body and no length | 1 | Two empty lines, then `ERROR: Did not get any data blocks` (`http.py` 329). |
 
 `src/engine/ytdlp-errors.test.ts` maps every `.log` here and fails when a new one has no expected code.
 

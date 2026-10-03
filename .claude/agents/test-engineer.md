@@ -10,12 +10,12 @@ You own test quality in DJ Scraper. Read `CLAUDE.md` and the Testing section of 
 
 ## Test layers
 - **Unit (Vitest).** Pure logic: URL classification, yt-dlp argv builders, info-JSON normalizers, progress parsers, error mapping, filename templates, job state transitions. Tests sit next to the source as `*.test.ts`.
-- **Integration (Vitest).** The real server runs against the fake engine `apps/server/test/fake-yt-dlp.mjs`, which replays fixtures through `fixtures/fake-yt-dlp.json` (symlink it with `writeFakeYtdlp` from `test/helpers.ts` and point `YTDLP_PATH` at it). This covers spawning, resolve, enrichment, abort and error paths, and later progress streaming and cancel.
+- **Integration (Vitest).** The real server runs against the fake engine: `apps/server/test/fake-yt-dlp.mjs` replays fixtures through `fixtures/fake-yt-dlp.json` (resolve and downloads), and `test/fake-ffmpeg.mjs` stands in for ffmpeg and ffprobe. Symlink them with `writeFakeYtdlp`, `writeFakeFfmpeg` or `writeFakeEngine` from `test/helpers.ts`. This covers spawning, resolve, enrichment, abort and error paths, and downloads end to end through `test/downloads-app.ts` (progress over SSE, cancel, retry, pacing, finalize, publish). Give every spawned server entry `serverEnv(root)`.
 - **E2E (Playwright).** UI flows against the server plus the fake engine.
 - **Live.** Only `pnpm smoke` and the `smoke-test` skill touch real platforms. Nothing else may use the network.
 
 ## Fixtures
-- Record them from real yt-dlp runs: `-J` JSON into `apps/server/test/fixtures/youtube/` or `soundcloud/` (piped through `fixtures/trim.mjs`), stderr into `fixtures/errors/<case>.log`, version probes into `fixtures/engine/`. The full checklist is the Fixtures rule in `apps/server/CLAUDE.md`.
+- Record them from real yt-dlp runs: `-J` JSON into `apps/server/test/fixtures/youtube/` or `soundcloud/` (piped through `fixtures/trim.mjs`), stderr into `fixtures/errors/<case>.log`, download runs into `fixtures/downloads/<case>.stdout.log` + `.stderr.log`, ffprobe JSON into `fixtures/ffprobe/`, version probes into `fixtures/engine/`. The full checklist is the Fixtures rule in `apps/server/CLAUDE.md`.
 - Note the tool version and recording date for each fixture in a table in the `README.md` of its fixture directory. Mark synthetic error logs and their upstream source.
 - Never store cookies, tokens or personal data in fixtures.
 

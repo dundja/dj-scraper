@@ -6,7 +6,8 @@ import path from 'node:path'
 import { ApiErrorBodySchema, HealthSchema } from '@dj-scraper/shared'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { PROBE_ARGV } from '../src/engine/binaries.ts'
-import { killActiveGroups, type RunResult, run } from '../src/engine/run.ts'
+import { killActiveGroups } from '../src/engine/run.ts'
+import { bootEntry as boot, listeningLine as listening } from './entry.ts'
 import {
   engineFixture,
   FIXTURE_ASSET,
@@ -14,15 +15,17 @@ import {
   freePort,
   makeTempDir,
   SERVER_DIR,
+  serverEnv,
   todaysYtdlpVersion,
   writeFakeTool,
   writeWebDist,
 } from './helpers.ts'
 
 // Boots the real entry (`node src/index.ts`, what `pnpm start` runs, minus --open) as a child
-// process. Its env is only PATH (a temp dir of fake tools), PORT and DJS_WEB_DIST (a fixture UI
-// build), so it never finds the real yt-dlp or ffmpeg, and doesn't depend on whether apps/web/dist
-// exists.
+// process. Its env is only PATH (a temp dir of fake tools), PORT, DJS_WEB_DIST (a fixture UI build),
+// and DJS_DATA_DIR and HOME (fresh temp dirs per server, see serverEnv), so it never finds the real
+// yt-dlp or ffmpeg, never touches the user's data dir or ~/Music, and doesn't depend on whether
+// apps/web/dist exists.
 
 let root = ''
 let webDist = ''
@@ -55,59 +58,14 @@ async function fakeEngine({ ytdlpVersion = todaysYtdlpVersion(), ffprobe = true 
   return bin
 }
 
-/** The server's whole environment: fake engine, port and the fixture UI build. */
-const serverEnv = (bin: string, port: number, extra: NodeJS.ProcessEnv = {}) => ({
+/** One server's whole environment: fake engine, port, the fixture UI build, its own temp dirs. */
+const bootEnv = async (bin: string, port: number, extra: NodeJS.ProcessEnv = {}) => ({
   PATH: bin,
   PORT: String(port),
   DJS_WEB_DIST: webDist,
+  ...(await serverEnv(root)),
   ...extra,
 })
-
-type Stream = 'stdout' | 'stderr'
-
-/** Starts the server entry; lines are collected per stream and can be awaited. */
-function boot(env: NodeJS.ProcessEnv, args: readonly string[] = []) {
-  const controller = new AbortController()
-  const lines: Record<Stream, string[]> = { stdout: [], stderr: [] }
-  const waiters: { stream: Stream; pattern: RegExp; resolve: (line: string) => void }[] = []
-  const onLine = (stream: Stream) => (line: string) => {
-    lines[stream].push(line)
-    for (const waiter of waiters) {
-      if (waiter.stream === stream && waiter.pattern.test(line)) waiter.resolve(line)
-    }
-  }
-  const done = run(process.execPath, ['src/index.ts', ...args], {
-    cwd: SERVER_DIR,
-    env,
-    signal: controller.signal,
-    onStdoutLine: onLine('stdout'),
-    onStderrLine: onLine('stderr'),
-  })
-
-  /** The first line on `stream` matching `pattern`; rejects if the process ends without one. */
-  const waitForLine = (stream: Stream, pattern: RegExp): Promise<string> => {
-    const seen = lines[stream].find((line) => pattern.test(line))
-    if (seen !== undefined) return Promise.resolve(seen)
-    return Promise.race([
-      new Promise<string>((resolve) => waiters.push({ stream, pattern, resolve })),
-      done.then((result) => {
-        throw new Error(
-          `server exited (${result.exitCode ?? result.signal}) before printing ${pattern} on ${stream}:\n${result.stdout}${result.stderr}`,
-        )
-      }),
-    ])
-  }
-
-  /** Ctrl-C: SIGINT to the server's process group, then waits until it has exited. */
-  const stop = async (): Promise<RunResult & { stopMs: number }> => {
-    const startedAt = performance.now()
-    controller.abort()
-    const result = await done
-    return { ...result, stopMs: performance.now() - startedAt }
-  }
-
-  return { done, lines, waitForLine, stop }
-}
 
 /** GET `target` with a chosen Host header, which fetch can't set. Resolves with the status. */
 function statusWithHost(port: number, host: string, target = '/api/health'): Promise<number> {
@@ -126,15 +84,10 @@ function statusWithHost(port: number, host: string, target = '/api/health'): Pro
   })
 }
 
-const listening = (port: number, dev = false) =>
-  new RegExp(
-    `^\\[server\\] DJ Scraper on http://127\\.0\\.0\\.1:${port}${dev ? ' \\(dev\\)' : ''}$`,
-  )
-
 describe('server boot', () => {
   it('serves the health of the fake engine, warns about nothing, and exits 0 on Ctrl-C', async () => {
     const [bin, port] = await Promise.all([fakeEngine(), freePort()])
-    const server = boot(serverEnv(bin, port))
+    const server = boot(await bootEnv(bin, port))
     expect(await server.waitForLine('stdout', /DJ Scraper on/)).toMatch(listening(port))
 
     const res = await fetch(`http://127.0.0.1:${port}/api/health`)
@@ -176,7 +129,7 @@ describe('server boot', () => {
       fakeEngine({ ytdlpVersion: '2025.11.12', ffprobe: false }),
       freePort(),
     ])
-    const server = boot(serverEnv(bin, port))
+    const server = boot(await bootEnv(bin, port))
     await server.waitForLine('stdout', listening(port))
 
     const stale = await server.waitForLine('stderr', /yt-dlp 2025\.11\.12/)
@@ -202,7 +155,7 @@ describe('server boot', () => {
 
   it('allows the Vite dev server with --dev and says so in the log line', async () => {
     const [bin, port] = await Promise.all([fakeEngine(), freePort()])
-    const server = boot(serverEnv(bin, port), ['--dev'])
+    const server = boot(await bootEnv(bin, port), ['--dev'])
     await server.waitForLine('stdout', listening(port, true))
 
     const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
@@ -218,7 +171,7 @@ describe('server boot', () => {
   it('serves no UI with --dev and does not look for a build', async () => {
     const [bin, port] = await Promise.all([fakeEngine(), freePort()])
     const missing = path.join(root, 'no-dist-dev')
-    const server = boot(serverEnv(bin, port, { DJS_WEB_DIST: missing }), ['--dev'])
+    const server = boot(await bootEnv(bin, port, { DJS_WEB_DIST: missing }), ['--dev'])
     await server.waitForLine('stdout', listening(port, true))
 
     const res = await fetch(`http://127.0.0.1:${port}/`)
@@ -230,7 +183,7 @@ describe('server boot', () => {
 
   it('serves the built UI from DJS_WEB_DIST, behind the guard and with the security headers', async () => {
     const [bin, port] = await Promise.all([fakeEngine(), freePort()])
-    const server = boot(serverEnv(bin, port))
+    const server = boot(await bootEnv(bin, port))
     await server.waitForLine('stdout', listening(port))
 
     for (const target of ['/', '/downloads']) {
@@ -262,7 +215,7 @@ describe('server boot', () => {
   it('warns once when there is no built UI, and keeps serving the API', async () => {
     const [bin, port] = await Promise.all([fakeEngine(), freePort()])
     const missing = path.join(root, 'no-dist')
-    const server = boot(serverEnv(bin, port, { DJS_WEB_DIST: missing }))
+    const server = boot(await bootEnv(bin, port, { DJS_WEB_DIST: missing }))
     await server.waitForLine('stdout', listening(port))
     expect(await server.waitForLine('stderr', /No built UI/)).toBe(
       `[server] No built UI in ${missing}. Run \`pnpm build\` (pnpm start does).`,
@@ -282,10 +235,11 @@ describe('server boot', () => {
 
   it('exits 1 with a clear message when the port is already in use', async () => {
     const [bin, port] = await Promise.all([fakeEngine(), freePort()])
-    const first = boot(serverEnv(bin, port))
+    const first = boot(await bootEnv(bin, port))
     await first.waitForLine('stdout', listening(port))
 
-    const second = await boot(serverEnv(bin, port)).done
+    // Its own data dir, so it gets as far as listening.
+    const second = await boot(await bootEnv(bin, port)).done
     expect(second.exitCode).toBe(1)
     expect(second.stderr).toBe(`[server] Port ${port} is in use. Is DJ Scraper already running?\n`)
     expect(second.stdout).toBe('')
@@ -307,7 +261,7 @@ describe('server boot', () => {
     // Spawned directly, not through run(), to signal the server's own pid.
     const child = spawn(process.execPath, ['src/index.ts'], {
       cwd: SERVER_DIR,
-      env: serverEnv(bin, port),
+      env: await bootEnv(bin, port),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stdout = ''
@@ -339,7 +293,10 @@ describe('server boot', () => {
   ])(
     'exits 1 with the ConfigError for %s, without listening',
     async (_label, env, args, stderr) => {
-      const result = await boot({ PATH: await fakeEngine(), ...env }, args).done
+      const result = await boot(
+        { PATH: await fakeEngine(), ...(await serverEnv(root)), ...env },
+        args,
+      ).done
       expect(result.exitCode).toBe(1)
       expect(result.stderr).toMatch(stderr)
       expect(result.stdout).toBe('')

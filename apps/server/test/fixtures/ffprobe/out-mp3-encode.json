@@ -1,0 +1,25 @@
+{
+  "programs": [],
+  "stream_groups": [],
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "mp3",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 2,
+      "bit_rate": "320000",
+      "disposition": {
+        "attached_pic": 0
+      },
+      "tags": {
+        "encoder": "Lavc62.11"
+      }
+    }
+  ],
+  "format": {
+    "format_name": "mp3",
+    "duration": "19.005542",
+    "bit_rate": "320849"
+  }
+}

@@ -17,6 +17,7 @@ import { createApp } from '../app.ts'
 import { ApiError, ERROR_STATUS } from '../http/errors.ts'
 import type { Enricher } from '../resolve/enricher.ts'
 import type { Resolver } from '../resolve/resolver.ts'
+import { UNUSED_DOWNLOAD_DEPS } from '../stubs.ts'
 
 const PORT = 4747
 const HOST = `127.0.0.1:${PORT}`
@@ -71,9 +72,16 @@ function setup({
   webRoot?: string
 } = {}) {
   const resolver = { resolve: vi.fn<Resolver['resolve']>(resolve) }
-  const enricher = { enrich: vi.fn<Enricher['enrich']>(enrich) }
+  const enricher = { enrich: vi.fn<Enricher['enrich']>(enrich), peek: () => undefined }
   const stubHealth = { current: async () => health, recheck: async () => health }
-  const app = createApp({ port: PORT, health: stubHealth, resolver, enricher, webRoot })
+  const app = createApp({
+    port: PORT,
+    health: stubHealth,
+    resolver,
+    enricher,
+    webRoot,
+    ...UNUSED_DOWNLOAD_DEPS,
+  })
   return { app, resolver, enricher }
 }
 

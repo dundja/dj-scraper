@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { Context, Handler } from 'hono'
 import { getMimeType } from 'hono/utils/mime'
 import { errorResponse } from '../http/errors.ts'
+import { errnoCode } from '../util/errno.ts'
 
 /**
  * Serves the built UI (Vite's `apps/web/dist`) in production. Mount it after the guard and the
@@ -115,6 +116,6 @@ async function readIfPresent(file: string) {
 }
 
 function isMissing(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null || !('code' in error)) return false
-  return typeof error.code === 'string' && MISSING.has(error.code)
+  const code = errnoCode(error)
+  return code !== undefined && MISSING.has(code)
 }

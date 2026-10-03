@@ -49,6 +49,33 @@
     {
       "includes": ["apps/web/src/components/ui/**"],
       "linter": { "enabled": false }
+    },
+    {
+      "includes": [
+        "apps/server/src/**",
+        "apps/server/scripts/**",
+        "apps/web/src/**",
+        "packages/shared/src/**",
+        "!**/*.test.ts",
+        "!**/*.test.tsx",
+        "!apps/web/src/test/**",
+        "!packages/shared/src/test-helpers.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@dj-scraper/shared/test-helpers": "Test-only fixtures: import them in tests, never in runtime code.",
+                  "./test-helpers.ts": "Test-only fixtures: import them in tests, never in runtime code."
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "assist": {

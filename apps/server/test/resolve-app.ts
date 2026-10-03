@@ -10,6 +10,7 @@ import { killActiveGroups } from '../src/engine/run.ts'
 import { createEnricher, type Pacing } from '../src/resolve/enricher.ts'
 import { createResolver } from '../src/resolve/resolver.ts'
 import { type RunningServer, startServer } from '../src/server.ts'
+import { UNUSED_DOWNLOAD_DEPS } from '../src/stubs.ts'
 import {
   type FakeYtdlp,
   type FakeYtdlpCall,
@@ -81,7 +82,7 @@ export async function startResolveApp(
   const enricher = createEnricher({ engine, log, pacing: options.pacing ?? SEQUENTIAL })
   const stubHealth = { current: async () => health, recheck: async () => health }
   const server = await startServer(0, (port) =>
-    createApp({ port, health: stubHealth, resolver, enricher }),
+    createApp({ port, health: stubHealth, resolver, enricher, ...UNUSED_DOWNLOAD_DEPS }),
   )
   running.push(server)
 

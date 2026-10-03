@@ -3,7 +3,13 @@ import { Hono } from 'hono'
 import { describe, expect, it } from 'vitest'
 import * as z from 'zod'
 import { onError } from './errors.ts'
-import { describeIssues, JSON_BODY_LIMIT_BYTES, jsonBodyLimit, readJson } from './json.ts'
+import {
+  describeIssues,
+  JSON_BODY_LIMIT_BYTES,
+  jsonBodyLimit,
+  jsonBodyLimitOf,
+  readJson,
+} from './json.ts'
 
 const Schema = z.object({
   url: z.string(),
@@ -134,4 +140,71 @@ describe('jsonBodyLimit', () => {
     expect(body.length).toBe(JSON_BODY_LIMIT_BYTES)
     expect((await post('/echo', body)).status).toBe(200)
   })
+})
+
+describe('jsonBodyLimitOf', () => {
+  const MIB = 1024 * 1024
+
+  /** An app with one JSON route limited to `maxBytes`. */
+  const limitedApp = (maxBytes: number) => {
+    const app = new Hono()
+    app.post('/echo', jsonBodyLimitOf(maxBytes), async (c) => c.json(await readJson(c, Schema)))
+    app.onError(onError)
+    return app
+  }
+  const postTo = async (app: Hono, body: string) =>
+    app.request('/echo', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+    })
+  /** A valid /echo body of exactly `bytes` bytes. */
+  const bodyOf = (bytes: number) =>
+    JSON.stringify({ url: 'x'.repeat(bytes - JSON.stringify({ url: '' }).length) })
+
+  it('lets an 8 MiB body (POST /api/downloads) through and answers one byte more with 413', async () => {
+    const app = limitedApp(8 * MIB)
+    expect((await postTo(app, bodyOf(8 * MIB))).status).toBe(200)
+    expect(await errorOf(await postTo(app, bodyOf(8 * MIB + 1)))).toEqual({
+      status: 413,
+      code: 'invalid_request',
+      message: 'The request body is larger than 8 MiB',
+    })
+  })
+
+  it.each([
+    [8 * MIB, '8 MiB'],
+    [MIB, '1 MiB'],
+    [1536 * 1024, '1536 KiB'],
+    [JSON_BODY_LIMIT_BYTES, '64 KiB'],
+    [2048, '2 KiB'],
+    [1500, '1500 bytes'],
+    [100, '100 bytes'],
+  ])('names a limit of %i bytes as %s', async (maxBytes, named) => {
+    const res = await postTo(limitedApp(maxBytes), bodyOf(maxBytes + 1))
+    expect(await errorOf(res)).toEqual({
+      status: 413,
+      code: 'invalid_request',
+      message: `The request body is larger than ${named}`,
+    })
+  })
+
+  it('keeps each limit to its own route', async () => {
+    const app = new Hono()
+    app.post('/small', jsonBodyLimitOf(1024), async (c) => c.json(await readJson(c, Schema)))
+    app.post('/large', jsonBodyLimitOf(MIB), async (c) => c.json(await readJson(c, Schema)))
+    app.onError(onError)
+    const body = bodyOf(4096)
+    const send = (route: string) =>
+      app.request(route, { method: 'POST', headers: { 'content-type': 'application/json' }, body })
+    expect((await send('/small')).status).toBe(413)
+    expect((await send('/large')).status).toBe(200)
+  })
+
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'refuses a limit of %s bytes',
+    (maxBytes) => {
+      expect(() => jsonBodyLimitOf(maxBytes)).toThrow(RangeError)
+    },
+  )
 })

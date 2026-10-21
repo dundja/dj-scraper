@@ -5,7 +5,8 @@ import { classifyUrl } from '@dj-scraper/shared'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { canHoldCover } from '../src/engine/finalize-plan.ts'
 import { killActiveGroups, type RunResult, run } from '../src/engine/run.ts'
-import { downloadArgs, resolveArgs } from '../src/engine/ytdlp-args.ts'
+import { downloadArgs, resolveArgs, searchArgs } from '../src/engine/ytdlp-args.ts'
+import { SEARCH_RESULTS, searchQuery } from '../src/spotify/match.ts'
 import {
   FAKE_YTDLP,
   type FakeDownloadRule,
@@ -192,6 +193,78 @@ describe('fake yt-dlp: replaying fixtures', () => {
     expect(JSON.parse(capped.stdout)).toEqual(fixtureInfo('soundcloud/set-capped.json'))
     const whole = await run(ytdlp.path, [...DUMP, '--', URLS.set])
     expect(JSON.parse(whole.stdout)).toEqual(fixtureInfo('soundcloud/set.json'))
+  })
+})
+
+describe('fake yt-dlp: YouTube searches', () => {
+  // What a Spotify job's match step runs (spotify/matcher.ts): the recorded track's search.
+  const QUERY = searchQuery({ title: 'Never Gonna Give You Up', artists: ['Rick Astley'] })
+  const search = (query = QUERY) =>
+    searchArgs({ query, count: SEARCH_RESULTS, jsRuntime: process.execPath })
+
+  it('answers the argv searchArgs builds with the recorded search', async () => {
+    const ytdlp = await fake()
+    const result = await run(ytdlp.path, search())
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' })
+    expect(JSON.parse(result.stdout)).toEqual(fixtureInfo('youtube/search.json'))
+    expect(parseInfo(result.stdout).entries?.[0]?.id).toBe('dQw4w9WgXcQ')
+  })
+
+  it("answers an attempt's search, which names its job dir with -P", async () => {
+    const ytdlp = await fake()
+    const jobDir = '/private/tmp/dj-scraper-jobs/00000000-0000-4000-8000-000000000001'
+    const argv = searchArgs({
+      query: QUERY,
+      count: SEARCH_RESULTS,
+      jsRuntime: process.execPath,
+      jobDir,
+    })
+    expect(argv).toContain(jobDir)
+    const result = await run(ytdlp.path, argv)
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' })
+    expect(JSON.parse(result.stdout)).toEqual(fixtureInfo('youtube/search.json'))
+  })
+
+  it("answers a test's own search rule first", async () => {
+    const ytdlp = await fake({
+      manifestRules: [
+        { url: 'ytsearch10:Nobody - Nothing', stdout: 'youtube/playlist-empty.json' },
+      ],
+    })
+    const result = await run(ytdlp.path, search('Nobody - Nothing'))
+    expect(result.exitCode).toBe(0)
+    expect(parseInfo(result.stdout).entries).toEqual([])
+  })
+
+  it.each([
+    ['there is no rule for the search', search('Nobody - Nothing')],
+    ['it has no -J', search().filter((arg) => arg !== '-J')],
+    ['it is not flat', search().filter((arg) => arg !== '--flat-playlist')],
+    ['it has a playlist flag', [...search().slice(0, -2), '--yes-playlist', ...search().slice(-2)]],
+    ['it cuts the results with -I', [...search().slice(0, -2), '-I', '1:3', ...search().slice(-2)]],
+    ['its -P is relative', [...search().slice(0, -2), '-P', 'jobs/x', ...search().slice(-2)]],
+    ['it has no count', [...search().slice(0, -1), `ytsearch:${QUERY}`]],
+    ['it asks for no results', [...search().slice(0, -1), `ytsearch0:${QUERY}`]],
+    ['it has no query', [...search().slice(0, -1), 'ytsearch10:']],
+    [
+      'it is a download',
+      [
+        ...downloadArgs({
+          url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          platform: 'youtube',
+          format: 'mp3',
+          jobDir: '/private/tmp/dj-scraper-jobs/00000000-0000-4000-8000-000000000001',
+          writeThumbnail: false,
+          jsRuntime: process.execPath,
+        }).slice(0, -1),
+        `ytsearch10:${QUERY}`,
+      ],
+    ],
+  ])('exits 2 for a search when %s: searchArgs never builds that', async (_why, argv) => {
+    const ytdlp = await fake()
+    const result = await run(ytdlp.path, argv)
+    expect(result).toMatchObject({ exitCode: 2, stdout: '' })
+    expect(result.stderr).toMatch(/^fake-yt-dlp: .*search.*\n$/)
   })
 })
 
@@ -977,6 +1050,11 @@ describe('fake yt-dlp: the recorded manifest', () => {
 
   it('matches each URL in the normalized form the server passes after --', () => {
     for (const rule of MANIFEST_RULES) {
+      // A YouTube search isn't a link: it must be what searchArgs builds (see the search tests).
+      if (rule.url.startsWith('ytsearch')) {
+        expect(rule.url, rule.url).toMatch(new RegExp(`^ytsearch${SEARCH_RESULTS}:\\S`))
+        continue
+      }
       const classified = classifyUrl(rule.url)
       if (NOT_FROM_THE_SERVER.has(rule.url)) {
         expect(!classified.ok || classified.kind === 'out_of_scope', rule.url).toBe(true)

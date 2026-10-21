@@ -312,7 +312,7 @@ describe('EngineBanner', () => {
       renderWithQueryClient(
         <>
           <EngineBanner />
-          <input aria-label="YouTube or SoundCloud link" />
+          <input aria-label="YouTube, SoundCloud or Spotify link" />
         </>,
       )
       const banner = await screen.findByRole('status', { name: 'Engine warning' })
@@ -320,7 +320,7 @@ describe('EngineBanner', () => {
       await user.click(within(banner).getByRole('button', { name: 'Dismiss for this session' }))
 
       expect(document.activeElement).toBe(
-        screen.getByRole('textbox', { name: 'YouTube or SoundCloud link' }),
+        screen.getByRole('textbox', { name: 'YouTube, SoundCloud or Spotify link' }),
       )
     })
 

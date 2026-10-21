@@ -6,6 +6,8 @@ import {
   collectionWith,
   playlist,
   scSet,
+  spotifyBigPlaylist,
+  spotifyPlaylist,
   userPage,
   userPageWithLists,
 } from '@/test/resolve.ts'
@@ -21,6 +23,7 @@ import {
   selectionCountText,
   selectionText,
   skippedNote,
+  sourceNote,
   totalDurationText,
   trackCountText,
   truncatedNote,
@@ -114,6 +117,34 @@ describe('truncatedNote', () => {
   it('explains a mix', () => {
     const mix = collectionWith(playlist, { kind: 'mix', truncated: true })
     expect(truncatedNote(mix)).toBe('A mix never ends: showing its first 30 tracks.')
+  })
+
+  it("says Spotify's page lists only a list's first 100 tracks, never our own cap", () => {
+    expect(truncatedNote(spotifyPlaylist)).toBeUndefined()
+    expect(truncatedNote(spotifyBigPlaylist)).toBe(
+      'Spotify shows only the first 100 tracks of a playlist.',
+    )
+    // Podcast episodes among the first 100 are skipped: the note still says 100.
+    const withEpisodes = collectionWith(spotifyBigPlaylist, {
+      entries: spotifyBigPlaylist.entries.slice(0, 97),
+      skippedEntries: 3,
+    })
+    expect(truncatedNote(withEpisodes)).toBe(
+      'Spotify shows only the first 100 tracks of a playlist.',
+    )
+    expect(truncatedNote(collectionWith(spotifyBigPlaylist, { kind: 'album' }))).toBe(
+      'Spotify shows only the first 100 tracks of an album.',
+    )
+  })
+})
+
+describe('sourceNote', () => {
+  it("says a Spotify list's audio is found on YouTube, and nothing for other platforms", () => {
+    expect(sourceNote(spotifyPlaylist)).toBe(
+      'Spotify streams are DRM-protected: each track is found on YouTube and downloaded from there.',
+    )
+    expect(sourceNote(playlist)).toBeUndefined()
+    expect(sourceNote(scSet)).toBeUndefined()
   })
 })
 

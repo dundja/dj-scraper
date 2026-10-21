@@ -16,6 +16,11 @@
 //   UI states no recording shows: a list that takes SLOW_RESOLVE_MS to load, a video whose
 //   download hangs until it is canceled, and a private video in the recorded playlist (its track
 //   lookup fails while the list loads). apps/web/e2e/fake-urls.ts lists them.
+// - Spotify (ADR-026) is a local fixture server (startSpotifyFixtures: the scrubbed embed pages of
+//   test/fixtures/spotify, every cover rewritten to it), passed to the server as
+//   DJS_SPOTIFY_ORIGIN, so a Spotify link resolves and no cover comes from Spotify's CDN. Every row
+//   of the Spotify album downloads (spotifyAlbumRules): row 1 is the recorded track and search,
+//   rows 2-10 get synthetic track pages, searches and downloads made from the recordings.
 // - Its data dir (DJS_DATA_DIR) and home folder (HOME) are in the same temp dir, so it never touches
 //   the user's ~/Library/Application Support/DJ Scraper or ~/Music. Downloads go to the default
 //   folder, the temp HOME's Music/DJ Scraper, which the first download creates.
@@ -34,14 +39,18 @@ import { PortSchema } from '@dj-scraper/shared'
 import { z } from 'zod'
 import { DEFAULT_WEB_DIST } from '../src/config.ts'
 import { hasBuiltUi } from '../src/routes/web.ts'
+import { parseEmbedPage } from '../src/spotify/embed.ts'
+import { SEARCH_RESULTS, searchQuery } from '../src/spotify/match.ts'
 import {
   type FakeDownloadRule,
   type FakeYtdlpRule,
   makeTempDir,
   SERVER_DIR,
   serverEnv,
+  startSpotifyFixtures,
   todaysYtdlpVersion,
   writeFakeEngine,
+  youtubeDownloadRules,
 } from './helpers.ts'
 
 const FIXTURES = path.join(import.meta.dirname, 'fixtures')
@@ -58,20 +67,6 @@ const DOWNLOADABLE = [
  * downloading and processing for about a second and a half. The recorded rules replay at once.
  */
 const ROW_LINE_DELAY_MS = 250
-
-/**
- * The recorded downloads of jNQXAC9IVRw a row's download is made from, by the selector the format
- * asks for (M4A, else `ba`), with the source each one's file probes as.
- */
-const TEMPLATES = [
-  {
-    name: 'youtube-m4a',
-    args: [['-f', 'ba[ext=m4a]/ba']],
-    probe: 'ffprobe/src-youtube-140-m4a.json',
-  },
-  { name: 'youtube-ba', args: [], probe: 'ffprobe/src-youtube-251-webm.json' },
-] as const
-const TEMPLATE_ID = 'jNQXAC9IVRw'
 
 /**
  * Set row 6 (soundcloud/set.json) is listed by its API URL, so a download before its lookup filled
@@ -174,7 +169,6 @@ type Row = z.infer<typeof RowSchema>
 
 const readFixture = (file: string): string => readFileSync(path.join(FIXTURES, file), 'utf8')
 const JsonObject = z.record(z.string(), z.unknown())
-const ProbeSchema = z.looseObject({ format: JsonObject })
 
 function rowsOf(fixture: string): Row[] {
   const info = JsonObject.parse(JSON.parse(readFixture(fixture)))
@@ -183,34 +177,6 @@ function rowsOf(fixture: string): Row[] {
     const row = RowSchema.safeParse({ ...item, url: item.webpage_url ?? item.url })
     return row.success ? [row.data] : []
   })
-}
-
-/**
- * The template's run with the row's id, and its DONE line with the row's title, uploader and
- * duration. The file probes as the template's source, at the row's duration.
- */
-async function writeRowCase(dir: string, template: (typeof TEMPLATES)[number], row: Row) {
-  const prefix = path.join(dir, `${row.id}.${template.name}`)
-  const read = (stream: string) =>
-    readFixture(`downloads/${template.name}.${stream}.log`).replaceAll(TEMPLATE_ID, row.id)
-  const stdout = read('stdout')
-    .split('\n')
-    .map((line) => {
-      if (!line.startsWith('DONE ')) return line
-      const { title, duration, uploader, channel } = row
-      const done = JsonObject.parse(JSON.parse(line.slice('DONE '.length)))
-      return `DONE ${JSON.stringify({ ...done, title, duration, uploader, channel })}`
-    })
-    .join('\n')
-  const probe = ProbeSchema.parse(JSON.parse(readFixture(template.probe)))
-  const probeFile = `${prefix}.probe.json`
-  await writeFile(`${prefix}.stdout.log`, stdout)
-  await writeFile(`${prefix}.stderr.log`, read('stderr'))
-  await writeFile(
-    probeFile,
-    JSON.stringify({ ...probe, format: { ...probe.format, duration: row.duration.toFixed(6) } }),
-  )
-  return { prefix, probeFile }
 }
 
 /**
@@ -228,19 +194,102 @@ async function e2eRules(dir: string): Promise<FakeYtdlpRule[]> {
     SET_ROW_BY_API_URL,
   ]
   for (const row of rows.values()) {
-    for (const template of TEMPLATES) {
-      const { prefix, probeFile } = await writeRowCase(dir, template, row)
-      rules.push({
-        url: row.url,
-        args: template.args,
-        download: prefix,
-        probe: probeFile,
+    rules.push(
+      ...(await youtubeDownloadRules(dir, row, {
         lineDelayMs: ROW_LINE_DELAY_MS,
-        note: `e2e: ${template.name} as ${row.id}`,
-      })
-    }
+        note: `e2e: the recorded download as ${row.id}`,
+      })),
+    )
   }
   return rules
+}
+
+/**
+ * How long the Spotify track's YouTube search takes in e2e: the UI shows the track's DRM note and
+ * "Finding it on YouTube…" until the match comes, which the recorded search would answer at once.
+ */
+const SPOTIFY_SEARCH_DELAY_MS = 1500
+
+/** The recorded search of the Spotify track (spotify/track.html), slowed down. */
+const SPOTIFY_TRACK_SEARCH: FakeYtdlpRule = {
+  url: 'ytsearch10:Rick Astley - Never Gonna Give You Up',
+  stdout: 'youtube/search.json',
+  delayMs: SPOTIFY_SEARCH_DELAY_MS,
+  note: 'e2e: the recorded search, after a delay so the UI shows the matching state',
+}
+
+/** The uploader of the Spotify album's made-up matches, and the album's artist. */
+const SPOTIFY_ALBUM_ARTIST = 'Rick Astley'
+
+/**
+ * Everything the Spotify album (spotify/album.html: "Whenever You Need Somebody" by Rick Astley,
+ * 10 rows) needs to download on the fake engine, files written to `dir`:
+ * - `pages`: a track page for rows 2-10 (the fixture server has row 1's, spotify/track.html),
+ *   synthetic: track.html with the row's id, title and length;
+ * - `rules`: for rows 2-10, the YouTube search the match step runs (synthetic: youtube/search.json
+ *   with one made-up result, `Rick Astley - <title> (Official Audio)` on the artist's channel at
+ *   the row's length) and that upload's download (the recorded one, as for the playlist rows).
+ *   Row 1 (the Spotify track) gets only SPOTIFY_TRACK_SEARCH, its recorded search slowed down;
+ *   its match, dQw4w9WgXcQ, is the mix's seed track, which downloads by DOWNLOADABLE.
+ */
+async function spotifyAlbumRules(
+  dir: string,
+): Promise<{ pages: Record<string, string>; rules: FakeYtdlpRule[] }> {
+  const album = parseEmbedPage(readFixture('spotify/album.html'))
+  const trackPage = readFixture('spotify/track.html')
+  const recorded = parseEmbedPage(trackPage)
+  if (album.type !== 'album' || recorded.type !== 'track') throw new Error('unexpected fixtures')
+  const search = JsonObject.parse(JSON.parse(readFixture('youtube/search.json')))
+  const pages: Record<string, string> = {}
+  const rules: FakeYtdlpRule[] = [SPOTIFY_TRACK_SEARCH]
+  for (const [index, row] of album.rows.entries()) {
+    if (row.id === recorded.track.id) continue
+    if (row.durationSec === undefined) throw new Error(`album row ${index + 1} has no length`)
+    const page = trackPage
+      .replaceAll(recorded.track.id, row.id)
+      .replaceAll(recorded.track.title, row.title)
+      .replace(/"duration": \d+/, `"duration": ${Math.round(row.durationSec * 1000)}`)
+    const read = parseEmbedPage(page)
+    if (read.type !== 'track' || read.track.title !== row.title || read.track.id !== row.id) {
+      throw new Error(`the synthetic page of album row ${index + 1} doesn't read as that row`)
+    }
+    pages[`/embed/track/${row.id}`] = page
+
+    const id = `e2eSpAlb${String(index + 1).padStart(3, '0')}`
+    const url = `https://www.youtube.com/watch?v=${id}`
+    const title = `${SPOTIFY_ALBUM_ARTIST} - ${row.title} (Official Audio)`
+    const duration = Math.round(row.durationSec)
+    const query = searchQuery(read.track)
+    const searchUrl = `ytsearch${SEARCH_RESULTS}:${query}`
+    const file = path.join(dir, `${id}.search.json`)
+    const result = { _type: 'url', ie_key: 'Youtube', id, url, title, duration }
+    const uploader = { channel: SPOTIFY_ALBUM_ARTIST, uploader: SPOTIFY_ALBUM_ARTIST }
+    await writeFile(
+      file,
+      JSON.stringify({
+        ...search,
+        id: query,
+        title: query,
+        webpage_url: query,
+        original_url: searchUrl,
+        playlist_count: 1,
+        entries: [{ ...result, ...uploader, live_status: null }],
+      }),
+    )
+    rules.push({
+      url: searchUrl,
+      stdout: file,
+      note: `e2e: Spotify album row ${index + 1}'s search`,
+    })
+    rules.push(
+      ...(await youtubeDownloadRules(
+        dir,
+        { id, url, title, duration, ...uploader },
+        { lineDelayMs: ROW_LINE_DELAY_MS, note: `e2e: Spotify album row ${index + 1}'s match` },
+      )),
+    )
+  }
+  return { pages, rules }
 }
 
 function fail(message: string): never {
@@ -278,18 +327,29 @@ process.on('exit', () => {
 })
 
 const bin = path.join(tempDir, 'bin')
+const rulesDir = path.join(tempDir, 'downloads')
+const ownRules = await e2eRules(rulesDir)
+const spotifyAlbum = await spotifyAlbumRules(rulesDir)
 await writeFakeEngine(bin, {
-  ytdlpRules: await e2eRules(path.join(tempDir, 'downloads')),
+  ytdlpRules: [...ownRules, ...spotifyAlbum.rules],
   ytdlpEnv: { FAKE_YTDLP_VERSION: todaysYtdlpVersion() },
 })
+// Spotify on 127.0.0.1; it stops with this process.
+const spotify = await startSpotifyFixtures({ pages: spotifyAlbum.pages })
 // The fakes are Node scripts, and PATH is this dir alone.
 await symlink(process.execPath, path.join(bin, 'node'))
 const dirs = await serverEnv(tempDir)
-console.log(`[e2e-server] Fake engine in ${bin}, UI from ${webDist}`)
+console.log(`[e2e-server] Fake engine in ${bin}, UI from ${webDist}, Spotify at ${spotify.origin}`)
 
 server = spawn(process.execPath, ['src/index.ts'], {
   cwd: SERVER_DIR,
-  env: { PATH: bin, PORT: String(port.data), DJS_WEB_DIST: webDist, ...dirs },
+  env: {
+    PATH: bin,
+    PORT: String(port.data),
+    DJS_WEB_DIST: webDist,
+    DJS_SPOTIFY_ORIGIN: spotify.origin,
+    ...dirs,
+  },
   stdio: ['ignore', 'inherit', 'inherit'],
 })
 server.once('error', (error) => fail(`Cannot start the server: ${error.message}`))

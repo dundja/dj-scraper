@@ -95,9 +95,42 @@ const INPUTS = {
     kind: 'soundcloud_short',
     guess: 'unknown',
   },
-  out_of_scope: {
+  spotify_track: {
     ok: true,
     url: 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
+    platform: 'spotify',
+    kind: 'spotify_track',
+    guess: 'track',
+    spotifyId: '4uLU6hMCjMI75M1A2tKUQC',
+  },
+  spotify_album: {
+    ok: true,
+    url: 'https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4',
+    platform: 'spotify',
+    kind: 'spotify_album',
+    guess: 'collection',
+    collectionKind: 'album',
+    spotifyId: '6N9PS4QXF1D0OWPk0Sxtb4',
+  },
+  spotify_playlist: {
+    ok: true,
+    url: 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M',
+    platform: 'spotify',
+    kind: 'spotify_playlist',
+    guess: 'collection',
+    collectionKind: 'playlist',
+    spotifyId: '37i9dQZF1DXcBWIGoYBM5M',
+  },
+  spotify_other: {
+    ok: true,
+    url: 'https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt',
+    platform: 'spotify',
+    kind: 'spotify_other',
+    guess: 'unknown',
+  },
+  out_of_scope: {
+    ok: true,
+    url: 'https://music.apple.com/us/album/x/1440857781?i=1440857786',
     platform: 'other',
     kind: 'out_of_scope',
     guess: 'unknown',
@@ -137,8 +170,18 @@ const listing = (url: string, mode: ResolveMode, limit = MAX_COLLECTION_ENTRIES)
 
 const PLAYLIST_URL = 'https://www.youtube.com/playlist?list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0'
 
+/** The kinds yt-dlp never sees: refused (DRM), or read from Spotify (ADR-026). */
+const UNPLANNED = [
+  'out_of_scope',
+  'spotify_track',
+  'spotify_album',
+  'spotify_playlist',
+  'spotify_other',
+] as const
+type PlannedKind = Exclude<UrlKind, (typeof UNPLANNED)[number]>
+
 /** The expected plan for every kind and mode (the table is exhaustive by type). */
-const EXPECTED: Record<Exclude<UrlKind, 'out_of_scope'>, (mode: ResolveMode) => ResolvePlan> = {
+const EXPECTED: Record<PlannedKind, (mode: ResolveMode) => ResolvePlan> = {
   youtube_video: () => track(INPUTS.youtube_video.url),
   youtube_watch_list: (mode) => {
     if (mode === 'collection') return listing(PLAYLIST_URL, 'collection')
@@ -162,7 +205,7 @@ const EXPECTED: Record<Exclude<UrlKind, 'out_of_scope'>, (mode: ResolveMode) => 
 }
 
 const cases = Object.entries(EXPECTED).flatMap(([kind, expected]) =>
-  MODES.map((mode) => [kind as Exclude<UrlKind, 'out_of_scope'>, mode, expected] as const),
+  MODES.map((mode) => [kind as PlannedKind, mode, expected] as const),
 )
 
 describe('planResolve', () => {
@@ -170,8 +213,17 @@ describe('planResolve', () => {
     expect(planResolve(INPUTS[kind], mode)).toStrictEqual(expected(mode))
   })
 
-  it.each(MODES)('refuses to plan an out_of_scope URL in %s mode', (mode) => {
-    expect(() => planResolve(INPUTS.out_of_scope, mode)).toThrow(RangeError)
+  it.each(UNPLANNED.flatMap((kind) => MODES.map((mode) => [kind, mode] as const)))(
+    'refuses to plan %s in %s mode: yt-dlp never sees it',
+    (kind, mode) => {
+      expect(() => planResolve(INPUTS[kind], mode)).toThrow(RangeError)
+    },
+  )
+
+  it('describes every kind as classifyUrl does', () => {
+    for (const input of Object.values(INPUTS)) {
+      expect(classifyUrl(input.url), input.kind).toStrictEqual(input)
+    }
   })
 
   describe('youtube_watch_list with a mix', () => {

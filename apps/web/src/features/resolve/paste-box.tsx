@@ -47,7 +47,7 @@ export function PasteBox({
   }, [inputRef])
   usePasteShortcut(inputRef)
 
-  const hasBadge = verdict.status === 'ok' || verdict.status === 'drm'
+  const hasBadge = verdict.status === 'ok' || verdict.status === 'refused'
   // Text that isn't a link says why as you type; an empty box only once you try to load it.
   const message =
     verdict.status === 'ok' || (verdict.status === 'empty' && !refused)
@@ -65,7 +65,7 @@ export function PasteBox({
       className="flex shrink-0 flex-col gap-1.5 px-4 pt-4 pb-3"
     >
       <label htmlFor={`${id}-url`} className="sr-only">
-        YouTube or SoundCloud link
+        YouTube, SoundCloud or Spotify link
       </label>
       <div className="flex items-center gap-2">
         <InputGroup className="h-9 bg-card/40">
@@ -78,7 +78,7 @@ export function PasteBox({
             type="url"
             inputMode="url"
             value={text}
-            placeholder="Paste or type a YouTube or SoundCloud link"
+            placeholder="Paste or type a YouTube, SoundCloud or Spotify link"
             autoComplete="off"
             autoCapitalize="none"
             autoCorrect="off"

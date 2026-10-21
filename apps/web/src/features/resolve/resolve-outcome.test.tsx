@@ -44,7 +44,7 @@ afterEach(() => {
 type User = ReturnType<typeof userEvent.setup>
 
 const urlBox = (): HTMLInputElement =>
-  screen.getByRole('textbox', { name: 'YouTube or SoundCloud link' })
+  screen.getByRole('textbox', { name: 'YouTube, SoundCloud or Spotify link' })
 const resolveCalls = () => server.callsTo('POST /api/resolve')
 const resolveBodies = () => resolveCalls().map((call) => jsonBody(call))
 const status = () => screen.getByRole('status')
@@ -427,7 +427,9 @@ describe('a link that fails', () => {
     // No Try again left to load the old link under the refused text.
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
-    expect(screen.getByRole('heading', { name: 'Paste a YouTube or SoundCloud link' })).toBeTruthy()
+    expect(
+      screen.getByRole('heading', { name: 'Paste a YouTube, SoundCloud or Spotify link' }),
+    ).toBeTruthy()
     expect(urlBox().getAttribute('aria-invalid')).toBe('true')
     expect(status().textContent).toBe(message)
     expect(resolveCalls()).toHaveLength(1)

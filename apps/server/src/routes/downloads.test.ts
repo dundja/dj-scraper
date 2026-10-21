@@ -202,7 +202,12 @@ describe('POST /api/downloads', () => {
       {
         platform: 'other',
         id: 'drm',
-        url: 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
+        url: 'https://music.apple.com/us/album/x/1440857781?i=1440857786',
+      },
+      {
+        platform: 'spotify',
+        id: '6N9PS4QXF1D0OWPk0Sxtb4',
+        url: 'https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4',
       },
       {
         platform: 'soundcloud',
@@ -225,8 +230,10 @@ describe('POST /api/downloads', () => {
       { code: 'invalid_url', message: "Links with a username or password aren't supported." },
       {
         code: 'unsupported_url',
-        message: expect.stringMatching(/^DJ Scraper doesn't download from Spotify/),
+        message: expect.stringMatching(/^DJ Scraper doesn't download from Apple Music/),
       },
+      // A Spotify album is a list too: its tracks are downloaded one by one (ADR-026).
+      { code: 'invalid_request', message: 'This link is a list: open it to pick tracks.' },
       { code: 'invalid_request', message: 'This link is a list: open it to pick tracks.' },
       {
         code: 'preview_only',

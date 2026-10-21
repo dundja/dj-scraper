@@ -3,6 +3,7 @@ import {
   type ClassifiedUrl,
   classifyUrl,
   isYoutubeChannelId,
+  spotifyUrl,
   type UrlGuess,
   type UrlKind,
   type UrlRejection,
@@ -403,10 +404,81 @@ const otherSoundcloudPages: Case[] = [
   ['https://soundcloud.com/discover?secret_token=s-AbCdEfGhIjK', secret(soundcloudOther)],
 ]
 
+const SPOTIFY_TRACK = '4uLU6hMCjMI75M1A2tKUQC'
+const SPOTIFY_TRACK_URL = `https://open.spotify.com/track/${SPOTIFY_TRACK}`
+const SPOTIFY_PLAYLIST = '37i9dQZF1DXcBWIGoYBM5M'
+const SPOTIFY_PLAYLIST_URL = `https://open.spotify.com/playlist/${SPOTIFY_PLAYLIST}`
+const SPOTIFY_ALBUM = '6N9PS4QXF1D0OWPk0Sxtb4'
+const SPOTIFY_ALBUM_URL = `https://open.spotify.com/album/${SPOTIFY_ALBUM}`
+
+const spotifyTrack = (spotifyId = SPOTIFY_TRACK): Expected => ({
+  platform: 'spotify',
+  kind: 'spotify_track',
+  guess: 'track',
+  spotifyId,
+})
+const spotifyPlaylist: Expected = {
+  platform: 'spotify',
+  kind: 'spotify_playlist',
+  guess: 'collection',
+  collectionKind: 'playlist',
+  spotifyId: SPOTIFY_PLAYLIST,
+}
+const spotifyAlbum: Expected = {
+  platform: 'spotify',
+  kind: 'spotify_album',
+  guess: 'collection',
+  collectionKind: 'album',
+  spotifyId: SPOTIFY_ALBUM,
+}
+const spotifyOther: Expected = { platform: 'spotify', kind: 'spotify_other', guess: 'unknown' }
+
+/** Tracks and lists, normalized to their canonical page without the share token. */
+const spotifyLinks: Case[] = [
+  [SPOTIFY_TRACK_URL, spotifyTrack()],
+  [`${SPOTIFY_TRACK_URL}?si=1a2b3c4d5e6f7a8b`, at(SPOTIFY_TRACK_URL, spotifyTrack())],
+  [
+    `https://open.spotify.com/intl-de/track/${SPOTIFY_TRACK}`,
+    at(SPOTIFY_TRACK_URL, spotifyTrack()),
+  ],
+  [
+    `https://open.spotify.com/intl-pt-BR/track/${SPOTIFY_TRACK}/`,
+    at(SPOTIFY_TRACK_URL, spotifyTrack()),
+  ],
+  [`https://open.spotify.com/embed/track/${SPOTIFY_TRACK}`, at(SPOTIFY_TRACK_URL, spotifyTrack())],
+  [`http://open.spotify.com/track/${SPOTIFY_TRACK}#x`, at(SPOTIFY_TRACK_URL, spotifyTrack())],
+  [`OPEN.Spotify.com/track/${SPOTIFY_TRACK}`, at(SPOTIFY_TRACK_URL, spotifyTrack())],
+  [`https://open.spotify.com./track/${SPOTIFY_TRACK}`, at(SPOTIFY_TRACK_URL, spotifyTrack())],
+  [SPOTIFY_PLAYLIST_URL, spotifyPlaylist],
+  [`${SPOTIFY_PLAYLIST_URL}?si=abc&pt=def`, at(SPOTIFY_PLAYLIST_URL, spotifyPlaylist)],
+  [
+    `https://open.spotify.com/embed/playlist/${SPOTIFY_PLAYLIST}`,
+    at(SPOTIFY_PLAYLIST_URL, spotifyPlaylist),
+  ],
+  [SPOTIFY_ALBUM_URL, spotifyAlbum],
+  [`https://open.spotify.com/intl-fr/album/${SPOTIFY_ALBUM}`, at(SPOTIFY_ALBUM_URL, spotifyAlbum)],
+]
+
+/** Spotify pages that aren't a track or a list, and look-alikes on Spotify's hosts. */
+const otherSpotifyPages: Case[] = [
+  ['https://open.spotify.com/', spotifyOther],
+  ['https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt', spotifyOther],
+  ['https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk', spotifyOther],
+  ['https://open.spotify.com/show/4rOoJ6Egrf8K2IrywzwOMk', spotifyOther],
+  ['https://open.spotify.com/user/spotify', spotifyOther],
+  ['https://open.spotify.com/collection/tracks', spotifyOther],
+  ['https://open.spotify.com/track/x', spotifyOther],
+  [`https://open.spotify.com/track/${SPOTIFY_TRACK}x`, spotifyOther],
+  [`https://open.spotify.com/track/${SPOTIFY_TRACK}/extra`, spotifyOther],
+  [`https://open.spotify.com/intl-de/intl-de/track/${SPOTIFY_TRACK}`, spotifyOther],
+  [`https://open.spotify.com:8443/track/${SPOTIFY_TRACK}`, spotifyOther],
+  [`https://play.spotify.com/track/${SPOTIFY_TRACK}`, spotifyOther],
+  ['https://spotify.com/', spotifyOther],
+  ['https://www.spotify.com/us/premium/', spotifyOther],
+  ['https://spotify.link/AbCdEfGhIj', spotifyOther],
+]
+
 const drmServices: Case[] = [
-  ['https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC', outOfScope],
-  ['https://spotify.com/', outOfScope],
-  ['https://spotify.link/AbCdEfGhIj', outOfScope],
   ['https://music.apple.com/us/album/some-album/1234567890?i=1234567891', outOfScope],
   ['https://embed.music.apple.com/us/album/some-album/1234567890', outOfScope],
   ['https://itunes.apple.com/us/album/some-album/id1234567890', outOfScope],
@@ -416,15 +488,6 @@ const drmServices: Case[] = [
   ['https://link.deezer.com/s/AbCdEfGhIj', outOfScope],
   ['https://deezer.page.link/AbCdEfGhIj', outOfScope],
   ['https://www.beatport.com/track/deep-house-edit/12345678', outOfScope],
-  [
-    'https://OPEN.Spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
-    at('https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC', outOfScope),
-  ],
-  [
-    'open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
-    at('https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC', outOfScope),
-  ],
-  ['https://open.spotify.com:8443/track/4uLU6hMCjMI75M1A2tKUQC', outOfScope],
   ['https://music.amazon.com/albums/B0000000000', outOfScope],
   ['https://music.amazon.co.uk/albums/B0000000000', outOfScope],
   ['https://music.amazon.de/albums/B0000000000', outOfScope],
@@ -436,9 +499,9 @@ const drmServices: Case[] = [
     at('https://music.amazon.fr/albums/B0000000000', outOfScope),
   ],
   // DNS ignores a trailing dot, so it must not get a DRM service past the refusal.
-  ['https://open.spotify.com./track/x', at('https://open.spotify.com/track/x', outOfScope)],
-  ['https://open.spotify.com../track/x', at('https://open.spotify.com/track/x', outOfScope)],
-  ['https://open.spotify.com\u3002/track/x', at('https://open.spotify.com/track/x', outOfScope)],
+  ['https://tidal.com./track/1', at('https://tidal.com/track/1', outOfScope)],
+  ['https://tidal.com../track/1', at('https://tidal.com/track/1', outOfScope)],
+  ['https://tidal.com\u3002/track/1', at('https://tidal.com/track/1', outOfScope)],
   [
     'https://music.apple.com./us/album/x/123',
     at('https://music.apple.com/us/album/x/123', outOfScope),
@@ -589,6 +652,8 @@ const allCases = [
   ...soundcloudUsers,
   ...soundcloudShortLinks,
   ...otherSoundcloudPages,
+  ...spotifyLinks,
+  ...otherSpotifyPages,
   ...drmServices,
   ...otherHosts,
   ...normalized,
@@ -616,6 +681,11 @@ describe('classifyUrl', () => {
         expectClassified(`https://soundcloud.com${path}`, soundcloudOther)
       },
     )
+  })
+
+  describe('Spotify', () => {
+    it.each(spotifyLinks)('classifies %s as a track or a list', expectClassified)
+    it.each(otherSpotifyPages)('classifies %s as some other Spotify page', expectClassified)
   })
 
   describe('DRM services', () => {
@@ -677,6 +747,10 @@ describe('classifyUrl', () => {
       soundcloud_user: true,
       soundcloud_likes: true,
       soundcloud_short: true,
+      spotify_track: true,
+      spotify_album: true,
+      spotify_playlist: true,
+      spotify_other: true,
       out_of_scope: true,
       other: true,
     }
@@ -730,7 +804,7 @@ describe('isYoutubeChannelId', () => {
 
 describe('urlRejectionMessage', () => {
   it.each([
-    ['empty', 'Paste a YouTube or SoundCloud link.'],
+    ['empty', 'Paste a YouTube, SoundCloud or Spotify link.'],
     ['too_long', 'That link is too long.'],
     ['not_a_url', "That doesn't look like a link."],
     ['not_http', 'Only http and https links work here.'],
@@ -744,5 +818,19 @@ describe('urlRejectionMessage', () => {
       const result = classifyUrl(input)
       expect(result.ok ? '' : urlRejectionMessage(result.reason)).not.toBe('')
     }
+  })
+})
+
+describe('spotifyUrl', () => {
+  it.each([
+    ['spotify_track', SPOTIFY_TRACK_URL],
+    ['spotify_album', `https://open.spotify.com/album/${SPOTIFY_TRACK}`],
+    ['spotify_playlist', `https://open.spotify.com/playlist/${SPOTIFY_TRACK}`],
+  ] as const)('gives a %s its canonical page', (kind, url) => {
+    expect(spotifyUrl(kind, SPOTIFY_TRACK)).toBe(url)
+  })
+
+  it.each(['spotify_other', 'youtube_video'] as const)('refuses %s', (kind) => {
+    expect(() => spotifyUrl(kind, SPOTIFY_TRACK)).toThrow(RangeError)
   })
 })

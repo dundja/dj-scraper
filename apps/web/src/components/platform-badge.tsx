@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils.ts'
 const PLATFORMS: Record<Platform, { label: string; dot?: string }> = {
   youtube: { label: 'YouTube', dot: 'bg-red-500' },
   soundcloud: { label: 'SoundCloud', dot: 'bg-orange-500' },
+  // A track list only: its audio is matched on YouTube (ADR-026).
+  spotify: { label: 'Spotify', dot: 'bg-green-500' },
   // Anything else yt-dlp handles (Bandcamp, Mixcloud, …): no brand to hint at.
   other: { label: 'Web' },
 }

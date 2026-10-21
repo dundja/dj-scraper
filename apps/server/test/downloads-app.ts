@@ -139,6 +139,11 @@ const FIXTURE_NAMES = [
   'Dl Test Video',
   'jaimeMF',
   'World on Fire',
+  // The Spotify track and its YouTube match (spotify/track.html, youtube/search.json).
+  'Never Gonna',
+  'Rick Astley',
+  'Patient Zero',
+  'Taylor Swift',
 ]
 
 export type DownloadsAppOptions = {
@@ -157,6 +162,12 @@ export type DownloadsAppOptions = {
   maxRetainedTerminal?: number
   /** Event streams' heartbeat. Default the real 15 s. */
   heartbeatMs?: number
+  /**
+   * Where the services read Spotify (a `startSpotifyFixtures` origin), as DJS_SPOTIFY_ORIGIN sets
+   * it. Without one, a Spotify link would go to open.spotify.com: tests that download Spotify
+   * tracks must set it.
+   */
+  spotifyOrigin?: string
 }
 
 export type DownloadsApp = {
@@ -375,6 +386,7 @@ export async function startDownloadsApp(
     settings,
     assertContract: true,
     log,
+    ...(options.spotifyOrigin === undefined ? {} : { spotifyOrigin: options.spotifyOrigin }),
     overrides: {
       pacing: {
         lookups: SEQUENTIAL,

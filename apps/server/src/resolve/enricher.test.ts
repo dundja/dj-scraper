@@ -264,7 +264,14 @@ describe('enricher.enrich', () => {
 
   it.each([
     ['embedded credentials', 'https://dj:pw@soundcloud.com/someone/a-track', 'invalid_url'],
-    ['a DRM service', 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC', 'unsupported_url'],
+    [
+      'a DRM service',
+      'https://music.apple.com/us/album/x/1440857781?i=1440857786',
+      'unsupported_url',
+    ],
+    // Spotify rows come complete from the listing; yt-dlp has nothing to look up (ADR-026).
+    ['a Spotify track', 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC', 'invalid_request'],
+    ['a Spotify page', 'https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt', 'unsupported_url'],
     ['a SoundCloud set', 'https://soundcloud.com/someone/sets/a-set', 'invalid_request'],
     ['a YouTube playlist', 'https://www.youtube.com/playlist?list=PLabc', 'invalid_request'],
   ])('fails a row with %s on its own, without starting yt-dlp', async (_label, url, code) => {
@@ -475,6 +482,7 @@ describe('enricher.enrich', () => {
           soundcloud: { concurrency: 2, minIntervalMs: 0 },
           youtube: { concurrency: 2, minIntervalMs: 0 },
           other: { concurrency: 2, minIntervalMs: 0 },
+          spotify: { concurrency: 2, minIntervalMs: 0 },
         },
         respond: async (url) => {
           running++
@@ -776,6 +784,7 @@ describe('enricher.enrich', () => {
           soundcloud: { concurrency: 2, minIntervalMs: 0 },
           youtube: { concurrency: 2, minIntervalMs: 0 },
           other: { concurrency: 2, minIntervalMs: 0 },
+          spotify: { concurrency: 2, minIntervalMs: 0 },
         },
         respond: rateLimited,
       })

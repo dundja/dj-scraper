@@ -7,6 +7,7 @@ import type {
   JobOutput,
   JobProgress,
   Platform,
+  TrackMatch,
   TrackRef,
   ValidUrl,
 } from '@dj-scraper/shared'
@@ -90,6 +91,8 @@ export type AttemptUpdate = {
   progress?: JobProgress | null
   /** The stream being downloaded. */
   source?: AudioSource
+  /** A Spotify track's YouTube match, once found. */
+  match?: TrackMatch
 }
 
 /** The display values a finished attempt knows for sure (from yt-dlp's DONE line). */

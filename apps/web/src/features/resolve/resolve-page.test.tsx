@@ -31,7 +31,7 @@ afterEach(() => {
 })
 
 const urlBox = (): HTMLInputElement =>
-  screen.getByRole('textbox', { name: 'YouTube or SoundCloud link' })
+  screen.getByRole('textbox', { name: 'YouTube, SoundCloud or Spotify link' })
 
 function pasteForm(): HTMLElement {
   const form = urlBox().closest('form')
@@ -62,7 +62,9 @@ describe('typing a link', () => {
     renderWithQueryClient(<ResolvePage />)
 
     expect(document.activeElement).toBe(urlBox())
-    expect(screen.getByRole('heading', { name: 'Paste a YouTube or SoundCloud link' })).toBeTruthy()
+    expect(
+      screen.getByRole('heading', { name: 'Paste a YouTube, SoundCloud or Spotify link' }),
+    ).toBeTruthy()
   })
 
   it('guesses the platform and kind as you type, before anything resolves', async () => {
@@ -84,7 +86,25 @@ describe('typing a link', () => {
     expect(form.getByText('SoundCloud')).toBeTruthy()
     expect(form.getByText('Set')).toBeTruthy()
 
+    await user.clear(urlBox())
+    await user.type(urlBox(), urls.spotifyAlbum)
+    expect(form.getByText('Spotify')).toBeTruthy()
+    expect(form.getByText('Album')).toBeTruthy()
+    expect(description()).toBe('Detected: SpotifyAlbum')
+
     expect(resolveCalls()).toEqual([])
+  })
+
+  it('loads a Spotify link at its canonical URL, without the share token', async () => {
+    server.on('POST /api/resolve', () => noAnswer())
+    const user = userEvent.setup()
+    renderWithQueryClient(<ResolvePage />)
+
+    await user.type(urlBox(), `${urls.spotifyTrack}?si=1b2c3d4e5f6a7b8c{Enter}`)
+
+    await waitFor(() => expect(resolveBodies()).toEqual([{ url: urls.spotifyTrack }]))
+    expect(within(pasteForm()).getByText('Spotify')).toBeTruthy()
+    expect(within(pasteForm()).getByText('Track')).toBeTruthy()
   })
 
   it('loads the link on Enter and on Go, normalized', async () => {
@@ -130,7 +150,7 @@ describe('typing a link', () => {
 
     await user.click(screen.getByRole('button', { name: 'Go' }))
 
-    expect(description()).toBe('Paste a YouTube or SoundCloud link.')
+    expect(description()).toBe('Paste a YouTube, SoundCloud or Spotify link.')
     expect(urlBox().getAttribute('aria-invalid')).toBe('true')
     expect(resolveCalls()).toEqual([])
   })
@@ -146,6 +166,20 @@ describe('typing a link', () => {
     await user.keyboard('{Enter}')
     expect(urlBox().getAttribute('aria-invalid')).toBe('true')
     expect(status().textContent).toContain('DRM-protected')
+    expect(resolveCalls()).toEqual([])
+  })
+
+  it('refuses a Spotify page that is no track or list, saying which links work', async () => {
+    const user = userEvent.setup()
+    renderWithQueryClient(<ResolvePage />)
+
+    await user.type(urlBox(), urls.spotifyArtist)
+    expect(within(pasteForm()).getByText('Spotify: not a track or list')).toBeTruthy()
+    expect(description()).toContain('Only Spotify track, album and playlist links work here')
+
+    await user.keyboard('{Enter}')
+    expect(urlBox().getAttribute('aria-invalid')).toBe('true')
+    expect(status().textContent).toContain('For a spotify.link short link, open it')
     expect(resolveCalls()).toEqual([])
   })
 })
@@ -425,7 +459,9 @@ describe('stopping a resolve', () => {
     await user.click(await screen.findByRole('button', { name: 'Cancel' }))
 
     expect(resolveCalls()[0]?.signal?.aborted).toBe(true)
-    expect(screen.getByRole('heading', { name: 'Paste a YouTube or SoundCloud link' })).toBeTruthy()
+    expect(
+      screen.getByRole('heading', { name: 'Paste a YouTube, SoundCloud or Spotify link' }),
+    ).toBeTruthy()
     expect(status().textContent).toBe('Canceled.')
     expect(urlBox().value).toBe(urls.playlist)
     // The Cancel button is gone: the focus goes back to the box, not to the top of the page.

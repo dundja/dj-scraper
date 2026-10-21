@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { doneJob, failedJob, jobWith, queuedJob, settings } from '@/test/downloads.ts'
 import { fakeApi, json, jsonBody, networkError, noAnswer, text } from '@/test/fake-api.ts'
 import { healthWith, healthy } from '@/test/health.ts'
+import { spotifyBigPlaylist, spotifyTrack } from '@/test/resolve.ts'
 import { ApiError, api } from './api.ts'
 
 let server: ReturnType<typeof fakeApi>
@@ -388,6 +389,11 @@ describe('api.resolve', () => {
     { name: 'a track', result: trackResult },
     { name: 'a collection with a partial row', result: collectionResult },
     { name: 'an ambiguous watch-list link with the kind of its list', result: ambiguousResult },
+    { name: 'a Spotify track, without a source', result: { kind: 'track', track: spotifyTrack } },
+    {
+      name: 'a Spotify playlist cut at 100 rows, without a track count',
+      result: { kind: 'collection', collection: spotifyBigPlaylist },
+    },
   ])('returns $name when the body matches the contract', async ({ result }) => {
     server.on('POST /api/resolve', () => json(result))
 
@@ -466,12 +472,21 @@ describe('resolve failures', () => {
     },
     {
       name: 'a DRM service',
-      call: () => api.resolve({ url: 'https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT' }),
+      call: () => api.resolve({ url: 'https://tidal.com/browse/track/77646169' }),
       route: 'POST /api/resolve',
       status: 422,
       code: 'unsupported_url',
       message:
-        "DJ Scraper doesn't download from Spotify, Apple Music, Amazon Music, Tidal, Deezer or Beatport: their streams are DRM-protected.",
+        "DJ Scraper doesn't download from Apple Music, Amazon Music, Tidal, Deezer or Beatport: their streams are DRM-protected.",
+    },
+    {
+      name: 'a Spotify page that is no track or list',
+      call: () => api.resolve({ url: 'https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt' }),
+      route: 'POST /api/resolve',
+      status: 422,
+      code: 'unsupported_url',
+      message:
+        'Only Spotify track, album and playlist links work here (open.spotify.com/…). For a spotify.link short link, open it and copy the full link.',
     },
     {
       name: 'a missing yt-dlp on resolve',

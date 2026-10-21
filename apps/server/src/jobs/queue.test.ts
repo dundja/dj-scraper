@@ -7,6 +7,7 @@ import {
   JobSchema,
   type JobStatus,
   type ServerEvent,
+  type TrackMatch,
 } from '@dj-scraper/shared'
 import { testUuid } from '@dj-scraper/shared/test-helpers'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -50,6 +51,11 @@ const yt = (n: number) => item(`https://www.youtube.com/watch?v=${String(n).padS
 const sc = (n: number, ref: Partial<EnqueueItem['ref']> = {}) =>
   item(`https://soundcloud.com/some-artist/track-${n}`, { id: String(n), ...ref })
 const refused = (n: number, error: ErrorInfo): EnqueueItem => ({ ...yt(n), refusal: error })
+/** A Spotify track; `n` makes its 22-character id. Its audio comes from YouTube (ADR-026). */
+const sp = (n: number) => {
+  const id = String(n).padStart(22, 's')
+  return item(`https://open.spotify.com/track/${id}`, { id })
+}
 
 const UNAVAILABLE: ErrorInfo = { code: 'unavailable', message: 'This track was removed.' }
 const RATE_LIMITED: ErrorInfo = { code: 'rate_limited', message: 'YouTube is limiting requests.' }
@@ -1187,5 +1193,182 @@ describe('createQueue: close', () => {
     add([refused(1, UNAVAILABLE)])
     await queue.close()
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('createQueue: Spotify jobs (ADR-026)', () => {
+  const MATCH: TrackMatch = {
+    platform: 'youtube',
+    id: 'dQw4w9WgXcQ',
+    url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    title: 'Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)',
+    uploader: 'Rick Astley',
+    durationSec: 214,
+  }
+
+  it("waits for YouTube's bucket: a Spotify track downloads from YouTube", async () => {
+    const { add, take, calls } = setup({
+      concurrency: 3,
+      gates: { buckets: { youtube: createTokenBucket({ burst: 1, refillMs: 12_000 }) } },
+    })
+    const { jobIds } = add([yt(1), sp(2), sc(3)])
+    await flush()
+    expect(calls.map((c) => c.request.jobId)).toEqual([jobIds[0], jobIds[2]])
+    expect(summary(take()).at(-1)).toBe(
+      `queue.updated [{"platform":"youtube","nextStartAt":"${iso(WALL + 12_000)}"}]`,
+    )
+    await advance(12_000)
+    expect(calls.map((c) => c.request.jobId)).toEqual([jobIds[0], jobIds[2], jobIds[1]])
+    // The attempt still gets the Spotify link and its classified input.
+    expect(calls[2]?.request).toMatchObject({ ref: sp(2).ref, input: sp(2).input })
+    expect(calls[2]?.request.input.platform).toBe('spotify')
+  })
+
+  it("pauses YouTube when a Spotify job is rate limited, and the Spotify job waits out YouTube's pause", async () => {
+    const { add, take, callOf, calls, job } = setup({ concurrency: 2 })
+    const [s1, y2, c3] = add([sp(1), yt(2), sc(3)]).jobIds
+    await flush()
+    take()
+    vi.setSystemTime(WALL + 1000)
+    callOf(s1).finish({ kind: 'failed', error: RATE_LIMITED })
+    await flush()
+    expect(summary(take())).toEqual([
+      'jobs.updated 02:queued',
+      'jobs.updated 04:downloading',
+      `queue.updated [{"platform":"youtube","pausedUntil":"${iso(WALL + 61_000)}","pauseCode":"rate_limited"}]`,
+    ])
+    expect(job(s1)).toMatchObject({ status: 'queued', lastError: RATE_LIMITED })
+    expect(calls.map((c) => c.request.jobId)).toEqual([s1, y2, c3])
+  })
+
+  it('maps a Spotify track listed twice to one job, and a YouTube video to its own', () => {
+    const { add, take } = setup()
+    expect(add([sp(1), yt(1), sp(1)])).toEqual({
+      batchId: testUuid(1),
+      jobIds: [testUuid(2), testUuid(3), testUuid(2)],
+      duplicates: 1,
+    })
+    expect(summary(take())).toEqual(['jobs.added 02:queued 03:queued'])
+  })
+
+  it('maps a Spotify track to its running job, whatever platform the client labeled it with', async () => {
+    const { add, take } = setup()
+    const first = add([sp(1)])
+    await flush()
+    take()
+    const again = { ...sp(1), ref: { ...sp(1).ref, platform: 'youtube' as const } }
+    expect(add([again])).toEqual({ jobIds: first.jobIds, duplicates: 1 })
+  })
+
+  it('stores and announces the YouTube match, once', async () => {
+    const { add, take, callOf, job } = setup()
+    const [s1] = add([sp(1)]).jobIds
+    await flush()
+    take()
+    callOf(s1).update({ match: MATCH })
+    callOf(s1).update({ match: { ...MATCH } })
+    const events = take()
+    expect(summary(events)).toEqual(['jobs.updated 02:downloading'])
+    expect(events[0]).toMatchObject({ jobs: [{ id: s1, match: MATCH }] })
+    expect(job(s1).match).toEqual(MATCH)
+    // A new match (another attempt's) replaces it.
+    const other = {
+      ...MATCH,
+      id: 'LLFhKaqnWwk',
+      url: 'https://www.youtube.com/watch?v=LLFhKaqnWwk',
+    }
+    callOf(s1).update({ match: other })
+    expect(summary(take())).toEqual(['jobs.updated 02:downloading'])
+    expect(job(s1).match).toEqual(other)
+  })
+
+  it.each([
+    ['a match on another platform', { ...MATCH, platform: 'soundcloud' }],
+    ['a match with a file URL', { ...MATCH, url: 'file:///etc/passwd' }],
+    ['a match without a title', { ...MATCH, title: '' }],
+    ['a match of a negative length', { ...MATCH, durationSec: -1 }],
+  ])('drops %s, logging it once', async (_label, match) => {
+    const { add, take, callOf, job, log } = setup()
+    const [s1] = add([sp(1)]).jobIds
+    await flush()
+    take()
+    callOf(s1).update({ match: match as TrackMatch })
+    callOf(s1).update({ match: match as TrackMatch })
+    expect(take()).toEqual([])
+    expect(job(s1)).not.toHaveProperty('match')
+    expect(log.warn).toHaveBeenCalledExactlyOnceWith(
+      `[queue] ${s1?.slice(0, 8)}: dropped an off-contract match update`,
+    )
+    expect(JSON.stringify(log.warn.mock.calls)).not.toContain('etc/passwd')
+  })
+
+  it('keeps the match on the finished job, and its Spotify link as the track', async () => {
+    const { add, callOf, job } = setup()
+    const [s1] = add([sp(1)]).jobIds
+    await flush()
+    callOf(s1).update({ match: MATCH })
+    callOf(s1).finish({
+      kind: 'done',
+      outputPath: '/Users/dj/Music/DJ Scraper/Rick Astley - Never Gonna Give You Up.mp3',
+      output: OUTPUT,
+      track: {
+        title: 'Never Gonna Give You Up',
+        artist: 'Rick Astley',
+        thumbnailUrl: 'https://i.scdn.co/image/ab67616d0000b273',
+      },
+    })
+    await flush()
+    expect(job(s1)).toMatchObject({
+      status: 'done',
+      match: MATCH,
+      track: {
+        ...sp(1).ref,
+        title: 'Never Gonna Give You Up',
+        artist: 'Rick Astley',
+        thumbnailUrl: 'https://i.scdn.co/image/ab67616d0000b273',
+      },
+    })
+    expect(job(s1).track.url).toBe(sp(1).ref.url)
+  })
+
+  it.each([
+    ['a rate limit', RATE_LIMITED],
+    ['a bot check', BOT_CHECK],
+  ])(
+    'clears the match when %s puts the job back: the next attempt matches again',
+    async (_label, error) => {
+      const { add, take, callOf, calls, job } = setup()
+      const [s1] = add([sp(1)]).jobIds
+      await flush()
+      callOf(s1).update({ match: MATCH })
+      expect(job(s1).match).toEqual(MATCH)
+      callOf(s1).finish({ kind: 'failed', error })
+      await flush()
+      expect(job(s1)).toMatchObject({ status: 'queued', lastError: error })
+      expect(job(s1)).not.toHaveProperty('match')
+      const requeued = take()
+        .flatMap((event) => (event.type === 'jobs.updated' ? event.jobs : []))
+        .find((one) => one.id === s1 && one.status === 'queued')
+      expect(requeued).toBeDefined()
+      expect(requeued).not.toHaveProperty('match')
+      expect(calls).toHaveLength(1)
+    },
+  )
+
+  it('clears the match on retry: the next attempt matches again', async () => {
+    const { queue, add, take, callOf, job } = setup()
+    const [s1] = add([sp(1)]).jobIds
+    await flush()
+    callOf(s1).update({ match: MATCH })
+    callOf(s1).finish({ kind: 'failed', error: NETWORK })
+    await flush()
+    expect(job(s1)).toMatchObject({ status: 'failed', match: MATCH })
+    take()
+    const retried = queue.retry(s1 ?? '')
+    expect(retried).not.toHaveProperty('match')
+    expect(job(s1)).not.toHaveProperty('match')
+    await flush()
+    expect(job(s1)).toMatchObject({ status: 'downloading', attempt: 2 })
+    expect(job(s1)).not.toHaveProperty('match')
   })
 })

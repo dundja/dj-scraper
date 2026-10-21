@@ -6,7 +6,14 @@ import { userEvent } from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Artwork } from '@/components/artwork.tsx'
 import { toTrackRef } from '@/features/downloads/track-ref.ts'
-import { jobWith, liveDownloads, settings, snapshotWith } from '@/test/downloads.ts'
+import {
+  jobWith,
+  liveDownloads,
+  settings,
+  snapshotWith,
+  spotifyJob,
+  spotifyMatch,
+} from '@/test/downloads.ts'
 import { fakeApi, json } from '@/test/fake-api.ts'
 import { renderWithQueryClient } from '@/test/render.tsx'
 import {
@@ -16,6 +23,8 @@ import {
   SC_SET_PREVIEW_ROW,
   scSet,
   scSetTracks,
+  spotifyBigPlaylist,
+  spotifyPlaylist,
   userPage,
   userPageWithLists,
 } from '@/test/resolve.ts'
@@ -137,6 +146,75 @@ describe('CollectionView header', () => {
     expect(onOpenList).toHaveBeenCalledExactlyOnceWith(
       'https://soundcloud.com/the-concept-band/sets/the-royal-concept-ep',
     )
+  })
+})
+
+describe('CollectionView for Spotify', () => {
+  const SOURCE_NOTE =
+    'Spotify streams are DRM-protected: each track is found on YouTube and downloaded from there.'
+
+  it("shows the list with Spotify's names, and says its audio is found on YouTube", () => {
+    renderView(spotifyPlaylist)
+    const header = screen.getByRole('region', { name: 'Deep House Warm-up' })
+    expect(header.textContent).toContain('Crate Diggers')
+    expect(within(header).getByText('Playlist')).toBeTruthy()
+    expect(within(header).getByText('Spotify')).toBeTruthy()
+    // No track count from Spotify: the rows are the count.
+    expect(within(header).getByText('5 tracks · 31 min')).toBeTruthy()
+    expect(within(header).getByText(SOURCE_NOTE)).toBeTruthy()
+    // A podcast episode on the playlist.
+    expect(within(header).getByText("1 row isn't a track.")).toBeTruthy()
+    expect(screen.queryByText(/Showing the first/)).toBeNull()
+  })
+
+  it('lists every row selected, with the artists and no artwork of their own', () => {
+    renderView(spotifyPlaylist)
+    for (const entry of spotifyPlaylist.entries) {
+      expect(isChecked(checkbox(entry.title ?? ''))).toBe(true)
+    }
+    const row = checkbox('Low Sun').closest('[role="row"]')
+    if (!(row instanceof HTMLElement)) throw new Error('No row')
+    expect(row.textContent).toContain('Mara Vey, Orbit Theory')
+    expect(row.textContent).toContain('6:53')
+    expect(row.querySelector('img')).toBeNull()
+    expect(selectionLine().textContent).toBe('5 selected · 31 min')
+  })
+
+  it("says Spotify shows only a list's first 100 tracks", () => {
+    renderView(spotifyBigPlaylist)
+    expect(screen.getByText(/^100 tracks · /)).toBeTruthy()
+    expect(screen.getByText('Spotify shows only the first 100 tracks of a playlist.')).toBeTruthy()
+    expect(screen.getByText(SOURCE_NOTE)).toBeTruthy()
+  })
+
+  it("says when a row's track is being searched on YouTube, then follows its download", async () => {
+    const { queryClient } = renderView(spotifyPlaylist)
+    const [first] = spotifyPlaylist.entries
+    if (first === undefined) throw new Error('fixture')
+    const started = {
+      id: testUuid(34),
+      status: 'downloading',
+      track: toTrackRef(first),
+      startedAt: '2026-10-02T08:00:00.000Z',
+    } as const
+    const job = spotifyJob(started)
+    const stream = await liveDownloads(queryClient, snapshotWith({ jobs: [job] }))
+    const row = checkbox('Tidal Drift').closest('[role="row"]')
+    if (!(row instanceof HTMLElement)) throw new Error('No row')
+    expect(row.textContent).toContain('Download: Searching')
+    expect(within(row).getByTitle('Finding it on YouTube…')).toBeTruthy()
+
+    await stream.send({
+      type: 'jobs.updated',
+      jobs: [spotifyJob({ ...started, match: spotifyMatch, progress: { percent: 12 } })],
+    })
+    expect(row.textContent).toContain('Download: 12 %')
+    // The tooltip's second line names the upload (Testing Library reads the line break as a space).
+    expect(
+      within(row).getByTitle(
+        `Downloading: 12 % Audio from YouTube: ${spotifyMatch.title} · Rick Astley`,
+      ),
+    ).toBeTruthy()
   })
 })
 

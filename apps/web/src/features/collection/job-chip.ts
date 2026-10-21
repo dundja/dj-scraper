@@ -1,4 +1,5 @@
 import type { Job } from '@dj-scraper/shared'
+import { isMatching, matchText } from '@/features/downloads/job-text.ts'
 
 /** A row's download status at a glance; the downloads panel has the details. */
 export type JobChip = {
@@ -25,16 +26,23 @@ export function jobChip(job: Job, now: number = Date.now()): JobChip {
         return { label: 'Waiting', tone: 'active', detail: 'Waiting: the site asks to wait first' }
       }
       const percent = job.progress?.percent
+      if (percent === undefined && isMatching(job)) {
+        return { label: 'Searching', tone: 'active', detail: 'Finding it on YouTube…' }
+      }
       if (percent === undefined) {
-        return { label: 'Starting', tone: 'active', detail: 'Starting the download…' }
+        return {
+          label: 'Starting',
+          tone: 'active',
+          detail: withMatch(job, 'Starting the download…'),
+        }
       }
       const shown = `${Math.floor(percent)} %`
-      return { label: shown, tone: 'active', detail: `Downloading: ${shown}` }
+      return { label: shown, tone: 'active', detail: withMatch(job, `Downloading: ${shown}`) }
     }
     case 'processing':
       return { label: 'Converting', tone: 'active', detail: 'Converting and tagging…' }
     case 'done':
-      return { label: 'Done', tone: 'success', detail: 'Downloaded' }
+      return { label: 'Done', tone: 'success', detail: withMatch(job, 'Downloaded') }
     case 'skipped':
       return { label: 'In folder', tone: 'muted', detail: 'Already in the folder: kept as it was' }
     case 'failed':
@@ -42,4 +50,9 @@ export function jobChip(job: Job, now: number = Date.now()): JobChip {
     case 'canceled':
       return { label: 'Canceled', tone: 'muted', detail: 'Download canceled' }
   }
+}
+
+/** A Spotify job's detail names the YouTube upload its audio comes from, once matched. */
+function withMatch(job: Job, detail: string): string {
+  return job.match === undefined ? detail : `${detail}\nAudio from YouTube: ${matchText(job.match)}`
 }

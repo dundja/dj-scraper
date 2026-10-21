@@ -73,6 +73,45 @@ export function entryArgs({ url, jsRuntime }: { url: string; jsRuntime: string }
   ]
 }
 
+/**
+ * A YouTube search for a Spotify track's upload (ADR-026): `ytsearch<count>:<query>` lists the
+ * first results flat (id, title, channel, duration), one page of YouTube's search. The query is
+ * built from Spotify's page (`searchQuery` in spotify/match.ts) and, like a URL, comes after `--`.
+ */
+export function searchArgs({
+  query,
+  count,
+  jsRuntime,
+  jobDir,
+}: {
+  query: string
+  count: number
+  jsRuntime: string
+  /**
+   * The attempt's job dir. `-J` writes nothing, but the argv must name the dir, so the startup
+   * sweep finds a search a crashed server left.
+   */
+  jobDir?: string
+}): string[] {
+  if (!Number.isSafeInteger(count) || count < 1) {
+    throw new RangeError(`count must be a positive integer, got ${count}`)
+  }
+  if (query.trim() === '') throw new RangeError('the query is empty')
+  if (jobDir !== undefined && !path.isAbsolute(jobDir)) {
+    throw new RangeError('jobDir must be an absolute path')
+  }
+  return [
+    ...baseArgs(jsRuntime),
+    '-J',
+    '--flat-playlist',
+    '--socket-timeout',
+    String(SOCKET_TIMEOUT_SEC),
+    ...(jobDir === undefined ? [] : ['-P', jobDir]),
+    '--',
+    `ytsearch${count}:${query}`,
+  ]
+}
+
 /** What a download line starts with; `engine/ytdlp-progress.ts` reads them back. */
 export const LINE_PREFIX = { dl: 'DL ', pp: 'PP ', start: 'START ', done: 'DONE ' } as const
 
@@ -163,6 +202,9 @@ export function downloadSelector(platform: Platform, format: DownloadFormat): st
       return m4a ? 'ba[ext=m4a]/ba[acodec!=opus]/ba' : 'ba[acodec!=opus]/ba'
     case 'other':
       return m4a ? 'ba[ext=m4a]/ba/b' : 'ba/b'
+    case 'spotify':
+      // A Spotify job downloads its YouTube match (ADR-026); Spotify's streams are DRM-protected.
+      throw new RangeError('Spotify streams are never downloaded')
   }
 }
 

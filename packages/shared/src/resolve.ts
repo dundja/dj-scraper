@@ -11,6 +11,12 @@ export const MAX_COLLECTION_ENTRIES = 5000
 /** Listing cap for a YouTube Mix/Radio, which never ends. */
 export const MAX_MIX_ENTRIES = 50
 
+/**
+ * The most rows Spotify's embed page lists (ADR-026). It never says how many more there are, so a
+ * Spotify list of this many rows comes back `truncated`.
+ */
+export const MAX_SPOTIFY_ENTRIES = 100
+
 /** The most rows one `POST /api/resolve/entries` may ask for: about a screenful. */
 export const MAX_ENTRIES_PER_REQUEST = 25
 

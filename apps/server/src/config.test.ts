@@ -214,6 +214,41 @@ describe('loadConfig', () => {
     expect(error.message).toContain('must be an absolute path')
   })
 
+  it.each([
+    ['http://127.0.0.1:4850', 'http://127.0.0.1:4850'],
+    ['http://127.0.0.1:4850/', 'http://127.0.0.1:4850'],
+    ['http://localhost:4850', 'http://localhost:4850'],
+    ['http://[::1]:4850', 'http://[::1]:4850'],
+    ['https://open.spotify.com', 'https://open.spotify.com'],
+  ])('reads Spotify from the origin DJS_SPOTIFY_ORIGIN %s', (value, origin) => {
+    expect(loadConfig({ DJS_SPOTIFY_ORIGIN: value }, [], { homedir }).spotifyOrigin).toBe(origin)
+  })
+
+  it('leaves the Spotify origin out when DJS_SPOTIFY_ORIGIN is empty or unset', () => {
+    expect(loadConfig({ DJS_SPOTIFY_ORIGIN: '' }, [], { homedir })).not.toHaveProperty(
+      'spotifyOrigin',
+    )
+    expect(loadConfig({}, [], { homedir })).not.toHaveProperty('spotifyOrigin')
+  })
+
+  it.each([
+    ['a path', 'http://127.0.0.1:4850/embed'],
+    ['a query', 'http://127.0.0.1:4850?x=1'],
+    ['a fragment', 'http://127.0.0.1:4850#top'],
+    ['credentials', 'http://dj:secret@127.0.0.1:4850'],
+    ['an upper-case scheme', 'HTTP://127.0.0.1:4850'],
+    ["the scheme's own port", 'http://127.0.0.1:80'],
+    ['an FTP URL', 'ftp://127.0.0.1:4850'],
+    ['a file URL', 'file:///tmp/spotify'],
+    ['a script URL', 'javascript:alert(1)'],
+    ['no scheme', '127.0.0.1:4850'],
+    ['no URL', 'spotify'],
+  ])('rejects a DJS_SPOTIFY_ORIGIN with %s', (_label, value) => {
+    const error = configError({ DJS_SPOTIFY_ORIGIN: value })
+    expect(error.message).toContain('DJS_SPOTIFY_ORIGIN')
+    expect(error.message).not.toContain('secret')
+  })
+
   it('reports every invalid variable at once', () => {
     const error = configError({
       PORT: 'abc',
@@ -221,8 +256,16 @@ describe('loadConfig', () => {
       FFMPEG_PATH: 'ffmpeg',
       DJS_WEB_DIST: 'dist',
       DJS_DATA_DIR: 'data',
+      DJS_SPOTIFY_ORIGIN: 'spotify',
     })
-    for (const name of ['PORT', 'YTDLP_PATH', 'FFMPEG_PATH', 'DJS_WEB_DIST', 'DJS_DATA_DIR']) {
+    for (const name of [
+      'PORT',
+      'YTDLP_PATH',
+      'FFMPEG_PATH',
+      'DJS_WEB_DIST',
+      'DJS_DATA_DIR',
+      'DJS_SPOTIFY_ORIGIN',
+    ]) {
       expect(error.message).toContain(name)
     }
   })

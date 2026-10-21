@@ -7,6 +7,8 @@ import {
   type JobOutput,
   type JobProgress,
   type Platform,
+  pacingPlatform,
+  type TrackMatch,
 } from '@dj-scraper/shared'
 import { errorHint } from '@/lib/error-text.ts'
 import { folderName, formatBytes, formatClock, formatEta, formatSpeed } from '@/lib/format.ts'
@@ -19,6 +21,7 @@ import { folderName, formatBytes, formatClock, formatEta, formatSpeed } from '@/
 const UNTITLED: Record<Platform, string> = {
   youtube: 'YouTube video',
   soundcloud: 'SoundCloud track',
+  spotify: 'Spotify track',
   other: 'Track',
 }
 
@@ -113,9 +116,15 @@ function pcmDepth(codec: string): string | undefined {
  * - "M4A · AAC 128 kbps · copied", "WebM · Opus 136 kbps · copied": the codec when the container
  *   doesn't name it;
  * - "AIFF · 16-bit · from AAC 128 kbps": a lossless file holds the source's quality, no more.
- * Only the fields that exist are shown, and "mono" when the file has one channel.
+ * Only the fields that exist are shown, and "mono" when the file has one channel. `site` names
+ * where the stream came from when the track's own platform doesn't: a Spotify track's audio is
+ * YouTube's ("copied from YouTube", "re-encoded from YouTube's Opus 136 kbps").
  */
-export function outputText(output: JobOutput, source: AudioSource | undefined): string {
+export function outputText(
+  output: JobOutput,
+  source: AudioSource | undefined,
+  site?: string,
+): string {
   const format = FORMAT_LABELS.get(output.ext) ?? output.ext.toUpperCase()
   const codec = codecLabel(output.codec)
   const depth = pcmDepth(output.codec)
@@ -130,13 +139,19 @@ export function outputText(output: JobOutput, source: AudioSource | undefined): 
   if (quality.length > 0) parts.push(quality.join(' '))
   if (depth !== undefined) parts.push(depth)
   if (output.channels === 1) parts.push('mono')
-  parts.push(originText(output.encoded, lossless, source))
+  parts.push(originText(output.encoded, lossless, source, site))
   return parts.join(' · ')
 }
 
-function originText(encoded: boolean, lossless: boolean, source: AudioSource | undefined): string {
-  if (!encoded) return 'copied'
-  const from = source === undefined ? undefined : sourceText(source)
+function originText(
+  encoded: boolean,
+  lossless: boolean,
+  source: AudioSource | undefined,
+  site: string | undefined,
+): string {
+  if (!encoded) return site === undefined ? 'copied' : `copied from ${site}`
+  const stream = source === undefined ? undefined : sourceText(source)
+  const from = site === undefined ? stream : stream === undefined ? site : `${site}'s ${stream}`
   if (lossless) return from === undefined ? 'converted' : `from ${from}`
   return from === undefined ? 're-encoded' : `re-encoded from ${from}`
 }
@@ -166,18 +181,44 @@ export function progressText(progress: JobProgress | undefined): string {
   return parts.filter((part) => part !== '').join(' · ')
 }
 
-const PLATFORM_NAMES: Record<Platform, string | undefined> = {
+/** The site a download comes from, by `pacingPlatform`: a Spotify track's is YouTube. */
+const SITE_NAMES: Record<Platform, string | undefined> = {
   youtube: 'YouTube',
   soundcloud: 'SoundCloud',
+  spotify: undefined,
   other: undefined,
 }
 
-/** "Waiting until 09:05 (YouTube)": the site makes yt-dlp wait before it serves the file. */
+/**
+ * "Waiting until 09:05 (YouTube)": the site makes yt-dlp wait before it serves the file. For a
+ * Spotify track that is YouTube, where its audio comes from.
+ */
 export function waitingText(iso: string, platform?: Platform): string {
   const clock = formatClock(iso)
   const text = clock === '' ? 'Waiting' : `Waiting until ${clock}`
-  const site = platform === undefined ? undefined : PLATFORM_NAMES[platform]
+  const site = platform === undefined ? undefined : SITE_NAMES[pacingPlatform(platform)]
   return site === undefined ? text : `${text} (${site})`
+}
+
+/** Where a job's audio came from when it isn't the track's own platform: a match's site. */
+export function matchSite(job: Job): string | undefined {
+  return job.match === undefined ? undefined : SITE_NAMES[job.match.platform]
+}
+
+/**
+ * A Spotify job between its start and its match: the attempt is searching YouTube for the track
+ * (ADR-026), which can take a few seconds before anything downloads.
+ */
+export function isMatching(job: Job): boolean {
+  return job.status === 'downloading' && job.track.platform === 'spotify' && job.match === undefined
+}
+
+/**
+ * The YouTube upload a Spotify job's audio comes from, in a line: "Never Gonna Give You Up
+ * (Official Video) · Rick Astley".
+ */
+export function matchText(match: TrackMatch): string {
+  return match.uploader === undefined ? match.title : `${match.title} · ${match.uploader}`
 }
 
 /** A downloading job's `waitingUntil`, whether or not it has passed: when to look again. */
@@ -248,7 +289,8 @@ export function statusLabel(job: Job, now: number): string {
     case 'downloading': {
       const until = activeWait(job, now)
       if (until !== undefined) return waitingText(until, job.track.platform)
-      return hasNumbers(job.progress) ? 'Downloading' : 'Starting…'
+      if (hasNumbers(job.progress)) return 'Downloading'
+      return isMatching(job) ? 'Finding it on YouTube…' : 'Starting…'
     }
     case 'processing':
       // "Original" converts nothing: the stream is only put into its file.
@@ -273,7 +315,7 @@ export function statusDetail(job: Job): string | undefined {
     case 'queued':
       return job.lastError?.message
     case 'done':
-      return outputText(job.output, job.source)
+      return outputText(job.output, job.source, matchSite(job))
     case 'skipped':
       return `Kept the file that was there: ${folderName(job.outputPath)}`
     case 'failed':

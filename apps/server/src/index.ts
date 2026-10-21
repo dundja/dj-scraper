@@ -99,6 +99,7 @@ const { resolver, enricher, queue, streams, locate } = createServices({
   dataDirReal,
   settings,
   assertContract: config.dev,
+  ...(config.spotifyOrigin === undefined ? {} : { spotifyOrigin: config.spotifyOrigin }),
 })
 
 let running: RunningServer

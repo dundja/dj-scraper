@@ -14,10 +14,14 @@ import {
   SC_SET_API_URL_ROW,
   SC_SET_FULL_ROWS,
   SC_SET_PREVIEW_ROW,
+  SPOTIFY_LIST_ROWS,
   scSet,
   scSetTracks,
   scTrack,
   selectableEntries,
+  spotifyBigPlaylist,
+  spotifyPlaylist,
+  spotifyTrack,
   track,
   trackResult,
   trackWith,
@@ -136,5 +140,34 @@ describe('resolve fixtures', () => {
     expect(classifyUrl(urls.playlist)).toMatchObject({ ok: true, guess: 'collection' })
     expect(classifyUrl(urls.scSet)).toMatchObject({ ok: true, guess: 'collection' })
     expect(classifyUrl(urls.drm)).toMatchObject({ ok: true, kind: 'out_of_scope' })
+    expect(classifyUrl(urls.spotifyTrack)).toMatchObject({ ok: true, kind: 'spotify_track' })
+    expect(classifyUrl(urls.spotifyAlbum)).toMatchObject({ ok: true, kind: 'spotify_album' })
+    expect(classifyUrl(urls.spotifyPlaylist)).toMatchObject({ ok: true, kind: 'spotify_playlist' })
+    expect(classifyUrl(urls.spotifyArtist)).toMatchObject({ ok: true, kind: 'spotify_other' })
+  })
+
+  it("has Spotify tracks and lists as the server reads them from Spotify's page", () => {
+    expect(spotifyTrack).toMatchObject({ platform: 'spotify', url: urls.spotifyTrack })
+    expect(spotifyTrack.source).toBeUndefined()
+    for (const list of [spotifyPlaylist, spotifyBigPlaylist]) {
+      expect(list.trackCount).toBeUndefined()
+      for (const entry of list.entries) {
+        expect(entry).toMatchObject({
+          platform: 'spotify',
+          partial: false,
+          availability: 'available',
+        })
+        expect(entry.source).toBeUndefined()
+        expect(entry.thumbnailUrl).toBeUndefined()
+        expect(classifyUrl(entry.url)).toMatchObject({
+          ok: true,
+          kind: 'spotify_track',
+          url: entry.url,
+        })
+      }
+    }
+    expect(spotifyPlaylist.truncated).toBe(false)
+    expect(spotifyBigPlaylist.entries).toHaveLength(SPOTIFY_LIST_ROWS)
+    expect(spotifyBigPlaylist.truncated).toBe(true)
   })
 })

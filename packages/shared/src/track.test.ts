@@ -192,7 +192,7 @@ describe('TrackSchema', () => {
   })
 
   it.each([
-    ['platform', 'spotify'],
+    ['platform', 'tidal'],
     ['availability', 'private'],
     ['unavailableReason', 'This video is private'],
     ['unavailableReason', 'network'],

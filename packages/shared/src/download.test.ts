@@ -53,6 +53,8 @@ import {
   type RetryJobsRequest,
   RetryJobsRequestSchema,
   TERMINAL_JOB_STATUSES,
+  type TrackMatch,
+  TrackMatchSchema,
   type TrackRef,
   TrackRefSchema,
   templatePlaceholders,
@@ -247,6 +249,17 @@ const fullRef = {
   unavailableReason: 'geo_blocked',
 } satisfies TrackRef
 
+/** A Spotify playlist row as the web sends it: complete, with Spotify's names (ADR-026). */
+const spotifyRef = {
+  platform: 'spotify',
+  id: '4uLU6hMCjMI75M1A2tKUQC',
+  url: 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
+  title: 'Never Gonna Give You Up',
+  artist: 'Rick Astley',
+  durationSec: 213.573,
+  availability: 'available',
+} satisfies TrackRef
+
 const trackRefRequiredFields = ['platform', 'id', 'url'] as const
 const trackRefOptionalFields = [
   'title',
@@ -263,6 +276,7 @@ const trackRefUrlFields = ['url', 'thumbnailUrl'] as const
 describe('TrackRefSchema', () => {
   it.each([
     ['a full YouTube track', youtubeRef],
+    ['a Spotify track', spotifyRef],
     ['a bare SoundCloud set row with an API URL', soundcloudRowRef],
     ['a SoundCloud preview-only track', previewRef],
     ['a ref with every field', fullRef],
@@ -347,7 +361,7 @@ describe('TrackRefSchema', () => {
     ['an empty id', 'id', ''],
     ['a numeric id', 'id', 1234567893],
     ['an id longer than MAX_ID_LENGTH', 'id', 'a'.repeat(MAX_ID_LENGTH + 1)],
-    ['an out-of-scope platform', 'platform', 'spotify'],
+    ['an out-of-scope platform', 'platform', 'tidal'],
     ['an error code as the availability', 'availability', 'private'],
     ['a code that does not explain unavailability', 'unavailableReason', 'network'],
     ['a negative duration', 'durationSec', -1],
@@ -390,6 +404,69 @@ const playlistOptions = {
   sourceUrlComment: false,
   subfolder: 'Summer 2026',
 } satisfies DownloadOptions
+
+/** A Spotify track's match on YouTube, as a Spotify job's attempt reports it (ADR-026). */
+const trackMatch = {
+  platform: 'youtube',
+  id: 'dQw4w9WgXcQ',
+  url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  title: 'Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)',
+  uploader: 'Rick Astley',
+  durationSec: 214,
+} satisfies TrackMatch
+
+describe('TrackMatchSchema', () => {
+  it.each([
+    ['a full match', trackMatch],
+    ['a match without channel or length', without(without(trackMatch, 'uploader'), 'durationSec')],
+    ['a match of a zero-length video', { ...trackMatch, durationSec: 0 }],
+    ['a match with a fractional length', { ...trackMatch, durationSec: 213.5 }],
+  ])('parses %s unchanged', (_label, match) => {
+    expect(TrackMatchSchema.parse(match)).toStrictEqual(match)
+  })
+
+  it.each(['platform', 'id', 'url', 'title'] as const)('requires %s', (field) => {
+    expect(issuePaths(TrackMatchSchema, without(trackMatch, field))).toEqual([[field]])
+  })
+
+  it.each(['uploader', 'durationSec'] as const)(
+    'rejects null for %s (omit it instead)',
+    (field) => {
+      expect(issuePaths(TrackMatchSchema, { ...trackMatch, [field]: null })).toEqual([[field]])
+    },
+  )
+
+  it.each(['spotify', 'soundcloud', 'other', 'vimeo'])(
+    'rejects a match on %s: Spotify tracks are only ever matched on YouTube',
+    (platform) => {
+      expect(issuePaths(TrackMatchSchema, { ...trackMatch, platform })).toEqual([['platform']])
+    },
+  )
+
+  it.each([
+    ['an empty id', 'id', ''],
+    ['an id longer than MAX_ID_LENGTH', 'id', 'a'.repeat(MAX_ID_LENGTH + 1)],
+    ['an empty title', 'title', ''],
+    ['a title longer than MAX_TRACK_TEXT_LENGTH', 'title', 'x'.repeat(MAX_TRACK_TEXT_LENGTH + 1)],
+    ['an empty uploader', 'uploader', ''],
+    ['a negative length', 'durationSec', -1],
+    ['a length as text', 'durationSec', '214'],
+  ] as const)('rejects %s', (_label, field, value) => {
+    expect(issuePaths(TrackMatchSchema, { ...trackMatch, [field]: value })).toEqual([[field]])
+  })
+
+  it.each(nonHttpUrls)('rejects the page %j', (url) => {
+    expect(issuePaths(TrackMatchSchema, { ...trackMatch, url })).toEqual([['url']])
+  })
+
+  it('drops fields it does not know, such as the search rank or score', () => {
+    expect(TrackMatchSchema.parse({ ...trackMatch, score: 122, rank: 1 })).toStrictEqual(trackMatch)
+  })
+
+  it('types the platform as YouTube only', () => {
+    expectTypeOf<TrackMatch['platform']>().toEqualTypeOf<'youtube'>()
+  })
+})
 
 describe('DownloadOptionsSchema', () => {
   it.each([
@@ -619,6 +696,7 @@ const retryableByCode: Record<ErrorCode, boolean> = {
   bot_check: true,
   rate_limited: true,
   preview_only: false,
+  no_match: false,
   network: true,
   engine_missing: true,
   postprocess_failed: true,
@@ -832,8 +910,32 @@ describe('JobSchema', () => {
       'a downloading job before its first progress line',
       without(jobsByStatus.downloading, 'progress'),
     ],
+    [
+      'a Spotify job downloading its YouTube match',
+      { ...jobsByStatus.downloading, track: spotifyRef, match: trackMatch },
+    ],
+    [
+      'a done Spotify job with its match',
+      { ...jobsByStatus.done, track: spotifyRef, match: trackMatch },
+    ],
+    [
+      'a Spotify job that found no match',
+      {
+        ...jobsByStatus.failed,
+        track: spotifyRef,
+        error: { code: 'no_match', message: 'No YouTube upload matches this Spotify track.' },
+      },
+    ],
   ])('parses %s unchanged', (_label, job) => {
     expect(JobSchema.parse(job)).toStrictEqual(job)
+  })
+
+  it.each([
+    ['a match on Spotify itself', { ...trackMatch, platform: 'spotify' }, ['match', 'platform']],
+    ['a match without a page', without(trackMatch, 'url'), ['match', 'url']],
+    ['a match that is a URL', trackMatch.url, ['match']],
+  ])('rejects a job with %s', (_label, match, at) => {
+    expect(issuePaths(JobSchema, { ...jobsByStatus.downloading, match })).toEqual([at])
   })
 
   it.each([
@@ -939,6 +1041,7 @@ describe('JobSchema', () => {
       | 'createdAt'
       | 'startedAt'
       | 'source'
+      | 'match'
       | 'cancelRequested'
       | 'status'
     expectTypeOf<keyof JobIn<'queued'>>().toEqualTypeOf<BaseKey | 'lastError'>()
@@ -953,7 +1056,7 @@ describe('JobSchema', () => {
   })
 
   it('makes the state fields of finished jobs required and the live ones optional', () => {
-    type BaseOptional = 'startedAt' | 'source' | 'cancelRequested'
+    type BaseOptional = 'startedAt' | 'source' | 'match' | 'cancelRequested'
     expectTypeOf<OptionalKeys<JobIn<'queued'>>>().toEqualTypeOf<BaseOptional | 'lastError'>()
     expectTypeOf<OptionalKeys<JobIn<'downloading'>>>().toEqualTypeOf<BaseOptional | 'progress'>()
     expectTypeOf<OptionalKeys<JobIn<'done'>>>().toEqualTypeOf<BaseOptional>()
@@ -1124,7 +1227,7 @@ describe('QueueStateSchema', () => {
   })
 
   it.each([
-    ['an out-of-scope platform', 'platform', 'spotify'],
+    ['an out-of-scope platform', 'platform', 'tidal'],
     ['a pause code that is not a platform limit', 'pauseCode', 'network'],
     ['a pausedUntil with an offset', 'pausedUntil', '2026-10-02T10:10:00+02:00'],
     ['a nextStartAt in epoch milliseconds', 'nextStartAt', 1_790_841_605_000],

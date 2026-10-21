@@ -10,6 +10,7 @@ import { killActiveGroups } from '../src/engine/run.ts'
 import { createEnricher, type Pacing } from '../src/resolve/enricher.ts'
 import { createResolver } from '../src/resolve/resolver.ts'
 import { type RunningServer, startServer } from '../src/server.ts'
+import { createSpotifyClient } from '../src/spotify/client.ts'
 import { UNUSED_DOWNLOAD_DEPS } from '../src/stubs.ts'
 import {
   type FakeYtdlp,
@@ -37,6 +38,7 @@ export const SEQUENTIAL: Pacing = {
   soundcloud: { concurrency: 1, minIntervalMs: 0 },
   youtube: { concurrency: 1, minIntervalMs: 0 },
   other: { concurrency: 1, minIntervalMs: 0 },
+  spotify: { concurrency: 1, minIntervalMs: 0 },
 }
 
 export type ResolveApp = {
@@ -58,6 +60,8 @@ let count = 0
 /**
  * Starts the app on a free port with a fake yt-dlp in `root/app-<n>/`. `engine` replaces the fake
  * (e.g. a YTDLP_PATH that doesn't exist); `manifestRules` come before the recorded fixtures' rules.
+ * `spotifyOrigin` (a `startSpotifyFixtures` origin) gives the resolver a Spotify client reading
+ * from it; without one, Spotify links are refused, so no test ever reaches open.spotify.com.
  */
 export async function startResolveApp(
   root: string,
@@ -66,6 +70,7 @@ export async function startResolveApp(
     env?: FakeYtdlpKnobs
     engine?: EngineEnv
     pacing?: Pacing
+    spotifyOrigin?: string
   } = {},
 ): Promise<ResolveApp> {
   const fake = await writeFakeYtdlp(`${root}/app-${++count}`, {
@@ -78,7 +83,13 @@ export async function startResolveApp(
     logs.push(data.map(String).join(' '))
   }
   const log = { info: write, warn: write, error: write }
-  const resolver = createResolver({ engine, log })
+  const resolver = createResolver({
+    engine,
+    log,
+    ...(options.spotifyOrigin === undefined
+      ? {}
+      : { spotify: createSpotifyClient({ origin: options.spotifyOrigin }) }),
+  })
   const enricher = createEnricher({ engine, log, pacing: options.pacing ?? SEQUENTIAL })
   const stubHealth = { current: async () => health, recheck: async () => health }
   const server = await startServer(0, (port) =>

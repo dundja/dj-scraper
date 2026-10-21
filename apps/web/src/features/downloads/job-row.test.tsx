@@ -9,7 +9,15 @@ import { TooltipProvider } from '@/components/ui/tooltip.tsx'
 import { startCommand } from '@/features/engine/start-command.ts'
 import { downloadsQueryKey } from '@/lib/events.ts'
 import { formatClock } from '@/lib/format.ts'
-import { doneJob, downloadingJob, failedJob, jobWith, queuedJob } from '@/test/downloads.ts'
+import {
+  doneJob,
+  downloadingJob,
+  failedJob,
+  jobWith,
+  queuedJob,
+  spotifyJob,
+  spotifyMatch,
+} from '@/test/downloads.ts'
 import { fakeApi, json, networkError, noAnswer } from '@/test/fake-api.ts'
 import { renderWithQueryClient } from '@/test/render.tsx'
 import { JOB_ROW_HEIGHT } from './job-layout.ts'
@@ -102,6 +110,26 @@ describe('JobRow', () => {
 
     expect(screen.queryByRole('progressbar')).toBeNull()
     expect(statusLine().textContent).toBe('Done: MP3 · 320 kbps · re-encoded from Opus 136 kbps')
+  })
+
+  it("names a Spotify job's YouTube match on hover and to screen readers, once it has one", () => {
+    const { track: _youtube, ...done } = jobsByStatus.done
+    const { update } = renderRow(
+      spotifyJob({ id: done.id, status: 'downloading', startedAt: done.startedAt }),
+    )
+    const names = () => row().querySelector('p')
+    expect(names()?.getAttribute('title')).toBe('Never Gonna Give You Up · Rick Astley')
+    expect(statusLine().textContent).toBe('Finding it on YouTube…')
+
+    update(spotifyJob({ ...done, match: spotifyMatch }))
+    const match =
+      'Audio from YouTube: Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster) · Rick Astley'
+    expect(names()?.getAttribute('title')).toBe(`Never Gonna Give You Up · Rick Astley\n${match}`)
+    expect(names()?.textContent).toBe(`Never Gonna Give You Up · Rick Astley. ${match}`)
+    // The status line says the stream was YouTube's, never Spotify's.
+    expect(statusLine().textContent).toBe(
+      "Done: MP3 · 320 kbps · re-encoded from YouTube's Opus 136 kbps",
+    )
   })
 
   it("shows a failure's message in red, and a requeued job's reason in amber", () => {

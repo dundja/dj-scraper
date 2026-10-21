@@ -19,8 +19,14 @@ export type UrlRejection = 'empty' | 'too_long' | 'not_a_url' | 'not_http' | 'cr
  * - `youtube_channel`: `/@handle`, `/channel/UC…`, `/c/…`, `/user/…`, with or without a tab.
  * - `soundcloud_user`: a user page or one of its tabs other than likes.
  * - `soundcloud_short`: `on.soundcloud.com/…`, unknown until yt-dlp follows it.
- * - `out_of_scope`: DRM streaming services (Spotify, Apple Music, Amazon Music, Tidal, Deezer,
- *   Beatport). The server refuses them with `unsupported_url` without starting yt-dlp.
+ * - `spotify_track`, `spotify_album`, `spotify_playlist`: `open.spotify.com/<type>/<id>`, also with
+ *   an `/intl-<lang>/` prefix or as the embed player's `/embed/<type>/<id>`. The URL is normalized
+ *   to `https://open.spotify.com/<type>/<id>` (no `?si=` share token). Spotify is a track list
+ *   only: the server reads the names from Spotify and matches the audio on YouTube (ADR-026).
+ * - `spotify_other`: any other Spotify page (artist, podcast, user, a `spotify.link` short link).
+ *   The server refuses it with `unsupported_url`.
+ * - `out_of_scope`: DRM streaming services (Apple Music, Amazon Music, Tidal, Deezer, Beatport).
+ *   The server refuses them with `unsupported_url` without starting yt-dlp.
  * - `other`: any other http(s) URL; yt-dlp decides what it is.
  */
 export type UrlKind =
@@ -34,6 +40,10 @@ export type UrlKind =
   | 'soundcloud_user'
   | 'soundcloud_likes'
   | 'soundcloud_short'
+  | 'spotify_track'
+  | 'spotify_album'
+  | 'spotify_playlist'
+  | 'spotify_other'
   | 'out_of_scope'
   | 'other'
 
@@ -55,6 +65,8 @@ export type ClassifiedUrl =
       videoId?: string
       /** YouTube list id (`list=`) or YouTube Music album browse id (`MPREb_…`). */
       listId?: string
+      /** Spotify's base62 id of the track, album or playlist. */
+      spotifyId?: string
       /**
        * A YouTube embed player URL for a list (`/embed/videoseries?list=…`): yt-dlp doesn't know it
        * on every YouTube host, so resolve the list's `/playlist?list=…` URL instead. Present only
@@ -92,6 +104,10 @@ const GUESS_BY_KIND: Record<UrlKind, UrlGuess> = {
   soundcloud_user: 'collection',
   soundcloud_likes: 'collection',
   soundcloud_short: 'unknown',
+  spotify_track: 'track',
+  spotify_album: 'collection',
+  spotify_playlist: 'collection',
+  spotify_other: 'unknown',
   out_of_scope: 'unknown',
   other: 'unknown',
 }
@@ -99,10 +115,11 @@ const GUESS_BY_KIND: Record<UrlKind, UrlGuess> = {
 /** Scheme-less text that starts with a dotted host name (`youtu.be/…`, `soundcloud.com/…`). */
 const SCHEMELESS_HOST = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i
 
-/** Services whose streams are DRM-protected (non-negotiable 7); subdomains count too. */
+/**
+ * Services whose streams are DRM-protected (non-negotiable 7); subdomains count too. Spotify is
+ * one too, but its links are read as track lists (`SPOTIFY_DOMAINS`), never downloaded from.
+ */
 const DRM_DOMAINS = [
-  'spotify.com',
-  'spotify.link',
   'music.apple.com',
   'itunes.apple.com',
   'tidal.com',
@@ -116,6 +133,20 @@ const DRM_DOMAINS = [
  * count.
  */
 const AMAZON_MUSIC_HOST = /(?:^|\.)music\.amazon\.(?:[a-z]{2,3}|com?\.[a-z]{2})$/
+
+/** Spotify's sites, subdomains included; only `open.spotify.com` links name a track or a list. */
+const SPOTIFY_DOMAINS = ['spotify.com', 'spotify.link']
+const SPOTIFY_OPEN_HOST = 'open.spotify.com'
+/** Spotify ids are 22 base62 characters. */
+const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/
+/** The localized prefix of a shared link, e.g. `/intl-de/track/…`. */
+const SPOTIFY_INTL = /^intl-[a-z]{2}(?:-[a-z]{2})?$/i
+/** The path's type segment → its shape. */
+const SPOTIFY_SHAPES = new Map<string, UrlShape>([
+  ['track', { kind: 'spotify_track' }],
+  ['album', { kind: 'spotify_album', collectionKind: 'album' }],
+  ['playlist', { kind: 'spotify_playlist', collectionKind: 'playlist' }],
+])
 
 const YOUTUBE_HOSTS = new Set([
   'youtube.com',
@@ -246,11 +277,30 @@ export function classifyUrl(input: string): ClassifiedUrl {
   if (url.href.length > MAX_URL_LENGTH) return { ok: false, reason: 'too_long' }
 
   const { platform, shape } = describeUrl(url)
-  return { ok: true, url: url.href, platform, guess: GUESS_BY_KIND[shape.kind], ...shape }
+  const href = shape.spotifyId === undefined ? url.href : spotifyUrl(shape.kind, shape.spotifyId)
+  return { ok: true, url: href, platform, guess: GUESS_BY_KIND[shape.kind], ...shape }
 }
 
+/**
+ * The canonical page of a Spotify track, album or playlist: `https://open.spotify.com/<type>/<id>`.
+ * Other kinds have none.
+ */
+export function spotifyUrl(kind: UrlKind, id: string): string {
+  for (const [type, shape] of SPOTIFY_SHAPES) {
+    if (shape.kind === kind) return `https://${SPOTIFY_OPEN_HOST}/${type}/${id}`
+  }
+  throw new RangeError(`${kind} is not a Spotify track, album or playlist`)
+}
+
+/**
+ * Why a `spotify_other` link is refused (422 `unsupported_url`), for the server's answer and the
+ * web's instant refusal alike.
+ */
+export const SPOTIFY_OTHER_MESSAGE =
+  'Only Spotify track, album and playlist links work here (open.spotify.com/…). For a spotify.link short link, open it and copy the full link.'
+
 const REJECTION_MESSAGES: Record<UrlRejection, string> = {
-  empty: 'Paste a YouTube or SoundCloud link.',
+  empty: 'Paste a YouTube, SoundCloud or Spotify link.',
   too_long: 'That link is too long.',
   not_a_url: "That doesn't look like a link.",
   not_http: 'Only http and https links work here.',
@@ -264,6 +314,9 @@ export function urlRejectionMessage(reason: UrlRejection): string {
 
 function describeUrl(url: URL): { platform: Platform; shape: UrlShape } {
   const host = url.hostname
+  if (SPOTIFY_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`))) {
+    return { platform: 'spotify', shape: spotifyShape(url) }
+  }
   if (isDrmHost(host)) return { platform: 'other', shape: { kind: 'out_of_scope' } }
   // An explicit non-default port means it isn't the real site, and yt-dlp wouldn't match it either.
   if (url.port === '') {
@@ -284,6 +337,24 @@ function isDrmHost(host: string): boolean {
     DRM_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`)) ||
     AMAZON_MUSIC_HOST.test(host)
   )
+}
+
+/**
+ * `open.spotify.com/[intl-<lang>/][embed/]<track|album|playlist>/<id>`; anything else on Spotify
+ * (another host, a port, an artist or podcast page) is `spotify_other`.
+ */
+function spotifyShape(url: URL): UrlShape {
+  const other: UrlShape = { kind: 'spotify_other' }
+  if (url.hostname !== SPOTIFY_OPEN_HOST || url.port !== '') return other
+  const segments = pathSegments(url)
+  if (segments[0] !== undefined && SPOTIFY_INTL.test(segments[0])) segments.shift()
+  if (segments[0] === 'embed') segments.shift()
+  const [type, id] = segments
+  const shape = type === undefined ? undefined : SPOTIFY_SHAPES.get(type)
+  if (segments.length !== 2 || shape === undefined || id === undefined || !SPOTIFY_ID.test(id)) {
+    return other
+  }
+  return { ...shape, spotifyId: id }
 }
 
 /** Non-empty path segments, so trailing and doubled slashes don't matter. */

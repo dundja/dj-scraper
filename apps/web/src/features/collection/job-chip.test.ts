@@ -1,6 +1,7 @@
 import { type Job, JobSchema } from '@dj-scraper/shared'
 import { jobsByStatus } from '@dj-scraper/shared/test-helpers'
 import { describe, expect, it } from 'vitest'
+import { spotifyJob, spotifyMatch } from '@/test/downloads.ts'
 import { jobChip } from './job-chip.ts'
 
 const job = (status: keyof typeof jobsByStatus): Job => JobSchema.parse(jobsByStatus[status])
@@ -51,5 +52,26 @@ describe('jobChip', () => {
     expect(jobChip(canceling, now).label).toBe('Canceling')
     const processing = JobSchema.parse({ ...jobsByStatus.processing, cancelRequested: true })
     expect(jobChip(processing, now).label).toBe('Canceling')
+  })
+
+  it('says a Spotify track is being searched on YouTube, then names the upload it matched', () => {
+    const { track: _youtube, progress: _progress, ...started } = jobsByStatus.downloading
+    expect(jobChip(spotifyJob(started), now)).toEqual({
+      label: 'Searching',
+      tone: 'active',
+      detail: 'Finding it on YouTube…',
+    })
+    const matched = `Audio from YouTube: ${spotifyMatch.title} · Rick Astley`
+    expect(jobChip(spotifyJob({ ...started, match: spotifyMatch }), now)).toEqual({
+      label: 'Starting',
+      tone: 'active',
+      detail: `Starting the download…\n${matched}`,
+    })
+    const { track: _done, ...done } = jobsByStatus.done
+    expect(jobChip(spotifyJob({ ...done, match: spotifyMatch }), now)).toEqual({
+      label: 'Done',
+      tone: 'success',
+      detail: `Downloaded\n${matched}`,
+    })
   })
 })

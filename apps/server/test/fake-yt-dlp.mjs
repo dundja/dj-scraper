@@ -36,6 +36,10 @@
 //   A download call only matches download rules and extraction errors (a rule without stdout and
 //   with a non-zero exit: yt-dlp fails the same way before it downloads). Other calls never match
 //   download rules, so a URL can have a -J rule and a download rule.
+// - A YouTube search (`ytsearch<N>:<query>` after `--`, what spotify/matcher.ts runs through
+//   searchArgs) must be a `-J --flat-playlist` lookup with no playlist flag and no -I (an attempt's
+//   search may name its job dir with an absolute -P), and must have a rule: there is no
+//   "Unsupported URL" answer for a search, so a missing rule exits 2.
 // - -I (or --playlist-items) "N", "A:B", "A:" or ":B", comma-separated, keeps the playlist entries
 //   whose playlist index is in range (indices come from the fixture's requested_entries when it has
 //   them, so a recorded window keeps its real indices). It applies at every level, like yt-dlp.
@@ -315,6 +319,27 @@ function renderStdout(rule, options) {
   return `${asciiJson(info)}\n`
 }
 
+/** `ytsearch<N>:<query>`: yt-dlp's YouTube search, N results (searchArgs builds `ytsearch10:`). */
+const SEARCH = /^ytsearch(\d*):/
+const STRICT_SEARCH = /^ytsearch[1-9]\d*:\S/
+
+/** A search is one flat -J page, as searchArgs builds it: anything else is drift. */
+function checkSearchArgv(options, url) {
+  if (!STRICT_SEARCH.test(url))
+    usage(`a search needs ytsearch<N>:<query>, got ${JSON.stringify(url)}`)
+  for (const flag of ['-J', '--flat-playlist']) {
+    if (!options.includes(flag)) usage(`a search needs ${flag}: it lists one flat page of results`)
+  }
+  for (const flag of ['--yes-playlist', '--no-playlist', '-I', '--playlist-items']) {
+    if (options.includes(flag)) usage(`a search never takes ${flag}`)
+  }
+  // An attempt's search names its job dir (the startup sweep finds it by that); -J writes nothing.
+  const dir = optionValue(options, '-P')
+  if (options.includes('-P') && (dir === undefined || !path.isAbsolute(dir))) {
+    usage('a search names its job dir with an absolute -P')
+  }
+}
+
 /** A download: no -J, and both a -P dir and the DONE print, which only a download prints. */
 function isDownloadCall(options) {
   if (options.includes('-J') || options.includes('--dump-single-json')) return false
@@ -528,6 +553,9 @@ async function main() {
     usage('FAKE_YTDLP_WAIT_MS must be a whole number of ms')
   }
 
+  const search = SEARCH.exec(url)
+  if (search !== null) checkSearchArgv(options, url)
+
   const last = lastIndexOfAny(options, ['--yes-playlist', '--no-playlist'])
   const playlist = last !== -1 && options[last] === '--no-playlist' ? 'no' : 'yes'
   const download = isDownloadCall(options)
@@ -549,6 +577,9 @@ async function main() {
       candidate.args.every((tokens) => hasRun(options, tokens)),
   )
 
+  if (rule === undefined && search !== null) {
+    usage(`no rule for the search ${JSON.stringify(url)}: give the test one`)
+  }
   const answer =
     rule === undefined
       ? { stdout: '', stderr: `ERROR: Unsupported URL: ${url}\n`, exit: 1 }

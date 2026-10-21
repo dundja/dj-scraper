@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { mkdir, mkdtemp, readdir, realpath, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
@@ -7,24 +7,33 @@ import {
   type DownloadOptions,
   type ErrorInfo,
   JobProgressSchema,
+  type TrackMatch,
+  TrackMatchSchema,
   type TrackRef,
+  type ValidUrl,
 } from '@dj-scraper/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type RunOptions, type RunResult, type run, SpawnError } from '../engine/run.ts'
 import { DONE_PRINT } from '../engine/ytdlp-args.ts'
 import { checkUrl } from '../resolve/input.ts'
+import { CANCELED } from '../resolve/ytdlp-call.ts'
+import type { SpotifyTrack } from '../spotify/embed.ts'
+import { NO_MATCH, type SpotifyDownloads } from '../spotify/matcher.ts'
 import {
   type AttemptDeps,
   createRunAttempt,
   KILL_GRACE_MS,
   LIST_URL,
+  MAX_MATCH_TRIES,
   NO_FILE,
   nameBytesLeft,
+  withSpotifyNames,
 } from './attempt.ts'
 import {
   type AttemptOutcome,
   type AttemptRequest,
   type AttemptUpdate,
+  type DoneInfo,
   type EngineBins,
   type Finalize,
   type FinalizeInput,
@@ -228,6 +237,7 @@ function setup(
       // Everything an attempt reports is on the contract.
       if (update.progress) JobProgressSchema.parse(update.progress)
       if (update.source) AudioSourceSchema.parse(update.source)
+      if (update.match) TrackMatchSchema.parse(update.match)
       updates.push(update)
       onUpdate?.(update)
     })
@@ -576,8 +586,12 @@ describe('runAttempt: failures', () => {
     expect(codeOf(await start({ ...base, ref: { ...base.ref, url: 'notaurl' } }))).toBe(
       'invalid_url',
     )
-    const drm = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC'
+    const drm = 'https://music.apple.com/us/album/x/1440857781?i=1440857786'
     expect(codeOf(await start({ ...base, ref: { ...base.ref, url: drm } }))).toBe('unsupported_url')
+    const spotifyArtist = 'https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt'
+    expect(codeOf(await start({ ...base, ref: { ...base.ref, url: spotifyArtist } }))).toBe(
+      'unsupported_url',
+    )
     expect(runFn).not.toHaveBeenCalled()
   })
 
@@ -825,5 +839,523 @@ describe('runAttempt: cleanup', () => {
       .flat()
       .join('\n')
     expect(logged).not.toMatch(/https?:|s-8Pjrp|zoo|\/Users|\/private|\/var/)
+  })
+})
+
+describe('runAttempt: a Spotify track (ADR-026)', () => {
+  const SPOTIFY_URL = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC'
+  const COVER_URL =
+    'https://image-cdn-fa.spotifycdn.com/image/ab67616d0000b273255e131abc1410833be95673'
+  const COVER = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0xff, 0xd9])
+  const YT_THUMBNAIL = 'https://i.ytimg.com/vi_webp/jNQXAC9IVRw/hqdefault.webp'
+  const TRACK: SpotifyTrack = {
+    id: '4uLU6hMCjMI75M1A2tKUQC',
+    title: 'Never Gonna Give You Up',
+    artists: ['Rick Astley'],
+    durationSec: 213.573,
+    releaseYear: 1987,
+    coverUrl: COVER_URL,
+  }
+  /** The recorded download (youtube-ba, jNQXAC9IVRw) stands in for the matched video's. */
+  const MATCH: TrackMatch = {
+    platform: 'youtube',
+    id: 'jNQXAC9IVRw',
+    url: YT_URL,
+    title: 'Me at the zoo',
+    uploader: 'jawed',
+    durationSec: 19,
+  }
+
+  function youtubeInput() {
+    const checked = checkUrl(YT_URL)
+    if (!checked.ok) throw new Error('refused')
+    return checked.input
+  }
+
+  type Found = Awaited<ReturnType<SpotifyDownloads['match']>>
+  const matched = (track: SpotifyTrack = TRACK): Found => ({
+    ok: true,
+    matched: { track, match: MATCH, input: youtubeInput() },
+  })
+
+  function fakeSpotify({
+    found = matched(),
+    cover = async () => COVER,
+  }: {
+    found?: Found | ((signal: AbortSignal) => Promise<Found>)
+    cover?: SpotifyDownloads['cover']
+  } = {}) {
+    return {
+      match: vi.fn<SpotifyDownloads['match']>(async (_input, _ytdlp, signal) =>
+        typeof found === 'function' ? found(signal) : found,
+      ),
+      cover: vi.fn<SpotifyDownloads['cover']>(cover),
+    }
+  }
+
+  /** finalize as the real one sees it: the DONE info, and the cover file in the job dir. */
+  function finalizeSpy() {
+    const seen: { done?: DoneInfo; cover?: Uint8Array; coverMode?: number; input?: FinalizeInput } =
+      {}
+    const finalize = async (input: FinalizeInput): Promise<FinalizeResult> => {
+      seen.done = input.done
+      seen.input = input
+      if (input.done.thumbnailPath?.endsWith('spotify-cover.jpg')) {
+        seen.cover = new Uint8Array(await readFile(input.done.thumbnailPath))
+        seen.coverMode = (await stat(input.done.thumbnailPath)).mode & 0o777
+      }
+      return {
+        file: path.join(input.jobDir, 'finalize', 'final.mp3'),
+        name: 'Rick Astley - Never Gonna Give You Up.mp3',
+        output: OUTPUT,
+        track: {
+          ...(input.done.title === undefined ? {} : { title: input.done.title }),
+          ...(input.done.artist === undefined ? {} : { artist: input.done.artist }),
+          ...(input.done.webpageUrl === undefined ? {} : { url: input.done.webpageUrl }),
+          ...(input.done.thumbnailUrl === undefined
+            ? {}
+            : { thumbnailUrl: input.done.thumbnailUrl }),
+        },
+      }
+    }
+    return { finalize, seen }
+  }
+
+  it('matches the track first, reports the match, then downloads only the matched video', async () => {
+    const spotify = fakeSpotify()
+    const { finalize, seen } = finalizeSpy()
+    const { start, calls, runFn, updates } = setup(
+      { lines: recorded('youtube-ba') },
+      { spotify, finalize },
+    )
+    let ranBeforeMatch = true
+    const outcome = await start(request(SPOTIFY_URL), (update) => {
+      if (update.match !== undefined) ranBeforeMatch = runFn.mock.calls.length > 0
+    })
+
+    expect(spotify.match).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ platform: 'spotify', kind: 'spotify_track', url: SPOTIFY_URL }),
+      BINS.ytdlp,
+      expect.any(AbortSignal),
+      JOB,
+      // The search names the job dir, so the startup sweep finds it.
+      jobDir(),
+    )
+    // The match is the first thing the job hears, before yt-dlp starts.
+    expect(updates[0]).toEqual({ match: MATCH })
+    expect(updates.filter((update) => update.match !== undefined)).toHaveLength(1)
+    expect(ranBeforeMatch).toBe(false)
+
+    // yt-dlp gets the YouTube video, as a YouTube download, and never the Spotify link.
+    expect(calls).toHaveLength(1)
+    const argv = calls[0]?.argv ?? []
+    expect(argv.slice(-2)).toEqual(['--', YT_URL])
+    expect(argv.join('\n')).not.toContain('spotify')
+    expect(argv[argv.indexOf('-f') + 1]).toBe('ba')
+    expect(argv).toContain('--write-thumbnail')
+    expect(seen.input).toMatchObject({ platform: 'youtube', input: youtubeInput() })
+
+    expect(outcome).toEqual({
+      kind: 'done',
+      outputPath: '/Users/dj/Music/DJ Scraper/Rick Astley - Never Gonna Give You Up.mp3',
+      output: OUTPUT,
+      // The job keeps its Spotify link (no url here) and shows Spotify's cover.
+      track: { title: 'Never Gonna Give You Up', artist: 'Rick Astley', thumbnailUrl: COVER_URL },
+      source: { codec: 'opus', bitrateKbps: 106.064 },
+    })
+  })
+
+  it("tags with Spotify's names, year and cover, and keeps YouTube's page for the comment", async () => {
+    const spotify = fakeSpotify()
+    const { finalize, seen } = finalizeSpy()
+    const { start } = setup({ lines: recorded('youtube-ba') }, { spotify, finalize })
+    await start(request(SPOTIFY_URL))
+
+    expect(spotify.cover).toHaveBeenCalledExactlyOnceWith(COVER_URL, expect.any(AbortSignal))
+    const coverPath = path.join(jobDir(), 'spotify-cover.jpg')
+    expect(seen.done).toEqual({
+      id: 'jNQXAC9IVRw',
+      filepath: path.join(jobDir(), 'jNQXAC9IVRw.webm'),
+      ext: 'webm',
+      formatId: '251',
+      acodec: 'opus',
+      abrKbps: 106.064,
+      asrHz: 48000,
+      durationSec: 19,
+      title: 'Never Gonna Give You Up',
+      track: 'Never Gonna Give You Up',
+      artist: 'Rick Astley',
+      artists: ['Rick Astley'],
+      releaseYear: 1987,
+      uploader: 'jawed',
+      channel: 'jawed',
+      webpageUrl: YT_URL,
+      extractorKey: 'Youtube',
+      availability: 'public',
+      thumbnailPath: coverPath,
+      thumbnailUrl: COVER_URL,
+    })
+    // The cover's bytes as Spotify sent them, private to the job dir.
+    expect(seen.cover).toEqual(COVER)
+    expect(seen.coverMode).toBe(0o600)
+  })
+
+  it.each([
+    ['no cover', async () => undefined],
+    [
+      'a cover that fails',
+      async () => {
+        throw Object.assign(new Error('EACCES: /secret/path'), { code: 'EACCES' })
+      },
+    ],
+  ])(
+    "keeps YouTube's thumbnail when Spotify's gives %s, and still downloads",
+    async (_label, cover) => {
+      const spotify = fakeSpotify({ cover })
+      const { finalize, seen } = finalizeSpy()
+      const { start, log } = setup({ lines: recorded('youtube-ba') }, { spotify, finalize })
+      // The job shows the cover the file really got: YouTube's.
+      expect(await start(request(SPOTIFY_URL))).toMatchObject({
+        kind: 'done',
+        track: { title: 'Never Gonna Give You Up', thumbnailUrl: YT_THUMBNAIL },
+      })
+      expect(seen.done).toMatchObject({
+        title: 'Never Gonna Give You Up',
+        thumbnailPath: path.join(jobDir(), 'jNQXAC9IVRw.webp'),
+        thumbnailUrl: YT_THUMBNAIL,
+      })
+      expect(seen.cover).toBeUndefined()
+      const logged = [...log.warn.mock.calls, ...log.error.mock.calls].flat().join('\n')
+      expect(logged).not.toContain('/secret')
+      expect(logged).not.toContain('spotifycdn')
+    },
+  )
+
+  it('logs a failed cover by its error code only', async () => {
+    const eacces = Object.assign(new Error('EACCES: /secret/path'), { code: 'EACCES' })
+    const spotify = fakeSpotify()
+    const { start, log } = setup(
+      { lines: recorded('youtube-ba') },
+      {
+        spotify,
+        fs: {
+          writeFile: async () => {
+            throw eacces
+          },
+        },
+      },
+    )
+    expect(await start(request(SPOTIFY_URL))).toMatchObject({ kind: 'done' })
+    expect(log.warn).toHaveBeenCalledExactlyOnceWith(
+      '[attempt] 00000000: the Spotify cover failed (EACCES)',
+    )
+  })
+
+  it.each([
+    ['WAV, which holds no cover', { format: 'wav' as const }],
+    ['artwork turned off', { embedArtwork: false }],
+  ])('fetches no Spotify cover for %s', async (_label, options) => {
+    const spotify = fakeSpotify()
+    const { finalize, seen } = finalizeSpy()
+    const { start, calls } = setup({ lines: recorded('youtube-ba-nothumb') }, { spotify, finalize })
+    const outcome = await start(request(SPOTIFY_URL, { options: { ...MP3, ...options } }))
+    expect(spotify.cover).not.toHaveBeenCalled()
+    // No file holds a cover, so the job shows Spotify's, as the track list did.
+    expect(outcome).toMatchObject({ kind: 'done', track: { thumbnailUrl: TRACK.coverUrl } })
+    expect(calls[0]?.argv).not.toContain('--write-thumbnail')
+    expect(seen.done).not.toHaveProperty('thumbnailPath')
+    expect(seen.done).toMatchObject({ title: 'Never Gonna Give You Up', releaseYear: 1987 })
+  })
+
+  it('fetches no cover for a Spotify track without one', async () => {
+    const { coverUrl: _none, ...noCover } = TRACK
+    const spotify = fakeSpotify({ found: matched(noCover) })
+    const { finalize, seen } = finalizeSpy()
+    const { start } = setup({ lines: recorded('youtube-ba') }, { spotify, finalize })
+    const outcome = await start(request(SPOTIFY_URL))
+    expect(spotify.cover).not.toHaveBeenCalled()
+    expect(seen.done).toMatchObject({ thumbnailUrl: YT_THUMBNAIL })
+    // The job shows the cover the file got.
+    expect(outcome).toMatchObject({ kind: 'done', track: { thumbnailUrl: YT_THUMBNAIL } })
+  })
+
+  it('fails with no_match without starting a download', async () => {
+    const spotify = fakeSpotify({ found: { ok: false, error: NO_MATCH } })
+    const { start, runFn, finalize, updates } = setup(
+      { lines: recorded('youtube-ba') },
+      { spotify },
+    )
+    expect(await start(request(SPOTIFY_URL))).toEqual(failedWith(NO_MATCH))
+    expect(runFn).not.toHaveBeenCalled()
+    expect(finalize).not.toHaveBeenCalled()
+    expect(updates).toEqual([])
+  })
+
+  it.each([
+    {
+      code: 'unavailable',
+      message: "Spotify doesn't show this link: it may be private, removed or mistyped.",
+    },
+    {
+      code: 'bot_check',
+      message: "YouTube wants to check that you're not a bot. Try again later.",
+    },
+    { code: 'engine_missing', message: 'yt-dlp is not on PATH.' },
+  ] as const)('fails with the match step’s $code', async (error) => {
+    const spotify = fakeSpotify({ found: { ok: false, error } })
+    const { start, runFn } = setup({ lines: [] }, { spotify })
+    expect(await start(request(SPOTIFY_URL))).toEqual(failedWith(error))
+    expect(runFn).not.toHaveBeenCalled()
+  })
+
+  it('refuses a Spotify job when the server has no Spotify reader', async () => {
+    const { start, runFn } = setup({ lines: recorded('youtube-ba') })
+    expect(await start(request(SPOTIFY_URL))).toEqual(
+      failedWith({
+        code: 'unsupported_url',
+        message: "This server can't download Spotify tracks.",
+      }),
+    )
+    expect(runFn).not.toHaveBeenCalled()
+  })
+
+  it('ends canceled when the cancel comes while matching, without downloading', async () => {
+    const spotify = fakeSpotify({
+      found: (signal) =>
+        new Promise<Found>((resolve) => {
+          signal.addEventListener('abort', () => resolve({ ok: false, error: CANCELED }))
+        }),
+    })
+    const { start, runFn, controller, updates } = setup(
+      { lines: recorded('youtube-ba') },
+      { spotify },
+    )
+    const outcome = start(request(SPOTIFY_URL))
+    await vi.waitFor(() => expect(spotify.match).toHaveBeenCalled())
+    controller.abort({ kind: 'cancel' })
+    expect(await outcome).toEqual({ kind: 'canceled' })
+    expect(runFn).not.toHaveBeenCalled()
+    expect(updates).toEqual([])
+  })
+
+  it('ends canceled when the cancel comes while fetching the cover, before finalizing', async () => {
+    let started = () => {}
+    const fetching = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const spotify = fakeSpotify({
+      cover: (_url, signal) =>
+        new Promise((_resolve, reject) => {
+          started()
+          signal?.addEventListener('abort', () => reject(signal.reason))
+        }),
+    })
+    const { start, controller, finalize } = setup({ lines: recorded('youtube-ba') }, { spotify })
+    const outcome = start(request(SPOTIFY_URL))
+    await fetching
+    controller.abort({ kind: 'cancel' })
+    expect(await outcome).toEqual({ kind: 'canceled' })
+    expect(finalize).not.toHaveBeenCalled()
+  })
+
+  describe('when YouTube refuses the match', () => {
+    const errorsDir = path.join(downloadsDir, '../errors')
+    /** A download that fails like the recorded lookup error `<name>.log`, exit 1. */
+    const refusal = (name: string): Script => ({
+      lines: splitLines(readFileSync(path.join(errorsDir, `${name}.log`), 'utf8')).map(
+        (line): Line => ['stderr', line],
+      ),
+      exitCode: 1,
+    })
+    const nextMatch = (id: string, title: string): { match: TrackMatch; input: ValidUrl } => {
+      const url = `https://www.youtube.com/watch?v=${id}`
+      const checked = checkUrl(url)
+      if (!checked.ok) throw new Error('refused')
+      return {
+        match: { platform: 'youtube', id, url, title, uploader: 'Rick Astley', durationSec: 213 },
+        input: checked.input,
+      }
+    }
+    const SECOND = nextMatch('LLFhKaqnWwk', 'Rick Astley - Never Gonna Give You Up (Animated)')
+    const THIRD = nextMatch('3BFTio5296w', 'Never Gonna Give You Up (2022 Remaster)')
+    const FOURTH = nextMatch('RrESvSRNpeo', 'Rick Astley - Never Gonna Give You Up')
+    const withAlternatives = (alternatives = [SECOND, THIRD]): Found => ({
+      ok: true,
+      matched: { track: TRACK, match: MATCH, input: youtubeInput(), alternatives },
+    })
+    /** One script per yt-dlp run, in order. */
+    const runs = (...scripts: Script[]) => {
+      let call = 0
+      return () => scripts[Math.min(call++, scripts.length - 1)] ?? { lines: [] }
+    }
+    const urlsOf = (calls: readonly RunCall[]) => calls.map((call) => call.argv.at(-1))
+
+    it('downloads the next match, reporting it with the progress cleared', async () => {
+      const spotify = fakeSpotify({ found: withAlternatives() })
+      const { finalize, seen } = finalizeSpy()
+      const { start, calls, updates, log } = setup(
+        runs(refusal('youtube-unavailable'), { lines: recorded('youtube-ba') }),
+        { spotify, finalize },
+      )
+      const outcome = await start(request(SPOTIFY_URL))
+      expect(outcome).toMatchObject({ kind: 'done', track: { title: 'Never Gonna Give You Up' } })
+      expect(urlsOf(calls)).toEqual([YT_URL, SECOND.match.url])
+      expect(updates.filter((update) => update.match !== undefined)).toEqual([
+        { match: MATCH },
+        { match: SECOND.match, progress: null },
+      ])
+      // The second try reports its match before its own yt-dlp lines.
+      const second = updates.findIndex((update) => update.match === SECOND.match)
+      expect(updates.slice(second + 1).some((update) => update.progress)).toBe(true)
+      expect(seen.input?.input).toEqual(SECOND.input)
+      expect(seen.done?.webpageUrl).toBe(YT_URL) // the replayed recording's own page
+      expect(log.info).toHaveBeenCalledWith('[attempt] 00000000: match 1 refused, trying the next')
+    })
+
+    it.each([
+      ['private', 'youtube-private'],
+      ['geo_blocked', 'youtube-geo-blocked'],
+      ['age_restricted', 'youtube-age-restricted'],
+      ['login_required', 'youtube-members-only'],
+    ])('tries the next match after %s too', async (_code, log) => {
+      const spotify = fakeSpotify({ found: withAlternatives() })
+      const { start, calls } = setup(runs(refusal(log), { lines: recorded('youtube-ba') }), {
+        spotify,
+      })
+      expect(await start(request(SPOTIFY_URL))).toMatchObject({ kind: 'done' })
+      expect(urlsOf(calls)).toEqual([YT_URL, SECOND.match.url])
+    })
+
+    it.each([
+      ['network', 'network-timeout'],
+      ['bot_check', 'youtube-bot-check'],
+      ['rate_limited', 'youtube-rate-limited'],
+    ])('ends with %s at once: another upload would fail the same way', async (code, log) => {
+      const spotify = fakeSpotify({ found: withAlternatives() })
+      const { start, calls, updates } = setup(
+        runs(refusal(log), { lines: recorded('youtube-ba') }),
+        {
+          spotify,
+        },
+      )
+      expect(codeOf(await start(request(SPOTIFY_URL)))).toBe(code)
+      expect(urlsOf(calls)).toEqual([YT_URL])
+      expect(updates.filter((update) => update.match !== undefined)).toEqual([{ match: MATCH }])
+    })
+
+    it(`tries at most ${MAX_MATCH_TRIES} matches, and ends with the last one's refusal`, async () => {
+      const spotify = fakeSpotify({ found: withAlternatives([SECOND, THIRD, FOURTH]) })
+      const { start, calls, finalize } = setup(
+        runs(
+          refusal('youtube-unavailable'),
+          refusal('youtube-private'),
+          refusal('youtube-geo-blocked'),
+          { lines: recorded('youtube-ba') },
+        ),
+        { spotify },
+      )
+      expect(codeOf(await start(request(SPOTIFY_URL)))).toBe('geo_blocked')
+      expect(MAX_MATCH_TRIES).toBe(3)
+      expect(urlsOf(calls)).toEqual([YT_URL, SECOND.match.url, THIRD.match.url])
+      expect(finalize).not.toHaveBeenCalled()
+    })
+
+    it('ends with the refusal when there is no other match', async () => {
+      const spotify = fakeSpotify()
+      const { start, calls } = setup(runs(refusal('youtube-unavailable')), { spotify })
+      expect(codeOf(await start(request(SPOTIFY_URL)))).toBe('unavailable')
+      expect(calls).toHaveLength(1)
+    })
+
+    it('ends canceled when the cancel comes during the next match’s download', async () => {
+      const spotify = fakeSpotify({ found: withAlternatives() })
+      const { start, calls, controller, finalize } = setup(
+        runs(
+          refusal('youtube-unavailable'),
+          { lines: recorded('youtube-ba'), hangAfter: 2 },
+          {
+            lines: recorded('youtube-ba'),
+          },
+        ),
+        { spotify },
+      )
+      const outcome = start(request(SPOTIFY_URL))
+      await vi.waitFor(() => expect(calls).toHaveLength(2))
+      controller.abort({ kind: 'cancel' })
+      expect(await outcome).toEqual({ kind: 'canceled' })
+      expect(urlsOf(calls)).toEqual([YT_URL, SECOND.match.url])
+      expect(finalize).not.toHaveBeenCalled()
+    })
+  })
+})
+
+describe('withSpotifyNames', () => {
+  const DONE: DoneInfo = {
+    id: 'dQw4w9WgXcQ',
+    filepath: '/jobs/x/dQw4w9WgXcQ.webm',
+    ext: 'webm',
+    title: 'Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)',
+    track: 'Never Gonna Give You Up (Remastered)',
+    artist: 'Rick Astley',
+    artists: ['Rick Astley'],
+    uploader: 'Rick Astley',
+    channel: 'Rick Astley',
+    album: 'The Best of Me',
+    albumArtist: 'Various Artists',
+    releaseYear: 2019,
+    releaseDate: '20191025',
+    webpageUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    extractorKey: 'Youtube',
+    thumbnailPath: '/jobs/x/dQw4w9WgXcQ.webp',
+    thumbnailUrl: 'https://i.ytimg.com/vi_webp/dQw4w9WgXcQ/maxresdefault.webp',
+  }
+  const TRACK: SpotifyTrack = {
+    id: '4uLU6hMCjMI75M1A2tKUQC',
+    title: 'Never Gonna Give You Up',
+    artists: ['Rick Astley', 'Guest'],
+    durationSec: 213.573,
+    releaseYear: 1987,
+    coverUrl: 'https://i.scdn.co/image/ab67616d0000b273',
+  }
+
+  it("puts Spotify's title, artists, year and cover in YouTube's place, and drops its album", () => {
+    expect(withSpotifyNames(DONE, TRACK, '/jobs/x/spotify-cover.jpg')).toStrictEqual({
+      id: 'dQw4w9WgXcQ',
+      filepath: '/jobs/x/dQw4w9WgXcQ.webm',
+      ext: 'webm',
+      title: 'Never Gonna Give You Up',
+      track: 'Never Gonna Give You Up',
+      artist: 'Rick Astley, Guest',
+      artists: ['Rick Astley', 'Guest'],
+      releaseYear: 1987,
+      // The upload's channel and page stay: the comment tag names where the audio came from.
+      uploader: 'Rick Astley',
+      channel: 'Rick Astley',
+      webpageUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      extractorKey: 'Youtube',
+      thumbnailPath: '/jobs/x/spotify-cover.jpg',
+      thumbnailUrl: 'https://i.scdn.co/image/ab67616d0000b273',
+    })
+  })
+
+  it("keeps YouTube's thumbnail without a Spotify cover file", () => {
+    expect(withSpotifyNames(DONE, TRACK, undefined)).toMatchObject({
+      thumbnailPath: DONE.thumbnailPath,
+      thumbnailUrl: DONE.thumbnailUrl,
+    })
+  })
+
+  it("never falls back to YouTube's year, album or release date", () => {
+    const { releaseYear: _none, ...undated } = TRACK
+    const named = withSpotifyNames(DONE, undated, undefined)
+    for (const key of ['releaseYear', 'releaseDate', 'album', 'albumArtist']) {
+      expect(named).not.toHaveProperty(key)
+    }
+  })
+
+  it('leaves no field present but undefined', () => {
+    const bare: DoneInfo = { id: 'x', filepath: '/jobs/x/x.webm' }
+    const named = withSpotifyNames(bare, { id: TRACK.id, title: 'T', artists: [] }, undefined)
+    expect(named).toStrictEqual({ id: 'x', filepath: '/jobs/x/x.webm', title: 'T', track: 'T' })
   })
 })

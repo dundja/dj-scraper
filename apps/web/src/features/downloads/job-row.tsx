@@ -15,6 +15,7 @@ import {
   jobErrorHint,
   jobPhase,
   jobTitle,
+  matchText,
   statusLabel,
   statusText,
   waitingUntil,
@@ -25,7 +26,7 @@ const UNNAMED_PHASES: ReadonlySet<JobPhase> = new Set(['downloading', 'done', 'f
 
 /**
  * One job in the downloads panel's virtualized list, exactly `JOB_ROW_HEIGHT` tall: artwork, title
- * and artist, one status line (with a thin progress bar while downloading), and the job's action
+ * and artist (a Spotify job's YouTube match in their hover title), one status line (with a thin progress bar while downloading), and the job's action
  * as an icon button. Not a live region: the panel announces the overall progress. A failure's
  * full message and next step don't fit the line: they describe the action button and show in its
  * tooltip, and an action that fails is announced once (`role="alert"`).
@@ -38,6 +39,9 @@ export function JobRow({ job }: { job: Job }) {
   const phase = jobPhase(job, now)
   const title = jobTitle(job)
   const artist = jobArtist(job)
+  // A Spotify job's audio: the YouTube upload it matched, on hover and for screen readers.
+  const match = job.match === undefined ? undefined : `Audio from YouTube: ${matchText(job.match)}`
+  const names = artist === undefined ? title : `${title} · ${artist}`
   const line = control.error?.message ?? statusText(job, now)
   const hint =
     control.error?.hint ?? (job.status === 'failed' ? jobErrorHint(job.error.code) : undefined)
@@ -64,10 +68,11 @@ export function JobRow({ job }: { job: Job }) {
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <p
           className="truncate text-sm leading-5"
-          title={artist === undefined ? title : `${title} · ${artist}`}
+          title={match === undefined ? names : `${names}\n${match}`}
         >
           <span className="font-medium">{title}</span>
           {artist !== undefined && <span className="text-muted-foreground"> · {artist}</span>}
+          {match !== undefined && <span className="sr-only">. {match}</span>}
         </p>
         <div className="flex min-w-0 items-center gap-1.5 text-xs leading-4">
           <JobStatusIcon phase={phase} className="size-3.5" />

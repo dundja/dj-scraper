@@ -28,6 +28,7 @@ import { killActiveGroups } from '../src/engine/run.ts'
 import { ApiError } from '../src/http/errors.ts'
 import { createEnricher, type Enricher } from '../src/resolve/enricher.ts'
 import { createResolver } from '../src/resolve/resolver.ts'
+import { createSpotifyClient } from '../src/spotify/client.ts'
 import { DOWNLOAD_SAMPLES, smokeDownloads } from './smoke-download.ts'
 
 /** The smoke-test skill's sample set (public URLs from yt-dlp's own extractor tests). */
@@ -61,6 +62,14 @@ const SAMPLES: readonly { label: string; url: string }[] = [
   {
     label: 'SoundCloud downloadable track',
     url: 'https://soundcloud.com/the80m/the-following',
+  },
+  {
+    label: 'Spotify track (read from its embed page, ADR-026)',
+    url: 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
+  },
+  {
+    label: 'Spotify album (10 tracks)',
+    url: 'https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4',
   },
 ]
 
@@ -194,7 +203,10 @@ async function smokeDownload(): Promise<number> {
 
 /** Resolves each URL (and enriches partial rows with --entries); returns how many failed. */
 async function smokeResolve(): Promise<number> {
-  const resolver = createResolver({ engine: config.engine, log })
+  const spotify = createSpotifyClient(
+    config.spotifyOrigin === undefined ? {} : { origin: config.spotifyOrigin },
+  )
+  const resolver = createResolver({ engine: config.engine, spotify, log })
   const enricher = createEnricher({ engine: config.engine, log })
   const targets = given.length > 0 ? given : SAMPLES
 

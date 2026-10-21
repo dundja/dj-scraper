@@ -5,10 +5,18 @@ import { userEvent } from '@testing-library/user-event'
 import { type ReactElement, StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { toTrackRef } from '@/features/downloads/track-ref.ts'
-import { batch, jobWith, liveDownloads, settings, snapshotWith } from '@/test/downloads.ts'
+import {
+  batch,
+  jobWith,
+  liveDownloads,
+  settings,
+  snapshotWith,
+  spotifyJob,
+  spotifyMatch,
+} from '@/test/downloads.ts'
 import { fakeApi, json, jsonBody, noAnswer } from '@/test/fake-api.ts'
 import { renderWithQueryClient } from '@/test/render.tsx'
-import { previewTrack, scTrack, track, trackWith } from '@/test/resolve.ts'
+import { previewTrack, scTrack, spotifyTrack, track, trackWith } from '@/test/resolve.ts'
 import { TrackCard } from './track-card.tsx'
 
 let server: ReturnType<typeof fakeApi>
@@ -316,5 +324,148 @@ describe('TrackCard', () => {
       await waitFor(() => expect(status().textContent).toBe('Queued…'))
       expect(document.activeElement).toBe(document.body)
     })
+  })
+})
+
+describe('TrackCard for a Spotify track', () => {
+  const spotifyCard = () => screen.getByRole('article', { name: 'Never Gonna Give You Up' })
+  const spotifyStatus = () => within(spotifyCard()).getByRole('status')
+  const note = () => spotifyCard().querySelector('[data-slot="track-match"]')
+  const BEFORE_MATCH =
+    'Spotify streams are DRM-protected: DJ Scraper finds this track on YouTube and downloads it from there.'
+  /** YouTube's AAC stream (format 140), as the matched video's download reports it. */
+  const youtubeAac = { codec: 'mp4a.40.2', bitrateKbps: 129.553 }
+
+  it("shows Spotify's names, cover and duration, and says the audio comes from YouTube", async () => {
+    await renderCard(<TrackCard track={spotifyTrack} autoStart={false} />)
+
+    expect(
+      within(spotifyCard()).getByRole('heading', { level: 2, name: 'Never Gonna Give You Up' }),
+    ).toBeDefined()
+    expect(spotifyCard().querySelector('img')?.getAttribute('src')).toBe(spotifyTrack.thumbnailUrl)
+    expect(within(spotifyCard()).getByText('Rick Astley')).toBeDefined()
+    expect(within(spotifyCard()).getByText('Spotify')).toBeDefined()
+    // 213.573 s, rounded as everywhere else.
+    expect(within(spotifyCard()).getByText('3:34')).toBeDefined()
+    // Spotify names no stream: the quality is YouTube's, known once the download has it.
+    expect(within(spotifyCard()).getByText('Source quality shown after download')).toBeDefined()
+    expect(note()?.textContent).toBe(BEFORE_MATCH)
+    expect(within(spotifyCard()).queryByRole('link')).toBeNull()
+  })
+
+  it('queues the Spotify track as it is, then names the YouTube upload it matched, linked', async () => {
+    queueJobs(FIRST_JOB)
+    const { send } = await renderCard(<TrackCard track={spotifyTrack} autoStart />)
+    await waitFor(() => expect(spotifyStatus().textContent).toBe('Queued…'))
+    expect(DownloadRequestSchema.parse(jsonBody(server.callsTo(CREATE)[0])).items).toEqual([
+      toTrackRef(spotifyTrack),
+    ])
+    expect(toTrackRef(spotifyTrack)).toMatchObject({ platform: 'spotify', url: spotifyTrack.url })
+
+    await send({
+      type: 'jobs.added',
+      batch,
+      jobs: [spotifyJob({ id: FIRST_JOB, status: 'queued' })],
+    })
+    await send({
+      type: 'jobs.updated',
+      jobs: [spotifyJob({ id: FIRST_JOB, status: 'downloading' })],
+    })
+    // The attempt searches YouTube first, which can take a few seconds.
+    expect(spotifyStatus().textContent).toBe('Finding it on YouTube…')
+    expect(note()?.textContent).toBe(BEFORE_MATCH)
+
+    await send({
+      type: 'jobs.updated',
+      jobs: [spotifyJob({ id: FIRST_JOB, status: 'downloading', match: spotifyMatch })],
+    })
+    expect(spotifyStatus().textContent).toBe('Starting…')
+    expect(note()?.textContent).toBe(
+      'Audio from YouTube: Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster) (opens in a new tab) · Rick Astley',
+    )
+    const link = within(spotifyCard()).getByRole('link', {
+      name: /^Rick Astley - Never Gonna Give You Up \(Official Video\) \(4K Remaster\) ?\(opens in a new tab\)$/,
+    })
+    expect(link.getAttribute('href')).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noreferrer')
+
+    await send({
+      type: 'jobs.updated',
+      jobs: [
+        spotifyJob({
+          id: FIRST_JOB,
+          status: 'downloading',
+          match: spotifyMatch,
+          source: youtubeAac,
+          progress: { percent: 40 },
+        }),
+      ],
+    })
+    expect(spotifyStatus().textContent).toBe('Downloading')
+    // The stream the file really comes from: YouTube's, never presented as Spotify's.
+    expect(within(spotifyCard()).getByText('Source: YouTube AAC 128 kbps')).toBeDefined()
+  })
+
+  it("says a finished file's stream was YouTube's", async () => {
+    server.on(CREATE, () => json({ jobIds: [FIRST_JOB], duplicates: 1 }))
+    const done = spotifyJob({
+      id: FIRST_JOB,
+      status: 'done',
+      format: 'm4a',
+      match: spotifyMatch,
+      source: youtubeAac,
+      startedAt: '2026-10-02T08:00:05.000Z',
+      outputPath: '/Users/dj/Music/DJ Scraper/Rick Astley - Never Gonna Give You Up.m4a',
+      output: { ext: 'm4a', codec: 'aac', bitrateKbps: 129.553, channels: 2, encoded: false },
+      finishedAt: '2026-10-02T08:01:00.000Z',
+    })
+    await renderCard(<TrackCard track={spotifyTrack} autoStart />, [done])
+
+    await waitFor(() =>
+      expect(spotifyStatus().textContent).toBe('DoneM4A · AAC 128 kbps · copied from YouTube'),
+    )
+    expect(within(spotifyCard()).getByRole('link').getAttribute('href')).toBe(spotifyMatch.url)
+  })
+
+  it('says when no YouTube upload matches, with a way out, and retries once asked', async () => {
+    queueJobs(FIRST_JOB)
+    server.on(`POST /api/downloads/${FIRST_JOB}/retry`, () =>
+      json(spotifyJob({ id: FIRST_JOB, status: 'queued', attempt: 2 })),
+    )
+    const user = userEvent.setup()
+    const { send } = await renderCard(<TrackCard track={spotifyTrack} autoStart />)
+    await waitFor(() => expect(spotifyStatus().textContent).toBe('Queued…'))
+    const failed = spotifyJob({
+      id: FIRST_JOB,
+      status: 'failed',
+      startedAt: '2026-10-02T08:00:05.000Z',
+      error: {
+        code: 'no_match',
+        message: "No YouTube upload matches this Spotify track's artist, title and length.",
+      },
+      finishedAt: '2026-10-02T08:00:20.000Z',
+    })
+    await send({ type: 'jobs.added', batch, jobs: [failed] })
+
+    expect(spotifyStatus().textContent).toBe(
+      "FailedNo YouTube upload matches this Spotify track's artist, title and length.",
+    )
+    expect(
+      within(spotifyCard()).getByText(
+        'Find the track on YouTube or SoundCloud and paste that link instead.',
+      ),
+    ).toBeDefined()
+    // YouTube's results change, so the job's own Retry stays (not "Download again").
+    expect(within(spotifyCard()).queryByRole('button', { name: 'Download again' })).toBeNull()
+    await user.click(within(spotifyCard()).getByRole('button', { name: 'Retry' }))
+    await waitFor(() =>
+      expect(server.callsTo(`POST /api/downloads/${FIRST_JOB}/retry`)).toHaveLength(1),
+    )
+  })
+
+  it('shows no Spotify note for a YouTube or SoundCloud track', async () => {
+    await renderCard(<TrackCard track={track} autoStart={false} />)
+    expect(card().querySelector('[data-slot="track-match"]')).toBeNull()
   })
 })

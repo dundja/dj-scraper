@@ -22,6 +22,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 // The URLs the e2e specs use; the e2e-only rules below must answer them as that file says.
 import {
+  SPOTIFY_ALBUM,
+  SPOTIFY_ARTIST,
+  SPOTIFY_MISSING_TRACK,
+  SPOTIFY_PLAYLIST,
+  SPOTIFY_PLAYLIST_TRUNCATED,
+  SPOTIFY_TRACK,
   YOUTUBE_HANGING_TRACK,
   YOUTUBE_PRIVATE_IN_PLAYLIST,
   YOUTUBE_SLOW_PLAYLIST,
@@ -328,6 +334,81 @@ describe('e2e-server', () => {
 
     child.kill('SIGTERM')
     expect(await exited).toEqual([0, null])
+  })
+
+  it('answers the Spotify links from its fixture server, and downloads every row of the Spotify album', {
+    timeout: 30_000,
+  }, async () => {
+    const port = await freePort()
+    const { child, output, exited } = start({ PORT: String(port), DJS_WEB_DIST: webDist })
+    const bin = await ready(port, output)
+    const spotifyOrigin = /Spotify at (http:\/\/127\.0\.0\.1:\d+)/.exec(output.stdout)?.[1]
+    expect(spotifyOrigin).toBeDefined()
+
+    const track = await api(port, '/resolve', ResolveResultSchema, { url: SPOTIFY_TRACK })
+    if (track.kind !== 'track') throw new Error(`resolved ${track.kind}`)
+    expect(track.track).toMatchObject({
+      platform: 'spotify',
+      title: 'Never Gonna Give You Up',
+      artist: 'Rick Astley',
+      durationSec: 213.573,
+    })
+    // Covers come from the fixture server, never Spotify's CDN.
+    expect(track.track.thumbnailUrl?.startsWith(`${spotifyOrigin}/image/`)).toBe(true)
+
+    const lists = []
+    for (const url of [SPOTIFY_ALBUM, SPOTIFY_PLAYLIST, SPOTIFY_PLAYLIST_TRUNCATED]) {
+      const list = await api(port, '/resolve', ResolveResultSchema, { url })
+      if (list.kind !== 'collection') throw new Error(`resolved ${list.kind}`)
+      lists.push(list.collection)
+    }
+    expect(lists.map((c) => [c.kind, c.title, c.entries.length, c.truncated])).toEqual([
+      ['album', 'Whenever You Need Somebody', 10, false],
+      ['playlist', 'Today’s Top Hits', 50, false],
+      ['playlist', 'All Out 80s', 100, true],
+    ])
+    for (const [url, code] of [
+      [SPOTIFY_ARTIST, 'unsupported_url'],
+      [SPOTIFY_MISSING_TRACK, 'unavailable'],
+    ] as const) {
+      const res = await post(port, '/resolve', { url })
+      expect(res.status, url).toBe(422)
+      expect(ApiErrorBodySchema.parse(await res.json()).error.code).toBe(code)
+    }
+
+    // The album's 10 rows, matched on YouTube and downloaded with Spotify's names.
+    const [album] = lists
+    if (album === undefined) throw new Error('no album')
+    const settings = await api(port, '/settings', SettingsSchema)
+    const { jobIds } = await api(
+      port,
+      '/downloads',
+      CreateDownloadsResponseSchema,
+      downloadRequest(settings, album.entries),
+    )
+    const jobs = async () => {
+      const snapshot = await api(port, '/downloads', DownloadsSnapshotSchema)
+      return jobIds.map((id) => snapshot.jobs.find((job) => job.id === id))
+    }
+    await expect
+      .poll(async () => (await jobs()).map((job) => job?.status), { timeout: 20_000 })
+      .toEqual(jobIds.map(() => 'done'))
+    const done = await jobs()
+    expect(done.map((job) => job?.match?.id)).toEqual([
+      'dQw4w9WgXcQ',
+      ...Array.from({ length: 9 }, (_, i) => `e2eSpAlb${String(i + 2).padStart(3, '0')}`),
+    ])
+    expect((await readdir(settings.folder)).sort()).toEqual(
+      album.entries.map((entry) => `Rick Astley - ${entry.title}.mp3`).sort(),
+    )
+    // yt-dlp never saw a Spotify link: one search and one download per row.
+    const urls = (await fakeCalls(bin)).flatMap((call) => (call.url === null ? [] : [call.url]))
+    expect(urls.filter((url) => url.includes('spotify'))).toEqual([])
+    expect(urls.filter((url) => url.startsWith('ytsearch10:'))).toHaveLength(10)
+
+    child.kill('SIGTERM')
+    expect(await exited).toEqual([0, null])
+    expect(output.stderr).toBe('')
   })
 
   it('stops the server with it when its process group is SIGKILLed', async () => {

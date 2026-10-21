@@ -11,6 +11,7 @@ export const ErrorCodeSchema = z.enum([
   'bot_check',
   'rate_limited',
   'preview_only',
+  'no_match',
   'network',
   'engine_missing',
   'postprocess_failed',

@@ -16,14 +16,16 @@ import {
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { run } from '../src/engine/run.ts'
 import { JSON_BODY_LIMIT_BYTES } from '../src/http/json.ts'
-import { OUT_OF_SCOPE_MESSAGE } from '../src/resolve/input.ts'
+import { OUT_OF_SCOPE_MESSAGE, SPOTIFY_OTHER_MESSAGE } from '../src/resolve/input.ts'
 import { planResolve } from '../src/resolve/plan.ts'
 import {
   type FakeYtdlpRule,
   freePort,
   makeTempDir,
   SERVER_DIR,
+  type SpotifyFixtureServer,
   serverEnv,
+  startSpotifyFixtures,
   writeFakeYtdlp,
 } from './helpers.ts'
 import {
@@ -440,6 +442,8 @@ const NOT_SERVED: Record<string, string> = {
   'soundcloud/set-capped.json':
     'recorded with -I 1:3; the server always asks for one row over 5000',
   'soundcloud/entry-metadata-only.json': 'needs --extractor-args soundcloud:formats=none',
+  'youtube/search.json':
+    "a YouTube search, not a link: a Spotify job's match step runs it (test/downloads.test.ts)",
 }
 
 describe('POST /api/resolve with recorded fixtures', () => {
@@ -719,13 +723,12 @@ describe('POST /api/resolve: refused before yt-dlp starts', () => {
   })
 
   it.each([
-    'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
     'https://music.apple.com/us/album/x/123',
     'https://tidal.com/browse/track/1',
     'https://www.deezer.com/track/1',
     'https://www.beatport.com/track/x/1',
     'https://music.amazon.co.uk/albums/B0000000000',
-    'https://open.spotify.com./track/4uLU6hMCjMI75M1A2tKUQC',
+    'https://tidal.com./browse/track/1',
   ])('answers 422 unsupported_url for the DRM service %s', async (url) => {
     const app = await start()
     expect(await resolveError(app, { url })).toEqual({
@@ -781,6 +784,145 @@ describe('POST /api/resolve: request checks', () => {
       code: 'invalid_request',
     })
     expect(await app.lookups()).toEqual([])
+  })
+})
+
+describe('POST /api/resolve: Spotify links (ADR-026)', () => {
+  // A local Spotify serving the scrubbed embed pages (test/fixtures/spotify), covers rewritten to it.
+  const TRACK = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC'
+  const ALBUM = 'https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4'
+  const PLAYLIST_50 = 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M'
+  const PLAYLIST_100 = 'https://open.spotify.com/playlist/37i9dQZF1DX4UtSsGT1Sbe'
+  const MISSING = 'https://open.spotify.com/track/0000000000000000000000'
+  const servers: SpotifyFixtureServer[] = []
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map((server) => server.close()))
+  })
+
+  async function startSpotify(options?: Parameters<typeof startSpotifyFixtures>[0]) {
+    const spotify = await startSpotifyFixtures(options)
+    servers.push(spotify)
+    return { spotify, app: await start({ spotifyOrigin: spotify.origin }) }
+  }
+
+  it('reads a track from its embed page, without yt-dlp', async () => {
+    const { spotify, app } = await startSpotify()
+    expect(asTrack(await resolveOk(app, TRACK))).toStrictEqual({
+      id: '4uLU6hMCjMI75M1A2tKUQC',
+      platform: 'spotify',
+      url: TRACK,
+      title: 'Never Gonna Give You Up',
+      artist: 'Rick Astley',
+      durationSec: 213.573,
+      thumbnailUrl: spotify.coverUrl('ab67616d0000b273255e131abc1410833be95673'),
+      availability: 'available',
+    })
+    expect(spotify.requests()).toEqual(['/embed/track/4uLU6hMCjMI75M1A2tKUQC'])
+    expect(await app.lookups()).toEqual([])
+    expect(await waitForLog(app.logs, /^\[resolve\] spotify_track → track in /)).toBeDefined()
+  })
+
+  it("reads an album: 10 complete rows with the album's cover", async () => {
+    const { spotify, app } = await startSpotify()
+    const album = asCollection(await resolveOk(app, ALBUM))
+    const cover = spotify.coverUrl('ab67616d0000b273255e131abc1410833be95673')
+    expect(album).toMatchObject({
+      platform: 'spotify',
+      kind: 'album',
+      title: 'Whenever You Need Somebody',
+      owner: 'Rick Astley',
+      thumbnailUrl: cover,
+      truncated: false,
+    })
+    expect(album.entries).toHaveLength(10)
+    for (const entry of album.entries) {
+      expect(entry).toMatchObject({ partial: false, platform: 'spotify', thumbnailUrl: cover })
+    }
+    expect(await app.lookups()).toEqual([])
+  })
+
+  it('reads a playlist of 50, and one the page cuts at 100 as truncated', async () => {
+    const { app } = await startSpotify()
+    const top = asCollection(await resolveOk(app, PLAYLIST_50))
+    expect(top).toMatchObject({ kind: 'playlist', title: 'Today’s Top Hits', truncated: false })
+    expect(top.entries).toHaveLength(50)
+    const eighties = asCollection(await resolveOk(app, PLAYLIST_100))
+    expect(eighties).toMatchObject({ title: 'All Out 80s', truncated: true })
+    expect(eighties.entries).toHaveLength(100)
+    expect(
+      await waitForLog(app.logs, /^\[resolve\] spotify_playlist → playlist of 100, truncated in /),
+    ).toBeDefined()
+  })
+
+  it.each([
+    'open.spotify.com/intl-de/album/6N9PS4QXF1D0OWPk0Sxtb4?si=abc123',
+    'https://open.spotify.com/embed/album/6N9PS4QXF1D0OWPk0Sxtb4?utm_source=generator',
+    'https://OPEN.SPOTIFY.COM./album/6N9PS4QXF1D0OWPk0Sxtb4',
+  ])('reads %s as the canonical album', async (url) => {
+    const { spotify, app } = await startSpotify()
+    expect(asCollection(await resolveOk(app, url)).url).toBe(ALBUM)
+    expect(spotify.requests()).toEqual(['/embed/album/6N9PS4QXF1D0OWPk0Sxtb4'])
+  })
+
+  it.each([
+    [404, MISSING, 422, 'unavailable'],
+    [429, TRACK, 429, 'rate_limited'],
+    [500, TRACK, 502, 'network'],
+  ] as const)('answers Spotify’s HTTP %i as %i %s', async (answer, url, status, code) => {
+    const path = new URL(url).pathname.replace(/^/, '/embed')
+    const { app } = await startSpotify(answer === 404 ? {} : { status: { [path]: answer } })
+    expect(await resolveError(app, { url })).toMatchObject({ status, code })
+    expect(await app.lookups()).toEqual([])
+  })
+
+  it("answers 500 unknown for a page it can't read, or one of the wrong kind", async () => {
+    const { spotify, app } = await startSpotify({
+      pages: {
+        '/embed/track/4uLU6hMCjMI75M1A2tKUQC': '<html><body>Something else</body></html>',
+        '/embed/playlist/37i9dQZF1DXcBWIGoYBM5M': readFileSync(
+          path.join(FIXTURES, 'spotify', 'album.html'),
+          'utf8',
+        ),
+      },
+    })
+    const unreadable = {
+      status: 500,
+      code: 'unknown',
+      message: "Spotify's page has changed, and DJ Scraper can't read it.",
+    }
+    expect(await resolveError(app, { url: TRACK })).toEqual(unreadable)
+    expect(await resolveError(app, { url: PLAYLIST_50 })).toEqual(unreadable)
+    expect(spotify.requests()).toHaveLength(2)
+    expect(app.logs.join('\n')).not.toMatch(/https?:|Something else|Whenever/)
+  })
+
+  it('answers 502 network when Spotify cannot be reached', async () => {
+    const { spotify, app } = await startSpotify()
+    await spotify.close()
+    expect(await resolveError(app, { url: TRACK })).toMatchObject({ status: 502, code: 'network' })
+  })
+
+  it.each([
+    'https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt',
+    'https://spotify.link/abc123',
+  ])('answers 422 unsupported_url for the Spotify page %s, asking nobody', async (url) => {
+    const { spotify, app } = await startSpotify()
+    expect(await resolveError(app, { url })).toEqual({
+      status: 422,
+      code: 'unsupported_url',
+      message: SPOTIFY_OTHER_MESSAGE,
+    })
+    expect(spotify.requests()).toEqual([])
+    expect(await app.lookups()).toEqual([])
+  })
+
+  it('answers 422 unsupported_url for Spotify links when the server reads no Spotify', async () => {
+    const app = await start()
+    expect(await resolveError(app, { url: TRACK })).toEqual({
+      status: 422,
+      code: 'unsupported_url',
+      message: "This server can't read Spotify links.",
+    })
   })
 })
 
@@ -845,6 +987,56 @@ describe('the real entry point', () => {
     } finally {
       controller.abort()
       await done
+    }
+  })
+
+  it('reads Spotify links from DJS_SPOTIFY_ORIGIN', { timeout: 30_000 }, async () => {
+    const spotify = await startSpotifyFixtures()
+    const dir = path.join(root, 'entry-spotify')
+    const fake = await writeFakeYtdlp(dir)
+    await symlink(process.execPath, path.join(dir, 'node'))
+    const port = await freePort()
+    const controller = new AbortController()
+    let listening: () => void = () => {}
+    const ready = new Promise<void>((resolve) => {
+      listening = resolve
+    })
+    const done = run(process.execPath, ['src/index.ts'], {
+      cwd: SERVER_DIR,
+      env: {
+        PATH: dir,
+        PORT: String(port),
+        DJS_SPOTIFY_ORIGIN: spotify.origin,
+        ...fake.env,
+        ...(await serverEnv(root)),
+      },
+      signal: controller.signal,
+      onStdoutLine: (line) => {
+        if (line.includes('DJ Scraper on')) listening()
+      },
+    })
+    try {
+      await Promise.race([
+        ready,
+        done.then((result) => {
+          throw new Error(`server exited early:\n${result.stdout}${result.stderr}`)
+        }),
+      ])
+      const resolved = await fetch(`http://127.0.0.1:${port}/api/resolve`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: 'https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4' }),
+      })
+      expect(resolved.status).toBe(200)
+      expect(asCollection(ResolveResultSchema.parse(await resolved.json())).entries).toHaveLength(
+        10,
+      )
+      expect(spotify.requests()).toEqual(['/embed/album/6N9PS4QXF1D0OWPk0Sxtb4'])
+      expect((await fake.calls()).filter((call) => call.url !== null)).toEqual([])
+    } finally {
+      controller.abort()
+      await done
+      await spotify.close()
     }
   })
 })

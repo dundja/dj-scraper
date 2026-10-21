@@ -5,11 +5,11 @@ import type { UrlVerdict } from './url-verdict.ts'
 
 /**
  * The instant guess at the end of the paste box: platform and what the link points at ("YouTube ·
- * Playlist"), or that a DRM service isn't supported. Nothing for text that isn't a link: the line
- * under the box says why.
+ * Playlist"), or that a link isn't supported (a DRM service, a Spotify artist page). Nothing for
+ * text that isn't a link: the line under the box says why.
  */
 export function UrlBadge({ id, verdict }: { id: string; verdict: UrlVerdict }) {
-  if (verdict.status === 'drm') {
+  if (verdict.status === 'refused') {
     return (
       <span id={id} className="flex items-center">
         <Badge variant="destructive">{verdict.label}</Badge>

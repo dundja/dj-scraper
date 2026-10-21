@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
@@ -23,7 +24,17 @@ import {
   stopDownloadsApps,
   waitUntil,
 } from './downloads-app.ts'
-import { makeTempDir, readFakeMedia, readFakeMediaFile } from './helpers.ts'
+import {
+  type FakeYtdlpRule,
+  makeTempDir,
+  readFakeMedia,
+  readFakeMediaFile,
+  SPOTIFY_FIXTURE_COVER,
+  SPOTIFY_FIXTURES,
+  type SpotifyFixtureServer,
+  startSpotifyFixtures,
+  youtubeDownloadRules,
+} from './helpers.ts'
 import { framesOf, readComment, readMp3Tag, readPicture, textOf } from './id3-reader.ts'
 
 // The download pipeline end to end: the real server (routes, queue, attempt, finalize, publish,
@@ -825,5 +836,273 @@ describe('folders', () => {
     expect(await readdir(other)).toEqual(["Youtube - Dl Test Video '' Ä↭.mp3"])
     const urls = (await app.engine.ytdlp.calls()).map((call) => call.url)
     expect(urls).toEqual([REFS.youtubeHang.url, REFS.youtube.url, REFS.soundcloudSecret.url])
+  })
+})
+
+describe('Spotify tracks (ADR-026)', () => {
+  const SPOTIFY_URL = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC'
+  const SPOTIFY_REF: TrackRef = {
+    platform: 'spotify',
+    id: '4uLU6hMCjMI75M1A2tKUQC',
+    url: SPOTIFY_URL,
+  }
+  const SEARCH = 'ytsearch10:Rick Astley - Never Gonna Give You Up'
+  const MATCH_URL = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+  const COVER_HASH = 'ab67616d0000b273255e131abc1410833be95673'
+  /** A made-up Spotify track that no recorded YouTube result matches. */
+  const UNMATCHED_ID = '0000000000000000000001'
+
+  const servers: SpotifyFixtureServer[] = []
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map((server) => server.close()))
+  })
+
+  /**
+   * The app reading Spotify from a fixture server, with the matched video's download (the recorded
+   * youtube-ba run as dQw4w9WgXcQ, its DONE line naming it as the search result does, plus an album
+   * and a year Spotify's names must replace).
+   */
+  async function start(name: string, firstRules: FakeYtdlpRule[] = []) {
+    const spotify = await startSpotifyFixtures({
+      pages: {
+        // track.html renamed: the search for it (the recorded one) has no such song.
+        [`/embed/track/${UNMATCHED_ID}`]: readFileSync(
+          path.join(SPOTIFY_FIXTURES, 'track.html'),
+          'utf8',
+        )
+          .replaceAll('4uLU6hMCjMI75M1A2tKUQC', UNMATCHED_ID)
+          .replaceAll('Never Gonna Give You Up', 'Patient Zero')
+          .replaceAll('Rick Astley', 'Taylor Swift'),
+      },
+    })
+    servers.push(spotify)
+    const rules = await youtubeDownloadRules(path.join(root, `${name}-rules`), {
+      id: 'dQw4w9WgXcQ',
+      url: MATCH_URL,
+      title: 'Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)',
+      duration: 214,
+      uploader: 'Rick Astley',
+      channel: 'Rick Astley',
+      done: { album: 'The Best of Me', album_artist: 'Various Artists', release_year: 2019 },
+    })
+    const app = await startDownloadsApp(root, {
+      spotifyOrigin: spotify.origin,
+      ytdlpRules: [
+        ...firstRules,
+        ...rules,
+        { url: 'ytsearch10:Taylor Swift - Patient Zero', stdout: 'youtube/search.json' },
+      ],
+    })
+    return { app, spotify }
+  }
+
+  it("downloads a Spotify track's YouTube match, tagged with Spotify's names and cover", async () => {
+    const { app, spotify } = await start('match')
+    const sse = await app.openEvents()
+    expect(await sse.next()).toMatchObject({ type: 'snapshot', jobs: [] })
+    const { jobIds } = await app.download([SPOTIFY_REF])
+    const id = idAt(jobIds, 0)
+    const done = JobSchema.parse((await untilSettled(sse, [id])).get(id))
+
+    // The stream: queued, downloading, then the match, then progress, processing and done.
+    const steps = sse.received.flatMap((event): string[] => {
+      if (event.type === 'job.progress') return event.jobId === id ? ['progress'] : []
+      if (event.type !== 'jobs.added' && event.type !== 'jobs.updated') return []
+      const job = event.jobs.find((one) => one.id === id)
+      if (job === undefined) return []
+      return [`${job.status}${job.match === undefined ? '' : ' +match'}`]
+    })
+    const firstMatch = steps.findIndex((step) => step.endsWith('+match'))
+    expect(steps.slice(0, firstMatch + 1)).toEqual(['queued', 'downloading', 'downloading +match'])
+    // From then on the job shows its match; progress only comes after it.
+    const after = steps.slice(firstMatch)
+    expect(steps.slice(0, firstMatch)).not.toContain('progress')
+    expect(after).toContain('progress')
+    const statusesAfter = after
+      .filter((step) => step !== 'progress')
+      .filter((step, i, all) => step !== all[i - 1])
+    expect(statusesAfter).toEqual(['downloading +match', 'processing +match', 'done +match'])
+
+    const match = {
+      platform: 'youtube',
+      id: 'dQw4w9WgXcQ',
+      url: MATCH_URL,
+      title: 'Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)',
+      uploader: 'Rick Astley',
+      durationSec: 214,
+    }
+    expect(done).toMatchObject({
+      status: 'done',
+      match,
+      outputPath: path.join(app.folder, 'Rick Astley - Never Gonna Give You Up.mp3'),
+      // Honest audio: the YouTube stream it really came from.
+      source: { codec: 'opus', bitrateKbps: 106.064 },
+      output: { ext: 'mp3', codec: 'mp3', bitrateKbps: 320, encoded: true },
+      // The job keeps its Spotify link, with Spotify's names and cover.
+      track: {
+        ...SPOTIFY_REF,
+        title: 'Never Gonna Give You Up',
+        artist: 'Rick Astley',
+        thumbnailUrl: spotify.coverUrl(COVER_HASH),
+      },
+    })
+
+    // yt-dlp searched YouTube, then downloaded the match; it never saw the Spotify link.
+    const calls = await app.engine.ytdlp.calls()
+    expect(calls.map((call) => call.url)).toEqual([SEARCH, MATCH_URL])
+    expect(calls.flatMap((call) => call.argv).join(' ')).not.toContain('spotify.com')
+    // Spotify served the page and the cover, and nothing else was fetched.
+    expect(spotify.requests()).toEqual([
+      '/embed/track/4uLU6hMCjMI75M1A2tKUQC',
+      `/image/${COVER_HASH}`,
+    ])
+
+    // The tags: Spotify's title, artist and year, no YouTube album; the YouTube page as the
+    // comment (where the audio came from); Spotify's cover (a 640 px JPEG, not YouTube's WebP).
+    if (done.status !== 'done') throw new Error('done')
+    const { tag, audio } = await readMp3Tag(done.outputPath)
+    expect(textOf(tag, 'TIT2')).toBe('Never Gonna Give You Up')
+    expect(textOf(tag, 'TPE1')).toBe('Rick Astley')
+    expect(textOf(tag, 'TYER')).toBe('1987')
+    expect(framesOf(tag, 'TALB')).toEqual([])
+    expect(framesOf(tag, 'TPE2')).toEqual([])
+    expect(framesOf(tag, 'COMM').map(readComment)).toEqual([
+      { encoding: 0, language: 'eng', description: '', text: MATCH_URL },
+    ])
+    const pictures = framesOf(tag, 'APIC').map(readPicture)
+    expect(pictures).toMatchObject([{ mime: 'image/jpeg', type: 3 }])
+    expect(readFakeMedia(pictures[0]?.data ?? new Uint8Array())).toMatchObject({
+      kind: 'image',
+      info: {
+        format: 'jpeg',
+        width: SPOTIFY_FIXTURE_COVER.width,
+        height: SPOTIFY_FIXTURE_COVER.height,
+      },
+    })
+    expect(readFakeMedia(audio)).toMatchObject({ kind: 'audio', header: { codec: 'mp3' } })
+
+    // The matcher logs ids, counts and scores (stop() fails on a URL, a title or a path).
+    expect(app.logs.filter((line) => line.startsWith('[match]'))).toEqual([
+      expect.stringMatching(
+        new RegExp(
+          `^\\[match\\] ${id.slice(0, 8)}: result 1 of 10 \\(score \\d+, 0\\.4 s apart\\)$`,
+        ),
+      ),
+    ])
+    expect(await app.jobsLeft()).toEqual([])
+    expect((await app.snapshot()).jobs).toEqual([done])
+    sse.close()
+  })
+
+  it("downloads the next match when YouTube refuses the best one, and shows that one's names", async () => {
+    // The search's second-best result, LLFhKaqnWwk (the animated video, 3:33), downloads.
+    const second = await youtubeDownloadRules(path.join(root, 'fallback-second'), {
+      id: 'LLFhKaqnWwk',
+      url: 'https://www.youtube.com/watch?v=LLFhKaqnWwk',
+      title: 'Rick Astley - Never Gonna Give You Up (Official Animated Video)',
+      duration: 213,
+      uploader: 'Rick Astley',
+      channel: 'Rick Astley',
+    })
+    const { app } = await start('fallback', [
+      // The best match's download fails as an unavailable video does (no stdout, exit 1).
+      { url: MATCH_URL, stderr: 'errors/youtube-unavailable.log', exit: 1 },
+      ...second,
+    ])
+    const sse = await app.openEvents()
+    await sse.next()
+    const id = idAt((await app.download([SPOTIFY_REF])).jobIds, 0)
+    const done = JobSchema.parse((await untilSettled(sse, [id])).get(id))
+
+    const matches = sse.received.flatMap((event) =>
+      event.type === 'jobs.updated'
+        ? event.jobs.flatMap((job) => (job.id === id && job.match ? [job.match.id] : []))
+        : [],
+    )
+    expect(matches.filter((match, i) => match !== matches[i - 1])).toEqual([
+      'dQw4w9WgXcQ',
+      'LLFhKaqnWwk',
+    ])
+    expect(done).toMatchObject({
+      status: 'done',
+      match: { id: 'LLFhKaqnWwk', url: 'https://www.youtube.com/watch?v=LLFhKaqnWwk' },
+      track: { ...SPOTIFY_REF, title: 'Never Gonna Give You Up', artist: 'Rick Astley' },
+      outputPath: path.join(app.folder, 'Rick Astley - Never Gonna Give You Up.mp3'),
+    })
+    expect((await app.engine.ytdlp.calls()).map((call) => call.url)).toEqual([
+      SEARCH,
+      MATCH_URL,
+      'https://www.youtube.com/watch?v=LLFhKaqnWwk',
+    ])
+    if (done.status !== 'done') throw new Error('done')
+    const { tag } = await readMp3Tag(done.outputPath)
+    expect(framesOf(tag, 'COMM').map(readComment)).toEqual([
+      {
+        encoding: 0,
+        language: 'eng',
+        description: '',
+        text: 'https://www.youtube.com/watch?v=LLFhKaqnWwk',
+      },
+    ])
+    expect(app.logs).toContainEqual(`[attempt] ${id.slice(0, 8)}: match 1 refused, trying the next`)
+    expect(await app.jobsLeft()).toEqual([])
+    sse.close()
+  })
+
+  it('fails a Spotify track no YouTube result matches with no_match, downloading nothing', async () => {
+    const { app, spotify } = await start('no-match')
+    const ref: TrackRef = {
+      platform: 'spotify',
+      id: UNMATCHED_ID,
+      url: `https://open.spotify.com/track/${UNMATCHED_ID}`,
+    }
+    const { jobIds } = await app.download([ref])
+    const failed = await app.waitForJob(idAt(jobIds, 0), 'failed')
+    expect(failed).toMatchObject({
+      error: {
+        code: 'no_match',
+        message: "No YouTube upload matches this Spotify track's artist, title and length.",
+      },
+      track: ref,
+    })
+    expect(failed).not.toHaveProperty('match')
+    expect((await app.engine.ytdlp.calls()).map((call) => call.url)).toEqual([
+      'ytsearch10:Taylor Swift - Patient Zero',
+    ])
+    expect(spotify.requests()).toEqual([`/embed/track/${UNMATCHED_ID}`])
+    expect(await readdir(app.folder)).toEqual([])
+    expect(await app.jobsLeft()).toEqual([])
+    expect(app.logs).toContainEqual(
+      expect.stringMatching(/^\[match\] [0-9a-f]{8}: none of 10 results matches$/),
+    )
+  })
+
+  it("fails a Spotify track Spotify doesn't show with unavailable, without searching", async () => {
+    const { app } = await start('missing')
+    const ref: TrackRef = {
+      platform: 'spotify',
+      id: '0000000000000000000404',
+      url: 'https://open.spotify.com/track/0000000000000000000404',
+    }
+    const failed = await app.waitForJob(idAt((await app.download([ref])).jobIds, 0), 'failed')
+    expect(failed).toMatchObject({ error: { code: 'unavailable' } })
+    expect(await app.engine.ytdlp.calls()).toEqual([])
+  })
+
+  it('refuses a Spotify album or playlist as a download at once: its rows download one by one', async () => {
+    const { app, spotify } = await start('list')
+    const { jobIds } = await app.download([
+      {
+        platform: 'spotify',
+        id: '6N9PS4QXF1D0OWPk0Sxtb4',
+        url: 'https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4',
+      },
+    ])
+    expect(app.queue.get(idAt(jobIds, 0))).toMatchObject({
+      status: 'failed',
+      error: { code: 'invalid_request' },
+    })
+    expect(spotify.requests()).toEqual([])
+    expect(await app.engine.ytdlp.calls()).toEqual([])
   })
 })

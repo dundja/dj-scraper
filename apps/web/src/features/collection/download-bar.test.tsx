@@ -19,6 +19,7 @@ import {
   SC_SET_API_URL_ROW,
   scSet,
   scSetTracks,
+  spotifyPlaylist,
 } from '@/test/resolve.ts'
 import { CollectionView } from './collection-view.tsx'
 import {
@@ -116,6 +117,25 @@ describe('DownloadBar', () => {
     })
     expect(body.label).toBe('Warm-up Selection')
     expect(await screen.findByText('Queued 26 tracks — see Downloads.')).toBeTruthy()
+  })
+
+  it("sends a Spotify list's rows as Spotify tracks: the server matches each on YouTube", async () => {
+    serveSettings()
+    server.on('POST /api/downloads', () => json(created(5)))
+    const { user } = renderView(spotifyPlaylist)
+    await findFolder()
+    await user.click(screen.getByRole('button', { name: 'Download 5 tracks' }))
+
+    const body = sent()
+    expect(body.items).toEqual(spotifyPlaylist.entries.map(toTrackRef))
+    expect(body.items.every((item) => item.platform === 'spotify')).toBe(true)
+    expect(body.items[1]).toMatchObject({
+      url: spotifyPlaylist.entries[1]?.url,
+      title: 'Low Sun',
+      artist: 'Mara Vey, Orbit Theory',
+    })
+    expect(body.label).toBe('Deep House Warm-up')
+    expect(await screen.findByText('Queued 5 tracks — see Downloads.')).toBeTruthy()
   })
 
   it('downloads into a subfolder named after the list when the switch is on', async () => {

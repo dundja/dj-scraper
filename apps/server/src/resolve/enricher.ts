@@ -60,6 +60,8 @@ export const DEFAULT_PACING: Pacing = {
   soundcloud: { concurrency: 2, minIntervalMs: 1000, budget: SOUNDCLOUD_LOOKUP_BUDGET },
   youtube: { concurrency: 2, minIntervalMs: 500 },
   other: { concurrency: 2, minIntervalMs: 500 },
+  // Never used: Spotify rows are complete, and a lookup of one is refused (ADR-026).
+  spotify: { concurrency: 1, minIntervalMs: 1000 },
 }
 
 export const ENTRY_TIMEOUT_MS = 60_000
@@ -74,6 +76,7 @@ export const COOLDOWN_MAX_MS = 10 * 60_000
 const PLATFORM_NAMES: Record<Platform, string> = {
   youtube: 'YouTube',
   soundcloud: 'SoundCloud',
+  spotify: 'Spotify',
   other: 'The site',
 }
 
@@ -328,6 +331,7 @@ export function createEnricher({
     if (!checked.ok) return failed(row, checked.error)
     const { input } = checked
     if (input.guess === 'collection') return failed(row, NOT_A_TRACK)
+    if (input.platform === 'spotify') return failed(row, SPOTIFY_ROW)
     const target: Target = { key: `${input.platform}:${row.id}`, platform: input.platform, input }
     const cached = cache.get(target.key)
     if (cached) return filled(row, cached)
@@ -381,6 +385,12 @@ export function createEnricher({
 const NOT_A_TRACK: ErrorInfo = {
   code: 'invalid_request',
   message: 'This link is a list, not a track: resolve it instead.',
+}
+
+/** Spotify rows come complete from the listing; there is nothing for yt-dlp to look up (ADR-026). */
+const SPOTIFY_ROW: ErrorInfo = {
+  code: 'invalid_request',
+  message: 'Spotify rows are complete: there is nothing to look up.',
 }
 
 const RATE_LIMITED: ErrorInfo = {

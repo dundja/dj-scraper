@@ -1,6 +1,14 @@
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { AudioSource, ErrorInfo, ValidUrl } from '@dj-scraper/shared'
+import type {
+  AudioSource,
+  DownloadFormat,
+  ErrorCode,
+  ErrorInfo,
+  Platform,
+  TrackMatch,
+  ValidUrl,
+} from '@dj-scraper/shared'
 import { JOBS_DIR } from '../data-dir.ts'
 import { spawnFailure } from '../engine/binaries.ts'
 import { canHoldCover } from '../engine/finalize-plan.ts'
@@ -10,7 +18,10 @@ import { DATA_DISK_FULL, mapDownloadExit } from '../engine/ytdlp-errors.ts'
 import { parseDownloadLine, waitingUntil } from '../engine/ytdlp-progress.ts'
 import { checkUrl } from '../resolve/input.ts'
 import type { Logger } from '../resolve/ytdlp-call.ts'
+import type { SpotifyTrack } from '../spotify/embed.ts'
+import type { SpotifyDownloads, SpotifyMatched } from '../spotify/matcher.ts'
 import { failureName } from '../util/errno.ts'
+import { omitUndefined } from '../util/fields.ts'
 import {
   type AttemptOutcome,
   type AttemptRequest,
@@ -18,6 +29,7 @@ import {
   type DoneInfo,
   type EngineBins,
   type Finalize,
+  type FinalTrack,
   type Publish,
   type RunAttempt,
   type StartInfo,
@@ -64,11 +76,33 @@ const MAX_PATH_BYTES = 1023
 /** The longest name publish puts beside the file: `._.djs-<uuid>.part` (macOS's sidecar on FAT). */
 const PART_NAME_BYTES = '._.djs-.part'.length + 36
 const CANCELED: AttemptOutcome = { kind: 'canceled' }
+const NO_FILE_OUTCOME: AttemptOutcome = { kind: 'failed', error: NO_FILE }
+/** A Spotify job tries at most this many YouTube matches, best first. */
+export const MAX_MATCH_TRIES = 3
+/** YouTube refusing one upload: the next match of a Spotify track may still download. */
+const UPLOAD_REFUSALS: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
+  'unavailable',
+  'private',
+  'geo_blocked',
+  'age_restricted',
+  'login_required',
+])
+const NO_SPOTIFY: ErrorInfo = {
+  code: 'unsupported_url',
+  message: "This server can't download Spotify tracks.",
+}
+/** The Spotify cover, written beside yt-dlp's files; finalize sniffs it like any thumbnail. */
+const SPOTIFY_COVER = 'spotify-cover.jpg'
 
 /** The filesystem calls an attempt makes itself; tests replace them to script failures. */
 export type AttemptFs = {
   mkdir: (dir: string, options: { recursive: true; mode: number }) => Promise<unknown>
   rm: (dir: string, options: { recursive: true; force: true }) => Promise<void>
+  writeFile: (
+    file: string,
+    data: Uint8Array,
+    options: { flag: 'wx'; mode: number },
+  ) => Promise<void>
 }
 
 export type AttemptDeps = {
@@ -78,6 +112,8 @@ export type AttemptDeps = {
   locate: () => Promise<EngineBins>
   finalize: Finalize
   publish: Publish
+  /** Matching a Spotify track on YouTube and its cover (ADR-026); without it, Spotify jobs fail. */
+  spotify?: SpotifyDownloads
   run?: typeof run
   /** Our Node for `--js-runtimes`: `process.execPath`, never user input. */
   jsRuntime?: string
@@ -92,6 +128,7 @@ export type AttemptDeps = {
 const DEFAULT_FS: AttemptFs = {
   mkdir: (dir, options) => mkdir(dir, options),
   rm: (dir, options) => rm(dir, options),
+  writeFile: (file, data, options) => writeFile(file, data, options),
 }
 
 export function createRunAttempt(deps: AttemptDeps): RunAttempt {
@@ -106,8 +143,8 @@ export function createRunAttempt(deps: AttemptDeps): RunAttempt {
   return (request, signal, onUpdate) => attempt(request, signal, onUpdate, context)
 }
 
-type Context = Required<Omit<AttemptDeps, 'ffmpegLocation' | 'fs'>> &
-  Pick<AttemptDeps, 'ffmpegLocation'> & { fs: AttemptFs }
+type Context = Required<Omit<AttemptDeps, 'ffmpegLocation' | 'spotify' | 'fs'>> &
+  Pick<AttemptDeps, 'ffmpegLocation' | 'spotify'> & { fs: AttemptFs }
 
 async function attempt(
   request: AttemptRequest,
@@ -152,7 +189,7 @@ async function attempt(
 
 async function download(
   request: AttemptRequest,
-  input: ValidUrl,
+  classified: ValidUrl,
   dirs: { jobDir: string; jobsDir: string },
   nameMaxBytes: number,
   signal: AbortSignal,
@@ -161,8 +198,6 @@ async function download(
 ): Promise<AttemptOutcome> {
   const { log } = context
   const { options } = request
-  // The classified URL's platform (equal to the request's, checked above), never ref.platform.
-  const { platform } = input
   const id = request.jobId.slice(0, 8)
 
   let bins: EngineBins
@@ -183,72 +218,82 @@ async function download(
       log.error(`[attempt] ${id}: an update listener failed: ${failureName(error)}`)
     }
   }
-  const lines = readLines(report, context.now)
-  // Stops the run when the URL turns out to be a list: one job is one track.
-  const stop = new AbortController()
-  const onLine = (raw: string): void => {
-    if (lines.onLine(raw) === 'list') stop.abort()
-  }
 
-  let result: RunResult
-  try {
-    result = await context.run(
+  // A Spotify track downloads from its YouTube match (ADR-026): from here on, `input` is the
+  // matched video's classified URL, and Spotify's names and cover replace YouTube's at finalize.
+  // When YouTube refuses that upload (blocked, private, …), the next match is tried.
+  let spotify: SpotifyMatched | undefined
+  let tries: { input: ValidUrl; match?: TrackMatch }[] = [{ input: classified }]
+  if (classified.platform === 'spotify') {
+    if (context.spotify === undefined) return failed(NO_SPOTIFY)
+    const found = await context.spotify.match(
+      classified,
       bins.ytdlp,
-      downloadArgs({
-        url: input.url,
-        platform,
-        format: options.format,
-        jobDir: dirs.jobDir,
-        // D3: only for a file that can hold a cover (not WAV, not YouTube's WebM original).
-        writeThumbnail: options.embedArtwork && canHoldCover(options.format, platform),
-        jsRuntime: context.jsRuntime,
-        ...(context.ffmpegLocation ? { ffmpegLocation: context.ffmpegLocation } : {}),
-      }),
-      {
-        signal: AbortSignal.any([signal, stop.signal]),
-        killGraceMs: KILL_GRACE_MS,
-        maxOutputBytes: MAX_OUTPUT_BYTES,
-        onStdoutLine: onLine,
-        onStderrLine: onLine,
-      },
+      signal,
+      request.jobId,
+      dirs.jobDir,
     )
-  } catch (error) {
     if (signal.aborted) return CANCELED
-    if (error instanceof SpawnError) {
-      return failed({ code: 'engine_missing', message: spawnFailure('yt-dlp', error.code) })
+    if (!found.ok) return failed(found.error)
+    spotify = found.matched
+    tries = [
+      { input: spotify.input, match: spotify.match },
+      ...(spotify.alternatives ?? []).slice(0, MAX_MATCH_TRIES - 1),
+    ]
+  }
+  // The classified URL's platform (the request's, checked above, or the match's), never
+  // ref.platform. Every match is a YouTube video, so it is the same for every try.
+  const { platform } = tries[0]?.input ?? classified
+  // D3: only for a file that can hold a cover (not WAV, not YouTube's WebM original).
+  const writeThumbnail = options.embedArtwork && canHoldCover(options.format, platform)
+
+  let ran: Ran | undefined
+  for (const [index, next] of tries.entries()) {
+    if (next.match !== undefined) {
+      // A later try starts over: the last one's progress no longer applies.
+      report(index === 0 ? { match: next.match } : { match: next.match, progress: null })
     }
-    throw error
+    ran = await runYtdlp(
+      next.input,
+      platform,
+      writeThumbnail,
+      bins,
+      dirs,
+      signal,
+      report,
+      context,
+      options.format,
+      id,
+    )
+    if (ran.ok) break
+    const { outcome } = ran
+    const refused = outcome.kind === 'failed' && UPLOAD_REFUSALS.has(outcome.error.code)
+    if (!refused || index === tries.length - 1) return outcome
+    log.info(`[attempt] ${id}: match ${index + 1} refused, trying the next`)
   }
-  if (signal.aborted) return CANCELED
-  if (lines.list) {
-    log.info(`[attempt] ${id}: the ${platform} link is a list, stopped`)
-    return failed(LIST_URL)
-  }
-  if (result.exitCode !== 0) {
-    const error = mapDownloadExit({
-      exitCode: result.exitCode,
-      stderr: result.stderr,
-      breakFilter: platform === 'soundcloud',
-      jobDir: dirs.jobDir,
-    })
-    if (error.code === 'unknown') {
-      const how = result.signal === null ? `exit ${result.exitCode}` : `signal ${result.signal}`
-      log.warn(`[attempt] ${id}: yt-dlp failed (${how})`)
-    }
-    return failed(error)
-  }
-  const done = lines.done
-  if (done === undefined) return failed(NO_FILE)
+  if (ran === undefined || !ran.ok) return failed(NO_FILE)
+  const { lines, downloaded } = ran
 
   // Finalize and publish. A file that reached the folder stands even if a cancel came meanwhile.
   if (!lines.processing) report({ status: 'processing' })
-  const source = sourceOf(done) ?? lines.source
+  const source = sourceOf(downloaded) ?? lines.source
+  let done = downloaded
+  // The job shows Spotify's cover unless the file holds YouTube's thumbnail instead.
+  let showSpotifyCover = true
+  if (spotify !== undefined) {
+    const cover = writeThumbnail
+      ? await spotifyCover(spotify.track, dirs.jobDir, signal, context, id)
+      : undefined
+    if (signal.aborted) return CANCELED
+    showSpotifyCover = cover !== undefined || !writeThumbnail
+    done = withSpotifyNames(downloaded, spotify.track, cover)
+  }
   try {
     const finished = await context.finalize({
       jobDir: dirs.jobDir,
       bins: { ffmpeg: bins.ffmpeg, ffprobe: bins.ffprobe },
       done,
-      input,
+      input: ran.input,
       platform,
       format: options.format,
       options: {
@@ -267,7 +312,11 @@ async function download(
       jobsDir: dirs.jobsDir,
       signal,
     })
-    const common = { outputPath: published.path, track: finished.track }
+    const track =
+      spotify === undefined
+        ? finished.track
+        : spotifyFinalTrack(finished.track, spotify, showSpotifyCover)
+    const common = { outputPath: published.path, track }
     const withSource = source === undefined ? {} : { source }
     return published.status === 'moved'
       ? { kind: 'done', ...common, output: finished.output, ...withSource }
@@ -277,6 +326,84 @@ async function download(
     if (error instanceof StepError) return failed(error.info)
     throw error
   }
+}
+
+/** A yt-dlp run that left a file, or the outcome that ends the attempt. */
+type Ran =
+  | { ok: true; input: ValidUrl; lines: Lines; downloaded: DoneInfo }
+  | { ok: false; outcome: AttemptOutcome }
+
+/** One yt-dlp download of `input` into the job dir, its lines read into updates. */
+async function runYtdlp(
+  input: ValidUrl,
+  platform: Platform,
+  writeThumbnail: boolean,
+  bins: EngineBins,
+  dirs: { jobDir: string; jobsDir: string },
+  signal: AbortSignal,
+  report: (update: AttemptUpdate) => void,
+  context: Context,
+  format: DownloadFormat,
+  id: string,
+): Promise<Ran> {
+  const { log } = context
+  const end = (outcome: AttemptOutcome): Ran => ({ ok: false, outcome })
+  const lines = readLines(report, context.now)
+  // Stops the run when the URL turns out to be a list: one job is one track.
+  const stop = new AbortController()
+  const onLine = (raw: string): void => {
+    if (lines.onLine(raw) === 'list') stop.abort()
+  }
+
+  let result: RunResult
+  try {
+    result = await context.run(
+      bins.ytdlp,
+      downloadArgs({
+        url: input.url,
+        platform,
+        format,
+        jobDir: dirs.jobDir,
+        writeThumbnail,
+        jsRuntime: context.jsRuntime,
+        ...(context.ffmpegLocation ? { ffmpegLocation: context.ffmpegLocation } : {}),
+      }),
+      {
+        signal: AbortSignal.any([signal, stop.signal]),
+        killGraceMs: KILL_GRACE_MS,
+        maxOutputBytes: MAX_OUTPUT_BYTES,
+        onStdoutLine: onLine,
+        onStderrLine: onLine,
+      },
+    )
+  } catch (error) {
+    if (signal.aborted) return end(CANCELED)
+    if (error instanceof SpawnError) {
+      return end(failed({ code: 'engine_missing', message: spawnFailure('yt-dlp', error.code) }))
+    }
+    throw error
+  }
+  if (signal.aborted) return end(CANCELED)
+  if (lines.list) {
+    log.info(`[attempt] ${id}: the ${platform} link is a list, stopped`)
+    return end(failed(LIST_URL))
+  }
+  if (result.exitCode !== 0) {
+    const error = mapDownloadExit({
+      exitCode: result.exitCode,
+      stderr: result.stderr,
+      breakFilter: platform === 'soundcloud',
+      jobDir: dirs.jobDir,
+    })
+    if (error.code === 'unknown') {
+      const how = result.signal === null ? `exit ${result.exitCode}` : `signal ${result.signal}`
+      log.warn(`[attempt] ${id}: yt-dlp failed (${how})`)
+    }
+    return end(failed(error))
+  }
+  const downloaded = lines.done
+  if (downloaded === undefined) return end(NO_FILE_OUTCOME)
+  return { ok: true, input, lines, downloaded }
 }
 
 /** What the lines of a run said so far. `onLine` returns 'list' when the run must stop. */
@@ -400,4 +527,76 @@ function workDirError(error: unknown): ErrorInfo {
     return { code: 'disk_full', message: DATA_DISK_FULL }
   }
   return { code: 'unknown', message: `The download's work folder can't be created (${code}).` }
+}
+
+/**
+ * Spotify's cover in the job dir, or undefined: then YouTube's thumbnail stays the cover. Its
+ * failure costs only the artwork, never the download.
+ */
+async function spotifyCover(
+  track: SpotifyTrack,
+  jobDir: string,
+  signal: AbortSignal,
+  context: Context,
+  id: string,
+): Promise<string | undefined> {
+  if (track.coverUrl === undefined || context.spotify === undefined) return undefined
+  try {
+    const bytes = await context.spotify.cover(track.coverUrl, signal)
+    if (bytes === undefined) return undefined
+    const file = path.join(jobDir, SPOTIFY_COVER)
+    await context.fs.writeFile(file, bytes, { flag: 'wx', mode: 0o600 })
+    return file
+  } catch (error) {
+    if (signal.aborted) return undefined
+    context.log.warn(`[attempt] ${id}: the Spotify cover failed (${failureName(error)})`)
+    return undefined
+  }
+}
+
+/**
+ * The DONE line with Spotify's title, artists and year in place of YouTube's, and its cover when
+ * there is one. YouTube's album and release fields go, even without Spotify's: the matched upload
+ * may come from a compilation. The URL fields stay YouTube's, so the comment tag names the page the
+ * audio really came from.
+ */
+export function withSpotifyNames(
+  done: DoneInfo,
+  track: SpotifyTrack,
+  coverPath: string | undefined,
+): DoneInfo {
+  const {
+    album: _album,
+    albumArtist: _albumArtist,
+    releaseDate: _releaseDate,
+    releaseYear: _releaseYear,
+    ...rest
+  } = done
+  return {
+    ...rest,
+    title: track.title,
+    track: track.title,
+    ...omitUndefined({
+      artist: track.artists.length > 0 ? track.artists.join(', ') : undefined,
+      artists: track.artists.length > 0 ? track.artists : undefined,
+      releaseYear: track.releaseYear,
+      thumbnailPath: coverPath ?? done.thumbnailPath,
+      thumbnailUrl: coverPath === undefined ? done.thumbnailUrl : track.coverUrl,
+    }),
+  }
+}
+
+/**
+ * The job keeps its Spotify link (a retry matches again) and shows Spotify's cover, unless the
+ * file got YouTube's thumbnail because Spotify's couldn't be fetched.
+ */
+function spotifyFinalTrack(
+  track: FinalTrack,
+  spotify: SpotifyMatched,
+  showSpotifyCover: boolean,
+): FinalTrack {
+  const { url: _url, ...rest } = track
+  const spotifyCover = showSpotifyCover ? spotify.track.coverUrl : undefined
+  const thumbnailUrl = spotifyCover ?? track.thumbnailUrl
+  return { ...rest, ...omitUndefined({ thumbnailUrl }) }
 }

@@ -36,6 +36,8 @@ describe('jobAction', () => {
     ['failed: preview only', failedWith('preview_only'), undefined],
     ['failed: age-restricted', failedWith('age_restricted'), undefined],
     ['failed: removed', failedWith('unavailable'), undefined],
+    // "Retry failed" leaves it out, but YouTube's search results change, so its own Retry stays.
+    ['failed: no YouTube match for a Spotify track', failedWith('no_match'), 'retry'],
   ])('%s offers %s', (_, job, action) => {
     expect(jobAction(job)).toBe(action)
   })

@@ -229,7 +229,7 @@ describe('POST /api/resolve/entries', () => {
       { entries: Array.from({ length: MAX_ENTRIES_PER_REQUEST + 1 }, () => ENTRY) },
     ],
     ['a row with a non-http URL', { entries: [{ ...ENTRY, url: 'file:///etc/passwd' }] }],
-    ['a row with an unknown platform', { entries: [{ ...ENTRY, platform: 'spotify' }] }],
+    ['a row with an unknown platform', { entries: [{ ...ENTRY, platform: 'deezer' }] }],
     ['a row without an id', { entries: [{ ...ENTRY, id: '' }] }],
     ['the old urls shape', { urls: [ENTRY.url] }],
   ])('answers %s with 400 invalid_request without enriching', async (_label, body) => {

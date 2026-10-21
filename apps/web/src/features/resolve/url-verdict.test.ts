@@ -1,7 +1,15 @@
 import { classifyUrl, urlRejectionMessage, type ValidUrl } from '@dj-scraper/shared'
 import { describe, expect, it } from 'vitest'
 import { urls } from '@/test/resolve.ts'
-import { DRM_LABEL, guessLabel, loadingShape, urlVerdict } from './url-verdict.ts'
+import {
+  DRM_LABEL,
+  DRM_MESSAGE,
+  guessLabel,
+  loadingShape,
+  SPOTIFY_OTHER_LABEL,
+  SPOTIFY_OTHER_MESSAGE,
+  urlVerdict,
+} from './url-verdict.ts'
 
 function valid(url: string): ValidUrl {
   const classified = classifyUrl(url)
@@ -54,11 +62,56 @@ describe('urlVerdict', () => {
 
   it('refuses DRM services without resolving them', () => {
     expect(urlVerdict(urls.drm)).toEqual({
-      status: 'drm',
+      status: 'refused',
       label: DRM_LABEL,
-      message: expect.stringContaining('DRM-protected'),
+      message: DRM_MESSAGE,
+    })
+    expect(urlVerdict('https://tidal.com/browse/track/77646169')).toMatchObject({
+      status: 'refused',
+      label: DRM_LABEL,
     })
     expect(DRM_LABEL).toBe('DRM service: not supported')
+    // Spotify is read as a track list now (ADR-026), so the DRM services no longer name it.
+    expect(DRM_MESSAGE).toBe(
+      "Apple Music, Amazon Music, Tidal, Deezer and Beatport streams are DRM-protected, so DJ Scraper can't download them.",
+    )
+  })
+
+  it('takes Spotify tracks, albums and playlists at their canonical URL, without the share token', () => {
+    expect(urlVerdict(`${urls.spotifyTrack}?si=1b2c3d4e5f6a7b8c`)).toEqual({
+      status: 'ok',
+      url: urls.spotifyTrack,
+      platform: 'spotify',
+      label: 'Track',
+      shape: 'track',
+      secret: false,
+    })
+    expect(urlVerdict('https://open.spotify.com/intl-de/album/6N9PS4QXF1D0OWPk0Sxtb4')).toEqual({
+      status: 'ok',
+      url: urls.spotifyAlbum,
+      platform: 'spotify',
+      label: 'Album',
+      shape: 'list',
+      secret: false,
+    })
+    expect(urlVerdict(urls.spotifyPlaylist)).toMatchObject({
+      status: 'ok',
+      platform: 'spotify',
+      label: 'Playlist',
+      shape: 'list',
+    })
+  })
+
+  it.each([
+    ['an artist page', urls.spotifyArtist],
+    ['a podcast', 'https://open.spotify.com/show/2MAi0BvDc6GTFvKFPXnkCL'],
+    ['a short link', 'https://spotify.link/AbCdEfGhIjK'],
+  ])("refuses %s on Spotify with the server's words, without resolving it", (_name, url) => {
+    expect(urlVerdict(url)).toEqual({
+      status: 'refused',
+      label: SPOTIFY_OTHER_LABEL,
+      message: SPOTIFY_OTHER_MESSAGE,
+    })
   })
 
   it('says why text is not a link, with the shared wording', () => {
@@ -106,6 +159,10 @@ describe('guessLabel', () => {
     ['https://soundcloud.com/the-concept-band/likes', 'Likes'],
     ['https://on.soundcloud.com/AbCdEf', 'Link'],
     ['https://vimeo.com/123', 'Link'],
+    [urls.spotifyTrack, 'Track'],
+    [urls.spotifyAlbum, 'Album'],
+    [urls.spotifyPlaylist, 'Playlist'],
+    [urls.spotifyArtist, 'Link'],
   ])('%s → %s', (url, label) => {
     expect(guessLabel(valid(url))).toBe(label)
   })
@@ -117,6 +174,8 @@ describe('loadingShape', () => {
     expect(loadingShape(urls.watchList, 'auto')).toBe('track')
     expect(loadingShape(urls.playlist, 'auto')).toBe('list')
     expect(loadingShape('https://on.soundcloud.com/AbCdEf', 'auto')).toBe('link')
+    expect(loadingShape(urls.spotifyTrack, 'auto')).toBe('track')
+    expect(loadingShape(urls.spotifyAlbum, 'auto')).toBe('list')
   })
 
   it('follows the mode when it says which', () => {

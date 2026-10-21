@@ -32,7 +32,8 @@ export type ResolvePlan = {
 }
 
 /**
- * Pure: classified URL + mode → plan. `out_of_scope` URLs must be refused before planning.
+ * Pure: classified URL + mode → plan. `out_of_scope` URLs must be refused, and Spotify links read
+ * from Spotify (ADR-026), before planning: yt-dlp never sees them.
  * - `watch?v=…&list=…`: `auto` looks up only the track (`--no-playlist`) and offers the list;
  *   `track` takes the track; `collection` lists the list, capped at 50 rows for a mix.
  * - A YouTube video URL is always just the track. A channel root lists its uploads tab.
@@ -42,8 +43,8 @@ export type ResolvePlan = {
  * - Other kinds pass the mode on as a playlist flag (`auto` passes none).
  */
 export function planResolve(input: ValidUrl, mode: ResolveMode): ResolvePlan {
-  if (input.kind === 'out_of_scope') {
-    throw new RangeError('planResolve: refuse out_of_scope URLs before planning')
+  if (input.kind === 'out_of_scope' || input.platform === 'spotify') {
+    throw new RangeError('planResolve: refuse out_of_scope URLs and read Spotify links first')
   }
 
   if (input.kind === 'youtube_watch_list' && input.listId !== undefined) {

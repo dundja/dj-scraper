@@ -256,6 +256,13 @@ export async function smokeDownloads(options: DownloadSmokeOptions): Promise<num
         `   statuses  ${watch.statuses.join(' → ')} · ${progress}${watch.waited ? ' · waited' : ''}`,
       )
     }
+    if (job.match !== undefined) {
+      const { title, uploader, durationSec, url } = job.match
+      const length = durationSec === undefined ? '' : ` · ${durationSec} s`
+      say(
+        `   match     “${title}”${uploader === undefined ? '' : ` by ${uploader}`}${length} · ${url}`,
+      )
+    }
     say(`   source    ${describeSource(job.source)}`)
     if (job.status === 'failed') {
       say(`   error     ${job.error.code}: ${job.error.message}`)

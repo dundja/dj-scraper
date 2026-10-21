@@ -25,6 +25,13 @@ yt-dlp --ignore-config --no-update --color never --encoding utf-8 --js-runtimes 
 | `channel-videos.json` | `https://www.youtube.com/@NoCopyrightSounds/videos` | `-J --flat-playlist -I 1:6` | 0 | `id` is the channel id (`UC…`), title `NoCopyrightSounds - Videos`, `playlist_count: null` (no count for channel tabs). The entries have **no** `channel`/`uploader`; only the top level names the channel. |
 | `channel-root.json` | `https://www.youtube.com/@NoCopyrightSounds` | `-J --flat-playlist -I 1:3` | 0 | `_type: playlist` (id `@NoCopyrightSounds`, `playlist_count: 2`) whose entries are two `_type: playlist` tabs (`- Videos`, `- Shorts`), each cut to 3 rows: `-I` applies at every level. Shorts rows have only id, url (`/shorts/…`), title and view_count: no duration. |
 
+**Search** (`search.json`), recorded **2026-10-21** with the same yt-dlp 2026.08.19 (deno 2.9.7, Node 24.12.0), same machine and IP. The argv is exactly what `searchArgs` builds for a Spotify track's match step (`src/spotify/matcher.ts`, ADR-026):
+```
+yt-dlp --ignore-config --no-update --color never --encoding utf-8 --js-runtimes node:"$(command -v node)" \
+  -J --flat-playlist --socket-timeout 20 -- 'ytsearch10:Rick Astley - Never Gonna Give You Up'
+```
+Exit 0, stderr empty, 1.4 s. `_type: playlist`, `extractor_key: YoutubeSearch`; `id`, `title` and `webpage_url` are the query, `original_url` the whole `ytsearch10:…`; `playlist_count: 10`. The 10 entries are flat `_type: url` rows with `id`, `url` (watch URL), `title`, `channel`/`uploader`, `duration` (whole seconds) and `live_status: null`. Row 1 is `dQw4w9WgXcQ` (Official Video (4K Remaster), 214 s, channel Rick Astley); the others are a lyrics re-upload, the animated video, other channels' uploads, the 2022 remaster, a BBC live take (234 s) and Glastonbury 2023 (560 s). `src/spotify/match.test.ts` reads it with `parseSearchResults` (it is no link, so `ytdlp-parse.test.ts` only checks its shape), and `fake-yt-dlp.json` answers the search with it.
+
 **Not recorded:**
 - `shorts.json`: `https://www.youtube.com/shorts/BGQWPY4IigY` has the same shape as `video.json`. Only `media_type: "short"` and `original_url` (`/shorts/…`) differ; `webpage_url` is the watch URL.
 - Large listings, measured only: `-I 1:5001` on `playlist?list=UU8l9frL61Yl5KFOl87nIm2w` (`playlist_count: 20000`) took 38.5 s and printed 6.7 MB of JSON; `@NASA/videos` took 56 s and printed 3.7 MB (`playlist_count: null`).

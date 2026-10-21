@@ -29,7 +29,13 @@ export const urls = {
   mix: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ',
   userSets: 'https://soundcloud.com/the-concept-band/sets',
   /** A DRM service: `classifyUrl` says `out_of_scope`, so the web shows that without resolving. */
-  drm: 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
+  drm: 'https://music.apple.com/us/album/whenever-you-need-somebody/1558533900?i=1558534271',
+  /** Spotify's links are track lists, their audio matched on YouTube (ADR-026). */
+  spotifyTrack: 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
+  spotifyAlbum: 'https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4',
+  spotifyPlaylist: 'https://open.spotify.com/playlist/37i9dQZF1DX6J5NfMJS675',
+  /** An artist page: `spotify_other`, refused like a DRM service, with Spotify's own words. */
+  spotifyArtist: 'https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt',
 } as const
 
 /** A track with `changes` on top, validated against the contract. */
@@ -423,6 +429,92 @@ export const userPage: Collection = CollectionSchema.parse({
     availability: 'unknown',
     partial: false,
   })),
+})
+
+// Spotify (ADR-026): the server reads names, durations and covers from Spotify's embed page. Rows
+// are never partial, no row has a `source` (its audio is unknown until a download matches it on
+// YouTube), and a list has no `trackCount`: the page lists at most 100 rows and never says more.
+
+/**
+ * Rick Astley's "Never Gonna Give You Up" as Spotify's embed page has it (recorded 2026-10): the
+ * album's cover, the duration to the millisecond, no source.
+ */
+export const spotifyTrack: Track = TrackSchema.parse({
+  id: '4uLU6hMCjMI75M1A2tKUQC',
+  platform: 'spotify',
+  url: urls.spotifyTrack,
+  title: 'Never Gonna Give You Up',
+  artist: 'Rick Astley',
+  durationSec: 213.573,
+  thumbnailUrl:
+    'https://image-cdn-fa.spotifycdn.com/image/ab67616d0000b273255e131abc1410833be95673',
+  availability: 'available',
+})
+
+/** A 22-character Spotify id, distinct per `n`. */
+const spotifyId = (prefix: string, n: number) =>
+  `${prefix}${String(n).padStart(22 - prefix.length, '0')}`
+
+/** [artists joined with ", ", title, duration] of the Spotify playlist's rows. */
+const SPOTIFY_PLAYLIST_ROWS: [artist: string, title: string, durationSec: number][] = [
+  ['Kollektiv Nord', 'Tidal Drift', 384.12],
+  ['Mara Vey, Orbit Theory', 'Low Sun', 412.5],
+  ['Deep Season', 'Night Ferry', 437.861],
+  ['Lune Atelier', 'Copper Lines', 298.04],
+  ['Halden & Rui', 'Slow Motion City', 356.333],
+]
+
+const spotifyRow = (id: string, artist: string, title: string, durationSec: number): unknown => ({
+  id,
+  platform: 'spotify',
+  url: `https://open.spotify.com/track/${id}`,
+  title,
+  artist,
+  durationSec,
+  availability: 'available',
+  partial: false,
+})
+
+/**
+ * A Spotify playlist of 5 rows with a curator as owner. A playlist's rows have no artwork on the
+ * embed page, and one podcast episode on it is skipped (`skippedEntries`).
+ */
+export const spotifyPlaylist: Collection = CollectionSchema.parse({
+  id: '37i9dQZF1DX6J5NfMJS675',
+  platform: 'spotify',
+  url: urls.spotifyPlaylist,
+  kind: 'playlist',
+  title: 'Deep House Warm-up',
+  owner: 'Crate Diggers',
+  thumbnailUrl: 'https://image-cdn-ak.spotifycdn.com/image/ab67706c0000da84djscraperwarmup0001',
+  truncated: false,
+  skippedEntries: 1,
+  entries: SPOTIFY_PLAYLIST_ROWS.map(([artist, title, durationSec], index) =>
+    spotifyRow(spotifyId('djSpot', index), artist, title, durationSec),
+  ),
+})
+
+/** The most rows Spotify's embed page lists: a list that long is `truncated`. */
+export const SPOTIFY_LIST_ROWS = 100
+
+/** A Spotify playlist cut at the embed page's 100 rows: `truncated`, no `trackCount`. */
+export const spotifyBigPlaylist: Collection = CollectionSchema.parse({
+  id: '37i9dQZF1DXa8NOEUWPn9W',
+  platform: 'spotify',
+  url: 'https://open.spotify.com/playlist/37i9dQZF1DXa8NOEUWPn9W',
+  kind: 'playlist',
+  title: 'Housewerk',
+  owner: 'Spotify',
+  thumbnailUrl: 'https://image-cdn-ak.spotifycdn.com/image/ab67706f00000002djscraperhousewerk',
+  truncated: true,
+  entries: Array.from({ length: SPOTIFY_LIST_ROWS }, (_, index) =>
+    spotifyRow(
+      spotifyId('djBig', index),
+      `Artist ${index % 23}`,
+      `Track ${index + 1}`,
+      180 + ((index * 41) % 300) + 0.25,
+    ),
+  ),
 })
 
 /** `{ kind: 'track' }`, the answer to a single track's URL. */

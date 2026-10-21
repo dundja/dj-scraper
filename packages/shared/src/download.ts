@@ -95,6 +95,23 @@ export const TrackRefSchema = z.object({
 })
 export type TrackRef = z.infer<typeof TrackRefSchema>
 
+/**
+ * The track a Spotify job's audio comes from (ADR-026): Spotify's streams are DRM-protected, so the
+ * attempt searches YouTube for the Spotify track's artists and title and takes the best result
+ * whose duration agrees. The job's `source` and `output` describe this track's stream.
+ */
+export const TrackMatchSchema = z.object({
+  platform: PlatformSchema.extract(['youtube']),
+  id: z.string().min(1).max(MAX_ID_LENGTH),
+  /** Its public page. */
+  url: HttpUrlSchema.max(MAX_URL_LENGTH),
+  title: TrackText,
+  /** The channel that uploaded it. */
+  uploader: TrackText.optional(),
+  durationSec: z.number().nonnegative().optional(),
+})
+export type TrackMatch = z.infer<typeof TrackMatchSchema>
+
 export const MAX_SUBFOLDER_LENGTH = 200
 
 export const DownloadOptionsSchema = z.object({
@@ -209,6 +226,8 @@ const JobBaseSchema = z.object({
   startedAt: z.iso.datetime().optional(),
   /** The stream being or last downloaded (codec and bitrate from yt-dlp). */
   source: AudioSourceSchema.optional(),
+  /** A Spotify track's match on YouTube, once the current or last attempt found it. */
+  match: TrackMatchSchema.optional(),
   /** Cancel was asked while the job ran; it may still end done or skipped if the file was already in place. */
   cancelRequested: z.literal(true).optional(),
 })

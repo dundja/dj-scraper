@@ -11,6 +11,8 @@ import { resolveArgs } from '../engine/ytdlp-args.ts'
 import { InfoParseError, type Normalized, normalizeInfo } from '../engine/ytdlp-parse.ts'
 import { ApiError } from '../http/errors.ts'
 import { describeIssues } from '../http/json.ts'
+import { SPOTIFY_UNREADABLE, type SpotifyClient, SpotifyError } from '../spotify/client.ts'
+import { EmbedParseError, type SpotifyEntity, toResolveResult } from '../spotify/embed.ts'
 import { checkUrl } from './input.ts'
 import { createLimiter } from './limiter.ts'
 import { planResolve, type ResolvePlan } from './plan.ts'
@@ -25,13 +27,16 @@ export type ResolverDeps = {
   /** Our Node for `--js-runtimes`: `process.execPath`, never user input. */
   jsRuntime?: string
   maxConcurrent?: number
+  /** Reads Spotify links (ADR-026); without it, they are refused. */
+  spotify?: SpotifyClient
   log?: Logger
 }
 
 export type Resolver = {
   /**
-   * `POST /api/resolve`: one `yt-dlp -J --flat-playlist` call, normalized and checked against the
-   * contract. Throws `ApiError`; aborting `signal` (the browser closed the request) stops yt-dlp.
+   * `POST /api/resolve`: one `yt-dlp -J --flat-playlist` call, or for a Spotify link one read of
+   * its embed page, normalized and checked against the contract. Throws `ApiError`; aborting
+   * `signal` (the browser closed the request) stops yt-dlp or the read.
    */
   resolve: (request: ResolveRequest, signal?: AbortSignal) => Promise<ResolveResult>
 }
@@ -41,9 +46,34 @@ export function createResolver({
   run: runFn = run,
   jsRuntime = process.execPath,
   maxConcurrent = DEFAULT_MAX_CONCURRENT_RESOLVES,
+  spotify,
   log = console,
 }: ResolverDeps): Resolver {
   const limiter = createLimiter({ concurrency: maxConcurrent })
+
+  /** A Spotify track, album or playlist from its embed page; yt-dlp isn't involved. */
+  async function resolveSpotify(input: ValidUrl, signal?: AbortSignal): Promise<ResolveResult> {
+    if (spotify === undefined) throw new ApiError('unsupported_url', NO_SPOTIFY)
+    let entity: SpotifyEntity
+    try {
+      entity = await spotify.entity(input, signal)
+    } catch (error) {
+      if (!(error instanceof SpotifyError)) throw error
+      if (error.info.code === 'unknown') log.warn(`[resolve] ${input.kind}: ${error.detail}`)
+      throw new ApiError(error.info.code, error.info.message)
+    }
+    if (entity.type !== SPOTIFY_ENTITY_TYPES[input.kind]) {
+      log.warn(`[resolve] ${input.kind}: Spotify answered with a ${entity.type}`)
+      throw new ApiError(SPOTIFY_UNREADABLE.code, SPOTIFY_UNREADABLE.message)
+    }
+    try {
+      return toResolveResult(entity)
+    } catch (error) {
+      if (!(error instanceof EmbedParseError)) throw error
+      log.warn(`[resolve] ${input.kind}: ${error.message}`)
+      throw new ApiError(SPOTIFY_UNREADABLE.code, SPOTIFY_UNREADABLE.message)
+    }
+  }
 
   async function resolvePlan(
     input: ValidUrl,
@@ -100,6 +130,11 @@ export function createResolver({
         }
         const { input } = checked
         kind = input.kind
+        if (input.platform === 'spotify') {
+          const result = await limiter.run(() => resolveSpotify(input, signal), signal)
+          log.info(`[resolve] ${kind} → ${summarize(result)} in ${since(startedAt)}`)
+          return result
+        }
         const plan = planResolve(input, request.mode)
         const bin = await findYtdlp(engine)
         const result = await limiter.run(() => resolvePlan(input, plan, bin, signal), signal)
@@ -117,6 +152,15 @@ export function createResolver({
       }
     },
   }
+}
+
+const NO_SPOTIFY = "This server can't read Spotify links."
+
+/** What a Spotify link's embed page must hold. */
+const SPOTIFY_ENTITY_TYPES: Partial<Record<UrlKind, SpotifyEntity['type']>> = {
+  spotify_track: 'track',
+  spotify_album: 'album',
+  spotify_playlist: 'playlist',
 }
 
 /** The outcome for the log line: kinds and counts only, never titles or URLs. */

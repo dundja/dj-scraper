@@ -10,6 +10,7 @@ import {
   listNoun,
   listsNote,
   skippedNote,
+  sourceNote,
   totalDurationText,
   trackCountText,
   truncatedNote,
@@ -26,7 +27,8 @@ type CollectionHeaderProps = {
 
 /**
  * Artwork, title, owner, kind and platform, then the counts ("50 of 214 tracks · ≈ 3 h 12 min")
- * and notes on what the table leaves out: a listing cap, rows that aren't tracks, linked lists.
+ * and notes: where a Spotify list's audio comes from, and what the table leaves out (a listing
+ * cap, rows that aren't tracks, linked lists).
  * Memoized, so selection changes don't re-render it.
  */
 export const CollectionHeader = memo(function CollectionHeader({
@@ -41,7 +43,7 @@ export const CollectionHeader = memo(function CollectionHeader({
     listsOnly ? listNoun(collection, lists.length) : trackCountText(collection),
     totalDurationText(collection, rows),
   ].filter((fact) => fact !== undefined)
-  const notes = [truncatedNote(collection), skippedNote(collection)].filter(
+  const notes = [sourceNote(collection), truncatedNote(collection), skippedNote(collection)].filter(
     (note) => note !== undefined,
   )
   const linkedLists = listsOnly ? undefined : lists

@@ -13,6 +13,8 @@ describe('errorHint', () => {
     ['unknown', 'If it keeps happening, update yt-dlp: `brew upgrade yt-dlp`.'],
     ['rate_limited', 'Limits usually lift within a few minutes, at most an hour.'],
     ['folder_unavailable', 'You can pick another folder in the header.'],
+    // A Spotify track's audio comes from a YouTube upload the search trusts (ADR-026).
+    ['no_match', 'Find the track on YouTube or SoundCloud and paste that link instead.'],
     [
       'engine_missing',
       'Once it is installed (`brew install yt-dlp ffmpeg`), check the engine again in the top right.',

@@ -16,9 +16,14 @@ import {
   resolveArgs,
   START_FIELDS,
   START_PRINT,
+  searchArgs,
 } from './ytdlp-args.ts'
 
 const NODE = '/opt/homebrew/bin/node'
+/** The platforms yt-dlp downloads from: a Spotify job downloads its YouTube match (ADR-026). */
+const DOWNLOAD_PLATFORMS = PlatformSchema.options.filter(
+  (platform): platform is Exclude<Platform, 'spotify'> => platform !== 'spotify',
+)
 const BASE = [
   '--ignore-config',
   '--no-update',
@@ -98,6 +103,56 @@ describe('entryArgs', () => {
   })
 })
 
+describe('searchArgs', () => {
+  const query = 'Rick Astley - Never Gonna Give You Up'
+
+  it('lists one page of YouTube results flat, the search after -- as one argument', () => {
+    expect(searchArgs({ query, count: 10, jsRuntime: NODE })).toEqual([
+      ...BASE,
+      '-J',
+      '--flat-playlist',
+      '--socket-timeout',
+      '20',
+      '--',
+      'ytsearch10:Rick Astley - Never Gonna Give You Up',
+    ])
+  })
+
+  it('keeps a query that looks like an option inside the one search argument, after --', () => {
+    const argv = searchArgs({ query: '--exec=touch /tmp/x', count: 3, jsRuntime: NODE })
+    expect(argv.slice(-2)).toEqual(['--', 'ytsearch3:--exec=touch /tmp/x'])
+    expect(argv.indexOf('--')).toBe(argv.length - 2)
+  })
+
+  it("names an attempt's job dir with -P before --, so the startup sweep finds the search", () => {
+    const jobDir =
+      '/Users/dj/Library/Application Support/DJ Scraper/jobs/0b7c1a52-8f0e-4c1e-9d38-2a3a6c1f5e11'
+    expect(searchArgs({ query, count: 10, jsRuntime: NODE, jobDir })).toEqual([
+      ...BASE,
+      '-J',
+      '--flat-playlist',
+      '--socket-timeout',
+      '20',
+      '-P',
+      jobDir,
+      '--',
+      'ytsearch10:Rick Astley - Never Gonna Give You Up',
+    ])
+  })
+
+  it.each(['jobs/abc', ''])('refuses the relative job dir %j', (jobDir) => {
+    expect(() => searchArgs({ query, count: 10, jsRuntime: NODE, jobDir })).toThrow(RangeError)
+  })
+
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('refuses the count %s', (count) => {
+    expect(() => searchArgs({ query, count, jsRuntime: NODE })).toThrow(RangeError)
+  })
+
+  it.each(['', '   ', '\t\n'])('refuses an empty query %j', (empty) => {
+    expect(() => searchArgs({ query: empty, count: 10, jsRuntime: NODE })).toThrow(RangeError)
+  })
+})
+
 describe('download prints', () => {
   it('prints the START and DONE fields of the Phase 2 design (§4) verbatim', () => {
     expect(START_PRINT).toBe(
@@ -139,13 +194,20 @@ describe('downloadSelector', () => {
     expect(downloadSelector('soundcloud', 'm4a')).toBe('ba[ext=m4a]/ba[acodec!=opus]/ba')
     expect(downloadSelector('other', 'm4a')).toBe('ba[ext=m4a]/ba/b')
   })
+
+  it.each(DownloadFormatSchema.options)(
+    'never selects a Spotify stream (DRM): a Spotify job downloads its YouTube match, for %s',
+    (format) => {
+      expect(() => downloadSelector('spotify', format)).toThrow(RangeError)
+    },
+  )
 })
 
 describe('downloadArgs', () => {
   const JOB_DIR =
     '/Users/dj/Library/Application Support/DJ Scraper/jobs/0b7c1a52-8f0e-4c1e-9d38-2a3a6c1f5e11'
   const FFMPEG = '/opt/homebrew/bin/ffmpeg'
-  const URLS: Record<Platform, string> = {
+  const URLS: Record<(typeof DOWNLOAD_PLATFORMS)[number], string> = {
     youtube: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
     soundcloud: 'https://soundcloud.com/jaimemf/youtube-dl-test-video-a-y-baw/s-8Pjrp',
     other: 'https://example.com/live/stream.m3u8',
@@ -294,8 +356,19 @@ describe('downloadArgs', () => {
     expect(() => downloadArgs(options({ jobDir: '' }))).toThrow(RangeError)
   })
 
+  it('refuses a Spotify download: its streams are DRM-protected, only its YouTube match downloads', () => {
+    expect(() =>
+      downloadArgs(
+        options({
+          url: 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
+          platform: 'spotify',
+        }),
+      ),
+    ).toThrow(RangeError)
+  })
+
   describe('for every platform × format', () => {
-    const combos = PlatformSchema.options.flatMap((platform) =>
+    const combos = DOWNLOAD_PLATFORMS.flatMap((platform) =>
       DownloadFormatSchema.options.flatMap((format: DownloadFormat) =>
         [true, false].flatMap((writeThumbnail) =>
           [undefined, FFMPEG].map((ffmpegLocation) => ({
@@ -314,7 +387,7 @@ describe('downloadArgs', () => {
       ...OUTPUT,
       '--no-playlist',
       '-f',
-      ...PlatformSchema.options.flatMap((platform) =>
+      ...DOWNLOAD_PLATFORMS.flatMap((platform) =>
         DownloadFormatSchema.options.map((format) => downloadSelector(platform, format)),
       ),
       '--write-thumbnail',

@@ -13,9 +13,18 @@ import { resolveArgs } from '../engine/ytdlp-args.ts'
 import { mapYtdlpError } from '../engine/ytdlp-errors.ts'
 import { InfoParseError, normalizeInfo } from '../engine/ytdlp-parse.ts'
 import { ApiError } from '../http/errors.ts'
-import { OUT_OF_SCOPE_MESSAGE } from './input.ts'
+import {
+  SPOTIFY_NOT_FOUND,
+  SPOTIFY_RATE_LIMITED,
+  SPOTIFY_UNREACHABLE,
+  SPOTIFY_UNREADABLE,
+  type SpotifyClient,
+  SpotifyError,
+} from '../spotify/client.ts'
+import { type SpotifyEntity, toResolveResult } from '../spotify/embed.ts'
+import { OUT_OF_SCOPE_MESSAGE, SPOTIFY_OTHER_MESSAGE } from './input.ts'
 import { createResolver } from './resolver.ts'
-import { YTDLP_MAX_OUTPUT_BYTES } from './ytdlp-call.ts'
+import { CANCELED, YTDLP_MAX_OUTPUT_BYTES } from './ytdlp-call.ts'
 
 // The parser and the error mapper have their own fixture tests; here they are stand-ins.
 vi.mock('../engine/ytdlp-parse.ts', async (importOriginal) => ({
@@ -74,14 +83,23 @@ function setup({
   run: runImpl = async () => result(),
   maxConcurrent = 4,
   engine = ENGINE,
+  spotify,
 }: {
   run?: typeof run
   maxConcurrent?: number
   engine?: EngineEnv
+  spotify?: SpotifyClient
 } = {}) {
   const runFn = vi.fn<typeof run>(runImpl)
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
-  const resolver = createResolver({ engine, run: runFn, jsRuntime: NODE, maxConcurrent, log })
+  const resolver = createResolver({
+    engine,
+    run: runFn,
+    jsRuntime: NODE,
+    maxConcurrent,
+    log,
+    ...(spotify === undefined ? {} : { spotify }),
+  })
   const resolve = (url: string, mode: ResolveMode = 'auto', signal?: AbortSignal) =>
     resolver.resolve({ url, mode }, signal)
   return { resolve, run: runFn, log }
@@ -207,7 +225,6 @@ describe('resolver.resolve', () => {
   )
 
   it.each([
-    'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
     'https://music.apple.com/us/album/x/123',
     'https://tidal.com/browse/track/1',
     'https://www.deezer.com/track/1',
@@ -476,12 +493,253 @@ describe('resolver.resolve', () => {
 
     it.each([
       ['nope', 'invalid → invalid_url'],
-      ['https://open.spotify.com/track/1', 'out_of_scope → unsupported_url'],
+      ['https://music.apple.com/us/album/x/123', 'out_of_scope → unsupported_url'],
+      ['https://open.spotify.com/track/1', 'spotify_other → unsupported_url'],
     ])('logs the refused URL %s without its text', async (url, outcome) => {
       const { resolve, log } = setup()
       await apiError(resolve(url))
       expect(log.info).toHaveBeenCalledWith(expect.stringMatching(`^\\[resolve\\] ${outcome} in `))
       expect(logged(log)).not.toContain(url)
     })
+  })
+})
+
+describe('resolver.resolve: Spotify links (ADR-026)', () => {
+  const TRACK_ID = '4uLU6hMCjMI75M1A2tKUQC'
+  const SPOTIFY_TRACK_URL = `https://open.spotify.com/track/${TRACK_ID}`
+  const SPOTIFY_ALBUM_URL = 'https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4'
+  const SPOTIFY_PLAYLIST_URL = 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M'
+  const COVER = 'https://image-cdn-fa.spotifycdn.com/image/ab67616d0000b273255e131abc1410833be95673'
+
+  const TRACK_ENTITY: SpotifyEntity = {
+    type: 'track',
+    track: {
+      id: TRACK_ID,
+      title: 'Never Gonna Give You Up',
+      artists: ['Rick Astley'],
+      durationSec: 213.573,
+      releaseYear: 1987,
+      coverUrl: COVER,
+    },
+  }
+  const list = (type: 'album' | 'playlist', id: string): SpotifyEntity => ({
+    type,
+    id,
+    title: type === 'album' ? 'Whenever You Need Somebody' : 'Today’s Top Hits',
+    owner: type === 'album' ? 'Rick Astley' : 'Spotify',
+    coverUrl: COVER,
+    rows: [
+      {
+        id: TRACK_ID,
+        title: 'Never Gonna Give You Up',
+        artist: 'Rick Astley',
+        durationSec: 213.573,
+      },
+      { id: '6aiKIFjPwa3UvDCD5ecoJj', title: 'Whenever You Need Somebody', artist: 'Rick Astley' },
+    ],
+    skipped: 0,
+    listed: 2,
+  })
+  const ALBUM_ENTITY = list('album', '6N9PS4QXF1D0OWPk0Sxtb4')
+  const PLAYLIST_ENTITY = list('playlist', '37i9dQZF1DXcBWIGoYBM5M')
+
+  /** A client that answers `answer` (or throws it), and never fetches covers here. */
+  function fakeSpotify(answer: SpotifyEntity | Error | (() => Promise<SpotifyEntity>)) {
+    const entity = vi.fn<SpotifyClient['entity']>(async () => {
+      if (typeof answer === 'function') return answer()
+      if (answer instanceof Error) throw answer
+      return answer
+    })
+    const cover = vi.fn<SpotifyClient['cover']>(async () => undefined)
+    return { entity, cover }
+  }
+
+  it.each([
+    [SPOTIFY_TRACK_URL, TRACK_ENTITY, 'spotify_track → track'],
+    [SPOTIFY_ALBUM_URL, ALBUM_ENTITY, 'spotify_album → album of 2'],
+    [SPOTIFY_PLAYLIST_URL, PLAYLIST_ENTITY, 'spotify_playlist → playlist of 2'],
+  ] as const)('reads %s from Spotify, never through yt-dlp', async (url, entity, outcome) => {
+    const spotify = fakeSpotify(entity)
+    const { resolve, run, log } = setup({ spotify })
+    const controller = new AbortController()
+    await expect(resolve(url, 'auto', controller.signal)).resolves.toStrictEqual(
+      toResolveResult(entity),
+    )
+    expect(run).not.toHaveBeenCalled()
+    expect(spotify.entity).toHaveBeenCalledExactlyOnceWith(classifyUrl(url), controller.signal)
+    expect(spotify.cover).not.toHaveBeenCalled()
+    expect(log.info).toHaveBeenCalledExactlyOnceWith(
+      expect.stringMatching(new RegExp(`^\\[resolve\\] ${outcome} in \\d+\\.\\d s$`)),
+    )
+    expect(logged(log)).not.toContain('open.spotify.com')
+    expect(logged(log)).not.toContain('Never Gonna')
+  })
+
+  it('asks Spotify for the canonical link, not the pasted one with its share token', async () => {
+    const spotify = fakeSpotify(TRACK_ENTITY)
+    const { resolve } = setup({ spotify })
+    await resolve(`open.spotify.com/intl-de/track/${TRACK_ID}?si=abc123`)
+    expect(spotify.entity.mock.calls[0]?.[0]).toMatchObject({
+      url: SPOTIFY_TRACK_URL,
+      kind: 'spotify_track',
+      spotifyId: TRACK_ID,
+    })
+  })
+
+  it.each(['auto', 'track', 'collection'] as const)(
+    'reads a playlist the same way in %s mode: a Spotify link is never ambiguous',
+    async (mode) => {
+      const { resolve } = setup({ spotify: fakeSpotify(PLAYLIST_ENTITY) })
+      await expect(resolve(SPOTIFY_PLAYLIST_URL, mode)).resolves.toMatchObject({
+        kind: 'collection',
+      })
+    },
+  )
+
+  it.each([
+    [SPOTIFY_TRACK_URL, ALBUM_ENTITY, 'album'],
+    [SPOTIFY_ALBUM_URL, TRACK_ENTITY, 'track'],
+    [SPOTIFY_PLAYLIST_URL, ALBUM_ENTITY, 'album'],
+    [SPOTIFY_ALBUM_URL, PLAYLIST_ENTITY, 'playlist'],
+  ] as const)(
+    'answers unknown when %s comes back as a %s, and logs only the types',
+    async (url, entity, type) => {
+      const { resolve, log } = setup({ spotify: fakeSpotify(entity) })
+      expect(await apiError(resolve(url))).toEqual({
+        code: 'unknown',
+        message: "Spotify's page has changed, and DJ Scraper can't read it.",
+      })
+      expect(log.warn).toHaveBeenCalledWith(
+        expect.stringMatching(
+          new RegExp(`^\\[resolve\\] spotify_\\w+: Spotify answered with a ${type}$`),
+        ),
+      )
+      expect(logged(log)).not.toContain('open.spotify.com')
+    },
+  )
+
+  it.each([
+    [SPOTIFY_NOT_FOUND, 'HTTP 404'],
+    [SPOTIFY_RATE_LIMITED, 'HTTP 429'],
+    [SPOTIFY_UNREACHABLE, 'TypeError'],
+    [{ code: 'network', message: 'Spotify answered with an error (HTTP 503).' }, 'HTTP 503'],
+  ] as const)('passes on the client failure %j, logging no warning', async (info, detail) => {
+    const { resolve, run, log } = setup({ spotify: fakeSpotify(new SpotifyError(info, detail)) })
+    expect(await apiError(resolve(SPOTIFY_TRACK_URL))).toEqual(info)
+    expect(run).not.toHaveBeenCalled()
+    expect(log.warn).not.toHaveBeenCalled()
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringMatching(`^\\[resolve\\] spotify_track → ${info.code} in `),
+    )
+  })
+
+  it('answers unknown for a page it cannot read, logging the parser’s detail', async () => {
+    const error = new SpotifyError(SPOTIFY_UNREADABLE, 'the page has no __NEXT_DATA__ script')
+    const { resolve, log } = setup({ spotify: fakeSpotify(error) })
+    expect(await apiError(resolve(SPOTIFY_ALBUM_URL))).toEqual(SPOTIFY_UNREADABLE)
+    expect(log.warn).toHaveBeenCalledExactlyOnceWith(
+      '[resolve] spotify_album: the page has no __NEXT_DATA__ script',
+    )
+  })
+
+  it('answers unknown when the page’s entity breaks the contract, and logs no names', async () => {
+    const broken: SpotifyEntity = {
+      ...TRACK_ENTITY,
+      track: { ...TRACK_ENTITY.track, coverUrl: 'javascript:alert(1)' },
+    }
+    const { resolve, log } = setup({ spotify: fakeSpotify(broken) })
+    expect(await apiError(resolve(SPOTIFY_TRACK_URL))).toMatchObject({ code: 'unknown' })
+    expect(log.warn).toHaveBeenCalledExactlyOnceWith(
+      "[resolve] spotify_track: the track doesn't fit the contract",
+    )
+    expect(logged(log)).not.toContain('Never Gonna')
+    expect(logged(log)).not.toContain('javascript:')
+  })
+
+  it('answers unknown when a list breaks the contract, naming only its kind', async () => {
+    if (ALBUM_ENTITY.type === 'track') throw new Error('a list')
+    const broken: SpotifyEntity = { ...ALBUM_ENTITY, coverUrl: 'ftp://example.com/cover.jpg' }
+    const { resolve, log } = setup({ spotify: fakeSpotify(broken) })
+    expect(await apiError(resolve(SPOTIFY_ALBUM_URL))).toEqual(SPOTIFY_UNREADABLE)
+    expect(log.warn).toHaveBeenCalledExactlyOnceWith(
+      "[resolve] spotify_album: the album doesn't fit the contract",
+    )
+  })
+
+  it('leaves out a row the contract refuses, counting it as skipped', async () => {
+    if (PLAYLIST_ENTITY.type === 'track') throw new Error('a list')
+    const odd: SpotifyEntity = {
+      ...PLAYLIST_ENTITY,
+      rows: [
+        ...PLAYLIST_ENTITY.rows,
+        { id: '0000000000000000000009', title: 'Odd', durationSec: -1 },
+      ],
+      listed: 3,
+    }
+    const { resolve } = setup({ spotify: fakeSpotify(odd) })
+    const result = await resolve(SPOTIFY_PLAYLIST_URL)
+    if (result.kind !== 'collection') throw new Error(`resolved ${result.kind}`)
+    expect(result.collection.entries.map((entry) => entry.id)).toEqual(
+      PLAYLIST_ENTITY.rows.map((row) => row.id),
+    )
+    expect(result.collection.skippedEntries).toBe(1)
+  })
+
+  it('lets a client bug through as is, for the 500 handler', async () => {
+    const bug = new TypeError('a bug')
+    const { resolve } = setup({ spotify: fakeSpotify(bug) })
+    await expect(resolve(SPOTIFY_TRACK_URL)).rejects.toBe(bug)
+  })
+
+  it('answers canceled when the client was aborted', async () => {
+    const controller = new AbortController()
+    const spotify = fakeSpotify(async () => {
+      controller.abort()
+      throw new SpotifyError(CANCELED, 'aborted')
+    })
+    const { resolve } = setup({ spotify })
+    expect(await apiError(resolve(SPOTIFY_TRACK_URL, 'auto', controller.signal))).toEqual(CANCELED)
+  })
+
+  it('waits for a slot like a yt-dlp lookup, and drops the read when its client gave up', async () => {
+    const running = deferred<RunResult>()
+    const spotify = fakeSpotify(TRACK_ENTITY)
+    const { resolve } = setup({ maxConcurrent: 1, run: () => running.promise, spotify })
+    const lookup = resolve(VIDEO_URL)
+    await settle()
+    const controller = new AbortController()
+    const waiting = resolve(SPOTIFY_TRACK_URL, 'auto', controller.signal)
+    await settle()
+    expect(spotify.entity).not.toHaveBeenCalled()
+    controller.abort()
+    expect(await apiError(waiting)).toEqual(CANCELED)
+    running.resolve(result())
+    await lookup
+    expect(spotify.entity).not.toHaveBeenCalled()
+  })
+
+  it('refuses a Spotify link with unsupported_url when it has no Spotify client', async () => {
+    const { resolve, run } = setup()
+    expect(await apiError(resolve(SPOTIFY_TRACK_URL))).toEqual({
+      code: 'unsupported_url',
+      message: "This server can't read Spotify links.",
+    })
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt',
+    'https://open.spotify.com/episode/512ojhOuo1ktJprKbVcKyQ',
+    'https://spotify.link/abc123',
+    'https://open.spotify.com/track/tooShort',
+  ])('refuses the Spotify page %s with unsupported_url without asking Spotify', async (url) => {
+    const spotify = fakeSpotify(TRACK_ENTITY)
+    const { resolve, run } = setup({ spotify })
+    expect(await apiError(resolve(url))).toEqual({
+      code: 'unsupported_url',
+      message: SPOTIFY_OTHER_MESSAGE,
+    })
+    expect(spotify.entity).not.toHaveBeenCalled()
+    expect(run).not.toHaveBeenCalled()
   })
 })

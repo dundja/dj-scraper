@@ -3,10 +3,10 @@ import { type DownloadFormat, DownloadFormatSchema } from '@dj-scraper/shared'
 /**
  * What "Original" does, in one place: the server copies the stream as is and fetches artwork only
  * when the file can hold it (finalize-plan.ts `canHoldCover`): never for YouTube, whose original
- * is Opus in WebM.
+ * is Opus in WebM. A Spotify track downloads its YouTube match (ADR-026), so the same goes for it.
  */
 export const ORIGINAL_FORMAT_DESCRIPTION =
-  "No conversion. From YouTube that's Opus/WebM: no artwork, and DJ apps won't load it."
+  "No conversion. From YouTube or Spotify that's Opus/WebM: no artwork, and DJ apps won't load it."
 
 export type FormatOption = {
   value: DownloadFormat

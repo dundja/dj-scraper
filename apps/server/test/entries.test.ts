@@ -51,6 +51,12 @@ const VIDEO: EntryRef = {
 }
 const DRM: EntryRef = {
   platform: 'other',
+  id: '1440857786',
+  url: 'https://music.apple.com/us/album/x/1440857781?i=1440857786',
+}
+/** Spotify rows come complete from the listing: there is nothing to look up (ADR-026). */
+const SPOTIFY: EntryRef = {
+  platform: 'spotify',
   id: '4uLU6hMCjMI75M1A2tKUQC',
   url: 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
 }
@@ -104,14 +110,15 @@ function trackOf(results: readonly EntryResult[], id: string) {
 describe('POST /api/resolve/entries', () => {
   it('fills each row with a full Track and fails bad rows on their own, in request order', async () => {
     const app = await start()
-    const results = await enrich(app, [ENTRY, PREVIEW, MISSING, VIDEO, DRM, SET])
+    const results = await enrich(app, [ENTRY, PREVIEW, MISSING, VIDEO, DRM, SET, SPOTIFY])
     expect(outcomes(results)).toEqual([
       'soundcloud:47127631 → ok',
       'soundcloud:75206121 → ok',
       'soundcloud:404404 → unavailable',
       'youtube:jNQXAC9IVRw → ok',
-      'other:4uLU6hMCjMI75M1A2tKUQC → unsupported_url',
+      'other:1440857786 → unsupported_url',
       'soundcloud:2284613 → invalid_request',
+      'spotify:4uLU6hMCjMI75M1A2tKUQC → invalid_request',
     ])
     expect(trackOf(results, ENTRY.id)).toMatchObject({
       id: '47127631',
@@ -129,7 +136,7 @@ describe('POST /api/resolve/entries', () => {
     })
     expect(trackOf(results, VIDEO.id).title).toBe('Me at the zoo')
 
-    // A DRM service and a whole set never reach yt-dlp. Platforms are paced apart, so only the
+    // A DRM service, a whole set and a Spotify row never reach yt-dlp. Platforms are paced apart, so only the
     // set of lookups is fixed, not their order across platforms.
     const lookups = await app.lookups()
     expect(urlsOf(lookups)).toEqual([ENTRY.url, PREVIEW.url, MISSING.url, VIDEO.url].sort())
@@ -236,7 +243,7 @@ describe('POST /api/resolve/entries', () => {
     ],
     [
       'a row of an unknown platform',
-      { entries: [{ ...ENTRY, platform: 'spotify' }] },
+      { entries: [{ ...ENTRY, platform: 'deezer' }] },
       /^entries\[0\]\.platform: /,
     ],
     ['a row without an id', { entries: [{ ...ENTRY, id: '' }] }, /^entries\[0\]\.id: /],

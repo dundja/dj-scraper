@@ -14,6 +14,7 @@ export const ERROR_STATUS = {
   login_required: 422,
   bot_check: 422,
   preview_only: 422,
+  no_match: 422,
   rate_limited: 429,
   network: 502,
   engine_missing: 503,

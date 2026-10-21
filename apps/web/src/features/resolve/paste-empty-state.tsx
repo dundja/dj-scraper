@@ -25,7 +25,7 @@ export function PasteEmptyState() {
           <Link2 aria-hidden />
         </EmptyMedia>
         <EmptyTitle>
-          <h2 className="text-base font-medium">Paste a YouTube or SoundCloud link</h2>
+          <h2 className="text-base font-medium">Paste a YouTube, SoundCloud or Spotify link</h2>
         </EmptyTitle>
         <EmptyDescription className="text-pretty">
           {single}; for a playlist, set or album you pick the tracks first.

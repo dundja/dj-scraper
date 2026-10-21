@@ -21,8 +21,11 @@ import {
   type Platform,
   type PlatformQueueState,
   PlatformSchema,
+  pacingPlatform,
   type QueueState,
   type RetryableStatus,
+  type TrackMatch,
+  TrackMatchSchema,
   type TrackRef,
   TrackRefSchema,
   type ValidUrl,
@@ -170,7 +173,10 @@ type Entry = {
   readonly options: DownloadOptions
   /** Undefined only for a job refused because its URL didn't classify: it can never run. */
   readonly input: ValidUrl | undefined
-  /** `input.platform` (the request's for a refused URL): every pacing decision uses it. */
+  /**
+   * `pacingPlatform(input.platform)` (the request's for a refused URL): every pacing decision uses
+   * it, so a Spotify job is paced as YouTube (ADR-026).
+   */
   readonly platform: Platform
   readonly createdAt: string
   attempt: number
@@ -183,6 +189,7 @@ type Entry = {
   /** `startedAt` on the monotonic clock, for the gates. */
   startedMono?: number
   source?: AudioSource
+  match?: TrackMatch
   cancelRequested?: true
   running?: Attempt
   /** The order jobs last finished in (0 before): eviction keeps the newest canceled ones longer. */
@@ -245,6 +252,7 @@ export function createQueue({
       createdAt: entry.createdAt,
       ...(entry.startedAt === undefined ? {} : { startedAt: entry.startedAt }),
       ...(entry.source === undefined ? {} : { source: entry.source }),
+      ...(entry.match === undefined ? {} : { match: entry.match }),
       ...(entry.cancelRequested ? { cancelRequested: true } : {}),
       ...entry.phase,
     }
@@ -405,6 +413,14 @@ export function createQueue({
         changed = true
       }
     }
+    if (update.match !== undefined) {
+      const match = TrackMatchSchema.safeParse(update.match)
+      if (!match.success) dropped(entry, attempt, 'match')
+      else if (JSON.stringify(match.data) !== JSON.stringify(entry.match)) {
+        entry.match = match.data
+        changed = true
+      }
+    }
     const status = update.status ?? phase.status
     let progress = phase.status === 'downloading' ? phase.progress : undefined
     let progressed = false
@@ -493,6 +509,8 @@ export function createQueue({
         if (verdict === 'strike' || verdict === 'inside') {
           if (verdict === 'strike') entry.strikes++
           if (entry.strikes < MAX_OWN_STRIKES) {
+            // The next attempt searches again (a Spotify job), so the old match goes.
+            entry.match = undefined
             setPhase(entry, { status: 'queued', lastError: error })
             entry.startedAt = undefined
             entry.startedMono = undefined
@@ -656,6 +674,7 @@ export function createQueue({
     entry.startedAt = undefined
     entry.startedMono = undefined
     entry.source = undefined
+    entry.match = undefined
     entry.cancelRequested = undefined
     setPhase(entry, { status: 'queued' })
     enqueue(entry, 'back')
@@ -744,7 +763,7 @@ export function createQueue({
       let refused = 0
       let batchId: string | undefined
       for (const { ref, input, refusal } of items) {
-        const platform = input?.platform ?? ref.platform
+        const platform = pacingPlatform(input?.platform ?? ref.platform)
         const key = JSON.stringify([platform, ref.id])
         const same = seen.get(key) ?? active.get(activeKey(platform, ref.id, batch.folder.real))
         if (same !== undefined) {

@@ -10,17 +10,20 @@ describe('PlatformBadge', () => {
   it.each([
     ['youtube', 'YouTube'],
     ['soundcloud', 'SoundCloud'],
+    ['spotify', 'Spotify'],
     ['other', 'Web'],
   ] as const)('names %s as %s', (platform, label) => {
     const { container } = render(<PlatformBadge platform={platform} />)
     expect(container.textContent).toBe(label)
   })
 
-  it('adds a decorative brand dot for YouTube and SoundCloud only', () => {
+  it('adds a decorative brand dot for YouTube, SoundCloud and Spotify only', () => {
     const { container, rerender } = render(<PlatformBadge platform="youtube" />)
     expect(container.querySelector('[aria-hidden]')?.className).toContain('bg-red-500')
     rerender(<PlatformBadge platform="soundcloud" />)
     expect(container.querySelector('[aria-hidden]')?.className).toContain('bg-orange-500')
+    rerender(<PlatformBadge platform="spotify" />)
+    expect(container.querySelector('[aria-hidden]')?.className).toContain('bg-green-500')
     rerender(<PlatformBadge platform="other" />)
     expect(container.querySelector('[aria-hidden]')).toBeNull()
   })

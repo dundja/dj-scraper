@@ -3,6 +3,7 @@ import { useId } from 'react'
 import { Artwork } from '@/components/artwork.tsx'
 import { PlatformBadge } from '@/components/platform-badge.tsx'
 import { TrackDownload } from './track-download.tsx'
+import { TrackMatch } from './track-match.tsx'
 import { TrackSource } from './track-source.tsx'
 import { useTrackDownload } from './use-track-download.ts'
 
@@ -14,7 +15,8 @@ type TrackCardProps = {
 
 /**
  * A resolved single track: artwork, names, duration, platform and the source's codec and bitrate
- * (the stream the download really fetched, once known), then its download. Keyed by the paste
+ * (the stream the download really fetched, once known), for a Spotify track where its audio comes
+ * from (`TrackMatch`), then its download. Keyed by the paste
  * submission, so `autoStart` fires once per paste.
  */
 export function TrackCard({ track, autoStart }: TrackCardProps) {
@@ -53,6 +55,7 @@ export function TrackCard({ track, autoStart }: TrackCardProps) {
           </div>
         </div>
       </div>
+      <TrackMatch track={track} jobId={download.jobId} />
       <div className="border-t pt-3">
         <TrackDownload track={track} download={download} />
       </div>

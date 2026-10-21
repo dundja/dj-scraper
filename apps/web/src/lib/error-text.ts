@@ -21,6 +21,8 @@ const HINTS: Record<ErrorCode, string | (() => string) | undefined> = {
   age_restricted: SIGN_INS_LATER,
   login_required: SIGN_INS_LATER,
   preview_only: SIGN_INS_LATER,
+  // A Spotify track's audio comes from a YouTube upload the search trusts (ADR-026).
+  no_match: 'Find the track on YouTube or SoundCloud and paste that link instead.',
   bot_check: 'Updating yt-dlp usually fixes this: `brew upgrade yt-dlp`.',
   rate_limited: 'Limits usually lift within a few minutes, at most an hour.',
   network: undefined,

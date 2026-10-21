@@ -39,6 +39,22 @@ const EnvSchema = z.object({
   DJS_WEB_DIST: AbsolutePathSchema,
   /** The app data dir instead of the default (tests point every spawned server at a temp dir). */
   DJS_DATA_DIR: AbsolutePathSchema,
+  /**
+   * Where Spotify's embed pages are read instead of https://open.spotify.com (ADR-026): tests point
+   * it at a local fixture server. An origin only: no path, query or credentials.
+   */
+  DJS_SPOTIFY_ORIGIN: z.preprocess(
+    unsetIfEmpty,
+    z
+      .url({ protocol: /^https?$/ })
+      .refine((value) => {
+        // Zod runs this even when z.url has refused the value: never let `new URL` throw here.
+        if (!URL.canParse(value)) return false
+        const url = new URL(value)
+        return url.origin === value.replace(/\/$/, '') && url.username === '' && url.password === ''
+      }, 'must be an http(s) origin, such as http://127.0.0.1:4850')
+      .optional(),
+  ),
   PATH: z.string().optional(),
 })
 
@@ -54,6 +70,8 @@ export type Config = {
   dataDir: string
   /** The user's home folder (os.homedir(), so HOME when set); downloads default to a folder in it. */
   homeDir: string
+  /** DJS_SPOTIFY_ORIGIN, only when it is set. */
+  spotifyOrigin?: string
   engine: EngineEnv
 }
 
@@ -92,13 +110,16 @@ export function loadConfig(
       `The home folder must be an absolute path, not ${JSON.stringify(homeDir)} (check HOME)`,
     )
   }
-  const { PORT, DJS_WEB_DIST, DJS_DATA_DIR, ...engine } = parsed.data
+  const { PORT, DJS_WEB_DIST, DJS_DATA_DIR, DJS_SPOTIFY_ORIGIN, ...engine } = parsed.data
   return {
     port: PORT,
     ...flags,
     webDist: DJS_WEB_DIST ?? DEFAULT_WEB_DIST,
     dataDir: DJS_DATA_DIR ?? defaultDataDir(homeDir),
     homeDir,
+    ...(DJS_SPOTIFY_ORIGIN === undefined
+      ? {}
+      : { spotifyOrigin: new URL(DJS_SPOTIFY_ORIGIN).origin }),
     engine,
   }
 }

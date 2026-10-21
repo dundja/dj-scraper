@@ -3,14 +3,24 @@ import { jobsByStatus, soundcloudRowRef, testUuid } from '@dj-scraper/shared/tes
 import { describe, expect, it } from 'vitest'
 import { errorHint } from '@/lib/error-text.ts'
 import { formatClock } from '@/lib/format.ts'
-import { doneJob, downloadingJob, failedJob, jobWith, queuedJob } from '@/test/downloads.ts'
+import {
+  doneJob,
+  downloadingJob,
+  failedJob,
+  jobWith,
+  queuedJob,
+  spotifyJob,
+  spotifyMatch,
+} from '@/test/downloads.ts'
 import {
   codecLabel,
   formatKbps,
+  isMatching,
   jobArtist,
   jobErrorHint,
   jobPhase,
   jobTitle,
+  matchText,
   outputText,
   progressText,
   sourceText,
@@ -52,6 +62,18 @@ describe('jobTitle and jobArtist', () => {
     expect(failedJob.track).toEqual(soundcloudRowRef)
     expect(jobTitle(failedJob)).toBe('SoundCloud track 1234567893')
     expect(jobArtist(failedJob)).toBeUndefined()
+  })
+
+  it("names a Spotify job by Spotify's title and artist, whatever upload it matched", () => {
+    const job = spotifyJob({ id: testUuid(11), status: 'downloading', match: spotifyMatch })
+    expect(jobTitle(job)).toBe('Never Gonna Give You Up')
+    expect(jobArtist(job)).toBe('Rick Astley')
+    const untitled = spotifyJob({
+      id: testUuid(12),
+      status: 'queued',
+      track: { platform: 'spotify', id: '4uLU6hMCjMI75M1A2tKUQC', url: spotifyMatch.url },
+    })
+    expect(jobTitle(untitled)).toBe('Spotify track 4uLU6hMCjMI75M1A2tKUQC')
   })
 })
 
@@ -222,6 +244,35 @@ describe('outputText', () => {
   ])('describes %s', (_, file, source, text) => {
     expect(outputText(file, source)).toBe(text)
   })
+
+  it.each<[string, JobOutput, AudioSource | undefined, string]>([
+    [
+      'a copied stream',
+      output({ ext: 'm4a', codec: 'aac', bitrateKbps: 129.553, encoded: false }),
+      youtubeAac,
+      'M4A · AAC 128 kbps · copied from YouTube',
+    ],
+    [
+      'a re-encoded stream',
+      output({ ext: 'mp3', codec: 'mp3', bitrateKbps: 320, encoded: true }),
+      youtubeOpus,
+      "MP3 · 320 kbps · re-encoded from YouTube's Opus 136 kbps",
+    ],
+    [
+      'a lossless file',
+      output({ ext: 'aiff', codec: 'pcm_s16be', encoded: true }),
+      youtubeAac,
+      "AIFF · 16-bit · from YouTube's AAC 128 kbps",
+    ],
+    [
+      'an unknown source',
+      output({ ext: 'mp3', codec: 'mp3', bitrateKbps: 320, encoded: true }),
+      undefined,
+      'MP3 · 320 kbps · re-encoded from YouTube',
+    ],
+  ])("names the site a Spotify track's audio came from: %s", (_, file, source, text) => {
+    expect(outputText(file, source, 'YouTube')).toBe(text)
+  })
 })
 
 describe('progressText', () => {
@@ -268,6 +319,12 @@ describe('waitingText', () => {
     )
     expect(waitingText(IN_A_MINUTE, 'soundcloud')).toBe(
       `Waiting until ${formatClock(IN_A_MINUTE)} (SoundCloud)`,
+    )
+  })
+
+  it('names YouTube for a Spotify track, whose audio comes from there', () => {
+    expect(waitingText(IN_A_MINUTE, 'spotify')).toBe(
+      `Waiting until ${formatClock(IN_A_MINUTE)} (YouTube)`,
     )
   })
 
@@ -421,6 +478,61 @@ describe('the status of a job in every state', () => {
       output: { ext: 'mp3', codec: 'mp3', bitrateKbps: 128, encoded: false },
     })
     expect(statusText(job, NOW)).toBe('MP3 · 128 kbps · copied')
+  })
+})
+
+describe('a Spotify job', () => {
+  const searching = spotifyJob({ id: testUuid(30), status: 'downloading', startedAt: A_MINUTE_AGO })
+  const matched = spotifyJob({
+    id: testUuid(30),
+    status: 'downloading',
+    startedAt: A_MINUTE_AGO,
+    match: spotifyMatch,
+  })
+
+  it('says it is finding the track on YouTube until the attempt has matched it', () => {
+    expect(isMatching(searching)).toBe(true)
+    expect(jobPhase(searching, NOW)).toBe('starting')
+    expect(statusLabel(searching, NOW)).toBe('Finding it on YouTube…')
+    expect(statusText(searching, NOW)).toBe('Finding it on YouTube…')
+
+    expect(isMatching(matched)).toBe(false)
+    expect(statusLabel(matched, NOW)).toBe('Starting…')
+    // Only a Spotify job searches.
+    expect(isMatching(downloading())).toBe(false)
+    expect(isMatching(spotifyJob({ id: testUuid(31), status: 'queued' }))).toBe(false)
+  })
+
+  it("waits as YouTube makes the matched video's download wait", () => {
+    const waiting = spotifyJob({
+      id: testUuid(30),
+      status: 'downloading',
+      startedAt: A_MINUTE_AGO,
+      match: spotifyMatch,
+      progress: { waitingUntil: IN_A_MINUTE },
+    })
+    expect(statusLabel(waiting, NOW)).toBe(waitingLabel)
+  })
+
+  it("says a finished file's stream was YouTube's", () => {
+    // The fixture's done job, made from YouTube's Opus stream, as the Spotify track's download.
+    const { track: _youtube, ...doneFields } = jobsByStatus.done
+    const done = spotifyJob({ ...doneFields, match: spotifyMatch })
+    expect(statusText(done, NOW)).toBe("MP3 · 320 kbps · re-encoded from YouTube's Opus 136 kbps")
+    expect(statusDetail(done)).toBe("MP3 · 320 kbps · re-encoded from YouTube's Opus 136 kbps")
+  })
+
+  it('names the matched upload and its channel', () => {
+    expect(matchText(spotifyMatch)).toBe(
+      'Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster) · Rick Astley',
+    )
+    expect(matchText({ ...spotifyMatch, uploader: undefined })).toBe(spotifyMatch.title)
+  })
+
+  it('has a way out when no YouTube upload matches', () => {
+    expect(jobErrorHint('no_match')).toBe(
+      'Find the track on YouTube or SoundCloud and paste that link instead.',
+    )
   })
 })
 

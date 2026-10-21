@@ -68,6 +68,8 @@ export function formatName(format: DownloadFormat): string {
 const PLATFORM_NAMES: Record<Platform, string> = {
   youtube: 'YouTube',
   soundcloud: 'SoundCloud',
+  // Never in the queue's state: a Spotify job is paced, and paused, as YouTube (`pacingPlatform`).
+  spotify: 'Spotify',
   other: 'Other sites',
 }
 

@@ -11,6 +11,10 @@ import {
   type ServerEvent,
   type Settings,
   SettingsSchema,
+  type TrackMatch,
+  TrackMatchSchema,
+  type TrackRef,
+  TrackRefSchema,
 } from '@dj-scraper/shared'
 import { jobsByStatus, testBatch, testUuid, youtubeRef } from '@dj-scraper/shared/test-helpers'
 import type { QueryClient } from '@tanstack/react-query'
@@ -42,6 +46,40 @@ export const downloadingJob = JobSchema.parse(jobsByStatus.downloading)
 export const doneJob = JobSchema.parse(jobsByStatus.done)
 /** A SoundCloud set row that failed on its second attempt. */
 export const failedJob = JobSchema.parse(jobsByStatus.failed)
+
+/** A Spotify track as the track card sends it (`spotifyTrack` in resolve.ts): no source. */
+export const spotifyRef: TrackRef = TrackRefSchema.parse({
+  platform: 'spotify',
+  id: '4uLU6hMCjMI75M1A2tKUQC',
+  url: 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
+  title: 'Never Gonna Give You Up',
+  artist: 'Rick Astley',
+  durationSec: 213.573,
+  thumbnailUrl:
+    'https://image-cdn-fa.spotifycdn.com/image/ab67616d0000b273255e131abc1410833be95673',
+  availability: 'available',
+})
+
+/** The YouTube upload the server matched for `spotifyRef` (live search, 2026-10). */
+export const spotifyMatch: TrackMatch = TrackMatchSchema.parse({
+  platform: 'youtube',
+  id: 'dQw4w9WgXcQ',
+  url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  title: 'Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)',
+  uploader: 'Rick Astley',
+  durationSec: 214,
+})
+
+/**
+ * A job for `spotifyRef` with `fields` on top. Its `source` and `output`, when given, describe the
+ * matched YouTube stream; pass `match: spotifyMatch` once the attempt has found it.
+ */
+export function spotifyJob(
+  fields: { id: string; status: JobStatus } & Record<string, unknown>,
+  inBatch: Batch = batch,
+): Job {
+  return jobWith({ track: spotifyRef, ...fields }, inBatch)
+}
 
 /** What `GET /api/events` sends first: the four jobs above in creation order, nothing paused. */
 export function snapshotWith(changes: Partial<DownloadsSnapshot> = {}): DownloadsSnapshot {

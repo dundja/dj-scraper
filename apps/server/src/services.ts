@@ -27,6 +27,8 @@ import { createResolver, type Resolver } from './resolve/resolver.ts'
 import type { Logger } from './resolve/ytdlp-call.ts'
 import { createEventStreams, type EventStreams } from './routes/events.ts'
 import type { SettingsStore } from './settings/store.ts'
+import { createSpotifyClient } from './spotify/client.ts'
+import { createSpotifyDownloads } from './spotify/matcher.ts'
 
 /** How lookups and downloads are paced (ADR-014, ADR-017). */
 export type ServicePacing = {
@@ -80,6 +82,8 @@ export type ServicesOptions = {
   settings: Pick<SettingsStore, 'get'>
   /** Checks every event and snapshot against the contract (dev, tests and the smoke). */
   assertContract: boolean
+  /** Where Spotify's pages are read: https://open.spotify.com unless a test serves fixtures. */
+  spotifyOrigin?: string
   log?: Logger
   overrides?: ServiceOverrides
 }
@@ -105,11 +109,13 @@ export function createServices({
   dataDirReal,
   settings,
   assertContract,
+  spotifyOrigin,
   log = console,
   overrides = {},
 }: ServicesOptions): AppServices {
   const pacing = overrides.pacing ?? productionPacing()
-  const resolver = createResolver({ engine, log })
+  const spotify = createSpotifyClient(spotifyOrigin === undefined ? {} : { origin: spotifyOrigin })
+  const resolver = createResolver({ engine, spotify, log })
   const enricher = createEnricher({ engine, log, pacing: pacing.lookups })
   const gates = createGates({
     buckets: pacing.downloads,
@@ -123,6 +129,7 @@ export function createServices({
     locate,
     finalize: createFinalize({ log }),
     publish: createPublish(),
+    spotify: createSpotifyDownloads({ client: spotify, log }),
     ...(engine.FFMPEG_PATH === undefined ? {} : { ffmpegLocation: engine.FFMPEG_PATH }),
     log,
   })

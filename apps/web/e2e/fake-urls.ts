@@ -77,6 +77,12 @@ export const YOUTUBE_SLOW_PLAYLIST = 'https://www.youtube.com/playlist?list=PLdj
  */
 export const YOUTUBE_HANGING_TRACK = 'https://www.youtube.com/watch?v=e2eHangs001'
 
+/**
+ * Out of scope (DRM): classifyUrl refuses it, so the badge says "DRM service: not supported"
+ * before anything resolves, and the server answers 422 unsupported_url without running yt-dlp.
+ */
+export const APPLE_MUSIC_TRACK = 'https://music.apple.com/us/album/x/1440857781?i=1440857786'
+
 /** An empty playlist, "youtube-dl empty playlist": resolves with no rows. */
 export const YOUTUBE_EMPTY_PLAYLIST =
   'https://www.youtube.com/playlist?list=PL4lCao7KL_QFodcLWhDpGCYnngnHtQ-Xf'
@@ -127,8 +133,46 @@ export const SOUNDCLOUD_GEO_BLOCKED = 'https://soundcloud.com/caravan-palace-off
 /** 422 unsupported_url from yt-dlp: "This link isn't supported. Paste a YouTube or SoundCloud link." */
 export const UNSUPPORTED = 'https://example.com/'
 
+// Spotify (ADR-026): the e2e server reads Spotify from a local fixture server (DJS_SPOTIFY_ORIGIN,
+// test/fixtures/spotify), so the names below come from pages recorded 2026-10-21. Covers point at
+// that server (http://127.0.0.1:<port>/image/…); in the browser they load as the network guard's
+// 1×1 PNG. A Spotify track downloads its YouTube match, paced as YouTube (12 s per download after
+// the burst of 10, shared with every other YouTube download of the run).
+
 /**
- * Out of scope (DRM): classifyUrl refuses it, so the badge says so before anything resolves, and
- * the server answers 422 unsupported_url without running yt-dlp.
+ * "Never Gonna Give You Up" by Rick Astley (3:34, 213.573 s), a track (the server answers `kind: track`,
+ * platform spotify, no source). Its download matches dQw4w9WgXcQ, "Rick Astley - Never Gonna Give
+ * You Up (Official Video) (4K Remaster)" (3:34, channel Rick Astley), and downloads that with 250 ms
+ * between lines: "Rick Astley - Never Gonna Give You Up.mp3", tagged with Spotify's names and 1987.
+ * It is no longer refused as DRM: a spec about DRM refusals needs another service's link.
  */
 export const SPOTIFY_TRACK = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC'
+
+/**
+ * "Whenever You Need Somebody" by Rick Astley, kind album: 10 complete rows (no lookups), each with
+ * the album's cover, not truncated. Every row downloads (1.6 s each): row 1 as SPOTIFY_TRACK, rows
+ * 2–10 from made-up matches ("Rick Astley - <title> (Official Audio)", e2e-server.ts), into
+ * "Rick Astley - <title>.mp3". Ten YouTube downloads: the whole burst.
+ */
+export const SPOTIFY_ALBUM = 'https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4'
+
+/**
+ * "Today’s Top Hits" by Spotify, kind playlist: 50 complete rows without covers (row 1
+ * "expectations (feat. Chappell Roan)" by "Olivia Rodrigo, Chappell Roan", 3:43), not truncated.
+ * Its rows don't download: the fixture server has no track page for them, so each fails with
+ * unavailable ("Spotify doesn't show this link: …").
+ */
+export const SPOTIFY_PLAYLIST = 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M'
+
+/** "All Out 80s" by Spotify: the 100 rows the embed page lists, so `truncated: true`. Rows don't download. */
+export const SPOTIFY_PLAYLIST_TRUNCATED = 'https://open.spotify.com/playlist/37i9dQZF1DX4UtSsGT1Sbe'
+
+/**
+ * A Spotify artist page: classifyUrl marks it `spotify_other`, so the badge says "Spotify: not a
+ * track or list" as it is typed, and the server answers 422 unsupported_url ("Only Spotify track,
+ * album and playlist links work here …") without asking Spotify.
+ */
+export const SPOTIFY_ARTIST = 'https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt'
+
+/** A Spotify track the fixture server doesn't know: 422 unavailable ("Spotify doesn't show this link: …"). */
+export const SPOTIFY_MISSING_TRACK = 'https://open.spotify.com/track/0000000000000000000404'

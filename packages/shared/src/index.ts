@@ -3,6 +3,8 @@ export {
   type ClassifiedUrl,
   classifyUrl,
   isYoutubeChannelId,
+  SPOTIFY_OTHER_MESSAGE,
+  spotifyUrl,
   type UrlGuess,
   type UrlKind,
   type UrlRejection,
@@ -72,6 +74,8 @@ export {
   type RetryJobsRequest,
   RetryJobsRequestSchema,
   TERMINAL_JOB_STATUSES,
+  type TrackMatch,
+  TrackMatchSchema,
   type TrackRef,
   TrackRefSchema,
   templatePlaceholders,
@@ -126,7 +130,7 @@ export {
   YtdlpHealthSchema,
 } from './health.ts'
 export { type HealthProblem, healthProblems } from './health-problems.ts'
-export { type Platform, PlatformSchema } from './platform.ts'
+export { type Platform, PlatformSchema, pacingPlatform } from './platform.ts'
 export { loopbackHosts, PortSchema, SERVER_PORT, WEB_DEV_PORT } from './ports.ts'
 export {
   type AmbiguousListKind,
@@ -138,6 +142,7 @@ export {
   MAX_COLLECTION_ENTRIES,
   MAX_ENTRIES_PER_REQUEST,
   MAX_MIX_ENTRIES,
+  MAX_SPOTIFY_ENTRIES,
   type ResolveEntriesRequest,
   ResolveEntriesRequestSchema,
   type ResolveEntriesResponse,

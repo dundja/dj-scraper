@@ -45,6 +45,8 @@ const RECORDED_URLS: Record<string, string> = {
     'https://www.youtube.com/playlist?list=PLYwq8WOe86_xGmR7FrcJq8Sb7VW8K3Tt2',
   'youtube/playlist.json':
     'https://www.youtube.com/playlist?list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0',
+  // A search, not a URL: what spotify/matcher.ts runs for a Spotify track (searchArgs).
+  'youtube/search.json': 'ytsearch10:Rick Astley - Never Gonna Give You Up',
   'youtube/video.json': 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
   'youtube/watch-list-playlist.json':
     'https://www.youtube.com/watch?v=gHKT4uU8Zng&list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0',
@@ -123,22 +125,37 @@ describe('recorded fixtures', () => {
       .map((file) => `${dir}/${file}`),
   )
 
+  /** YouTube searches: spotify/match.test.ts reads them with parseSearchResults, never normalizeInfo. */
+  const searches = recorded.filter((name) => RECORDED_URLS[name]?.startsWith('ytsearch'))
+
   it('knows the recorded URL of every success fixture', () => {
     expect(recorded.toSorted()).toEqual(Object.keys(RECORDED_URLS).toSorted())
   })
 
-  it.each(recorded)('normalizes %s into contract-valid output', (name) => {
-    // Mixes are listed with their own cap, as the fixture was recorded (-I 1:51).
-    const limit = name === 'youtube/mix.json' ? MAX_MIX_ENTRIES : MAX_COLLECTION_ENTRIES
-    const input = recordedInput(name)
-    const normalized = normalizeInfo(fixture(name), { input, limit })
-    if (normalized.kind === 'collection') {
-      collectionOf(normalized)
-    } else {
-      // An enrichment lookup of the same JSON gives the same track.
-      expect(normalizeEntry(fixture(name), input)).toStrictEqual(trackOf(normalized))
-    }
+  it.each(searches)('keeps %s as the flat list of videos a search returns', (name) => {
+    expect(fixture(name)).toMatchObject({
+      _type: 'playlist',
+      extractor_key: 'YoutubeSearch',
+      original_url: RECORDED_URLS[name],
+    })
+    expect(classifyUrl(RECORDED_URLS[name] ?? '').ok).toBe(false)
   })
+
+  it.each(recorded.filter((name) => !searches.includes(name)))(
+    'normalizes %s into contract-valid output',
+    (name) => {
+      // Mixes are listed with their own cap, as the fixture was recorded (-I 1:51).
+      const limit = name === 'youtube/mix.json' ? MAX_MIX_ENTRIES : MAX_COLLECTION_ENTRIES
+      const input = recordedInput(name)
+      const normalized = normalizeInfo(fixture(name), { input, limit })
+      if (normalized.kind === 'collection') {
+        collectionOf(normalized)
+      } else {
+        // An enrichment lookup of the same JSON gives the same track.
+        expect(normalizeEntry(fixture(name), input)).toStrictEqual(trackOf(normalized))
+      }
+    },
+  )
 })
 
 describe('normalizeInfo: YouTube tracks', () => {
@@ -1466,7 +1483,10 @@ describe('tolerance: collections', () => {
       ['a relative URL', '/user/sets/x'],
       ['a URL with credentials', 'https://dj:secret@soundcloud.com/user/sets/x'],
       ['an overlong URL', `${pageUrl}/sets/${'x'.repeat(2048)}`],
-      ['a URL of a DRM service', 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M'],
+      [
+        'a URL of a DRM service',
+        'https://music.apple.com/us/playlist/x/pl.2b0e6e332fdf4b7a91164da3162127b5',
+      ],
       ['a SoundCloud URL that names no list', 'https://soundcloud.com/discover/sets/x'],
       ['a track’s URL', `${pageUrl}/some-track`],
       ['no URL', null],

@@ -14,7 +14,9 @@ export function DropOverlay() {
       <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-ring px-12 py-10 text-center">
         <Link2 className="size-6 text-muted-foreground" />
         <p className="text-sm font-medium">Drop the link to load it</p>
-        <p className="text-xs text-muted-foreground">A YouTube or SoundCloud track or list</p>
+        <p className="text-xs text-muted-foreground">
+          A YouTube, SoundCloud or Spotify track or list
+        </p>
       </div>
     </div>
   )

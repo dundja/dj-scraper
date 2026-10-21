@@ -1,6 +1,7 @@
 // Shared helpers for the tests in this directory. Not a test file; never import from src/.
 import { readFileSync } from 'node:fs'
 import { chmod, mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
+import { createServer as createHttpServer } from 'node:http'
 import { connect, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -556,4 +557,188 @@ export async function writeWebDist(dir: string): Promise<string> {
   await writeFile(path.join(dir, 'index.html'), FIXTURE_INDEX)
   await writeFile(path.join(dir, FIXTURE_ASSET.path), FIXTURE_ASSET.body)
   return dir
+}
+
+/** test/fixtures, where every recording lives. */
+const FIXTURES = path.join(import.meta.dirname, 'fixtures')
+
+/**
+ * The recorded YouTube downloads of jNQXAC9IVRw that a made-up or matched video's download is built
+ * from, by the selector its format asks for (M4A, else `ba`), with the source each file probes as.
+ */
+export const YOUTUBE_DOWNLOAD_TEMPLATES = [
+  {
+    name: 'youtube-m4a',
+    args: [['-f', 'ba[ext=m4a]/ba']],
+    probe: 'ffprobe/src-youtube-140-m4a.json',
+  },
+  { name: 'youtube-ba', args: [], probe: 'ffprobe/src-youtube-251-webm.json' },
+] as const
+const TEMPLATE_ID = 'jNQXAC9IVRw'
+
+/** A YouTube video to replay a download of: its page, id and the names its DONE line carries. */
+export type YoutubeDownloadRow = {
+  id: string
+  url: string
+  title: string
+  /** Seconds: the DONE line's and the probed file's. */
+  duration: number
+  uploader?: string
+  channel?: string
+  /** More DONE fields (e.g. `album`, `release_year`), as yt-dlp would print them. */
+  done?: Record<string, unknown>
+}
+
+/**
+ * Download rules for `row`, one per template (any format downloads), written to `dir`: the recorded
+ * run with the row's id, its DONE line with the row's names and duration, and a probe of the
+ * template's source at the row's duration. `extra` goes into every rule (e.g. `lineDelayMs`).
+ */
+export async function youtubeDownloadRules(
+  dir: string,
+  row: YoutubeDownloadRow,
+  extra: Omit<FakeYtdlpRule, 'url' | 'download' | 'args' | 'probe'> = {},
+): Promise<FakeDownloadRule[]> {
+  await mkdir(dir, { recursive: true })
+  const rules: FakeDownloadRule[] = []
+  for (const template of YOUTUBE_DOWNLOAD_TEMPLATES) {
+    const prefix = path.join(dir, `${row.id}.${template.name}`)
+    const read = (stream: string) =>
+      readFileSync(
+        path.join(FIXTURES, 'downloads', `${template.name}.${stream}.log`),
+        'utf8',
+      ).replaceAll(TEMPLATE_ID, row.id)
+    const stdout = read('stdout')
+      .split('\n')
+      .map((line) => {
+        if (!line.startsWith('DONE ')) return line
+        const done: unknown = JSON.parse(line.slice('DONE '.length))
+        if (typeof done !== 'object' || done === null) throw new Error('a DONE line is no object')
+        const { title, duration, uploader, channel } = row
+        const names = { title, duration, uploader, channel, ...row.done }
+        return `DONE ${JSON.stringify({ ...done, ...names })}`
+      })
+      .join('\n')
+    const probe: unknown = JSON.parse(readFileSync(path.join(FIXTURES, template.probe), 'utf8'))
+    if (typeof probe !== 'object' || probe === null || !('format' in probe)) {
+      throw new Error(`${template.probe} has no format`)
+    }
+    const probeFile = `${prefix}.probe.json`
+    await writeFile(`${prefix}.stdout.log`, stdout)
+    await writeFile(`${prefix}.stderr.log`, read('stderr'))
+    await writeFile(
+      probeFile,
+      JSON.stringify({
+        ...probe,
+        format: { ...(probe.format as object), duration: row.duration.toFixed(6) },
+      }),
+    )
+    rules.push({
+      ...extra,
+      url: row.url,
+      args: template.args,
+      download: prefix,
+      probe: probeFile,
+      note: extra.note ?? `${template.name} as ${row.id}`,
+    })
+  }
+  return rules
+}
+
+/** The scrubbed Spotify embed pages (test/fixtures/spotify, see its README). */
+export const SPOTIFY_FIXTURES = path.join(FIXTURES, 'spotify')
+
+/** What the fixture server answers: an embed page's path → its fixture in SPOTIFY_FIXTURES. */
+export const SPOTIFY_PAGES: Readonly<Record<string, string>> = {
+  '/embed/track/4uLU6hMCjMI75M1A2tKUQC': 'track.html',
+  '/embed/album/6N9PS4QXF1D0OWPk0Sxtb4': 'album.html',
+  '/embed/playlist/37i9dQZF1DXcBWIGoYBM5M': 'playlist.html',
+  '/embed/playlist/37i9dQZF1DX4UtSsGT1Sbe': 'playlist-capped.html',
+}
+
+/** Spotify's cover URLs in a page: any `*.spotifycdn.com` or `*.scdn.co` image. */
+const SPOTIFY_COVER_URL =
+  /https:\/\/(?:[a-z0-9-]+\.)*(?:spotifycdn\.com|scdn\.co)\/image\/([0-9a-f]+)/g
+
+/** The cover the fixture server serves for every `/image/<hash>`: a fake 640 px JPEG. */
+export const SPOTIFY_FIXTURE_COVER: FakeImageInfo = { format: 'jpeg', width: 640, height: 640 }
+
+export type SpotifyFixtureServer = {
+  /** `http://127.0.0.1:<port>`, for DJS_SPOTIFY_ORIGIN or createSpotifyClient's origin. */
+  origin: string
+  /** A page as served: its cover URLs rewritten to this origin. */
+  page: (file: string) => string
+  /** The cover URL a page's `https://…/image/<hash>` became. */
+  coverUrl: (hash: string) => string
+  /** Every request path so far, in order. */
+  requests: () => string[]
+  /** Stops it; safe to call again. */
+  close: () => Promise<void>
+}
+
+/**
+ * A tiny Spotify on 127.0.0.1 for integration and e2e tests: `GET /embed/<type>/<id>` answers the
+ * scrubbed fixture (SPOTIFY_PAGES, plus `pages`: a path → an HTML text of the test's own), with every
+ * cover URL on Spotify's CDNs rewritten to `<origin>/image/<hash>`, so nothing reaches the network;
+ * `GET /image/<hash>` answers the fake cover as image/jpeg (`cover: null` makes it 404). `status`
+ * answers a path with a bare status code instead (429, 500, …). Anything else is 404.
+ */
+export async function startSpotifyFixtures(
+  options: {
+    pages?: Readonly<Record<string, string>>
+    status?: Readonly<Record<string, number>>
+    cover?: Uint8Array | null
+  } = {},
+): Promise<SpotifyFixtureServer> {
+  const cover = options.cover === undefined ? fakeImageBytes(SPOTIFY_FIXTURE_COVER) : options.cover
+  const seen: string[] = []
+  let origin = ''
+  let closed: Promise<void> | undefined
+  const rewrite = (html: string) =>
+    html.replace(SPOTIFY_COVER_URL, (_url, hash: string) => `${origin}/image/${hash}`)
+  const server = createHttpServer((request, response) => {
+    const pathname = new URL(request.url ?? '/', 'http://fixture').pathname
+    seen.push(pathname)
+    const send = (status: number, type?: string, body?: string | Uint8Array) => {
+      response.writeHead(status, {
+        ...(type === undefined ? {} : { 'content-type': type }),
+        'content-length': body === undefined ? 0 : Buffer.byteLength(body),
+      })
+      response.end(body)
+    }
+    const status = options.status?.[pathname]
+    if (status !== undefined) return send(status)
+    if (request.method !== 'GET') return send(405)
+    const own = options.pages?.[pathname]
+    const file = SPOTIFY_PAGES[pathname]
+    if (own !== undefined) return send(200, 'text/html; charset=utf-8', rewrite(own))
+    if (file !== undefined) {
+      const html = readFileSync(path.join(SPOTIFY_FIXTURES, file), 'utf8')
+      return send(200, 'text/html; charset=utf-8', rewrite(html))
+    }
+    if (/^\/image\/[0-9a-f]+$/.test(pathname) && cover !== null) {
+      return send(200, 'image/jpeg', cover)
+    }
+    send(404, 'text/plain', 'not found')
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('no port')
+  origin = `http://127.0.0.1:${address.port}`
+  return {
+    origin,
+    page: (file) => rewrite(readFileSync(path.join(SPOTIFY_FIXTURES, file), 'utf8')),
+    coverUrl: (hash) => `${origin}/image/${hash}`,
+    requests: () => [...seen],
+    close: () => {
+      closed ??= new Promise<void>((resolve, reject) => {
+        server.closeAllConnections()
+        server.close((error) => (error ? reject(error) : resolve()))
+      })
+      return closed
+    },
+  }
 }

@@ -10,7 +10,9 @@ export type JobAction = 'cancel' | 'retry' | 'reveal'
  * The action a job offers now. There is never more than one, so rows and the track card keep one
  * button whose action follows the job (focus stays on it as Cancel turns into Retry):
  * - cancel: queued, downloading or processing (shown busy while `cancelRequested`);
- * - retry: canceled, or failed with an error a new try may fix (`isRetryableError`);
+ * - retry: canceled, or failed with an error a new try may fix (`isRetryableError`), or a Spotify
+ *   track no YouTube upload matched (`no_match`): "Retry failed" leaves it out, as the same search
+ *   mostly finds the same uploads, but YouTube's results do change, so the job's own Retry stays;
  * - reveal: done or skipped (the file is in the folder).
  * A failure retrying can't fix (private, geo-blocked, preview…) offers nothing.
  */
@@ -23,7 +25,7 @@ export function jobAction(job: Job): JobAction | undefined {
     case 'canceled':
       return 'retry'
     case 'failed':
-      return isRetryableError(job.error.code) ? 'retry' : undefined
+      return isRetryableError(job.error.code) || job.error.code === 'no_match' ? 'retry' : undefined
     default:
       return undefined
   }

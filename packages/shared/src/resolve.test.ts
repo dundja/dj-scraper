@@ -349,7 +349,7 @@ describe('EntryRefSchema', () => {
     ['an empty id', { ...bareRef, id: '' }, 'id'],
     ['a numeric id', { ...bareRef, id: 1234567893 }, 'id'],
     ['an id longer than MAX_ID_LENGTH', { ...bareRef, id: 'a'.repeat(MAX_ID_LENGTH + 1) }, 'id'],
-    ['an out-of-scope platform', { ...bareRef, platform: 'spotify' }, 'platform'],
+    ['an out-of-scope platform', { ...bareRef, platform: 'tidal' }, 'platform'],
   ])('rejects %s', (_label, input, path) => {
     expect(issuePaths(EntryRefSchema, input)).toEqual([[path]])
   })

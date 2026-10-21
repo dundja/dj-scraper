@@ -4,6 +4,7 @@ import {
   type CollectionLink,
   type CreateDownloadsResponse,
   classifyUrl,
+  MAX_SPOTIFY_ENTRIES,
 } from '@dj-scraper/shared'
 import { formatTotalDuration } from '@/lib/format.ts'
 import type { SelectionSummary, TableRow } from './rows.ts'
@@ -67,15 +68,32 @@ export function totalDurationText(
   return unknown ? `≈ ${formatTotalDuration(sum)}` : formatTotalDuration(sum)
 }
 
-/** Why the table holds fewer rows than the platform has, when our listing cap cut it. */
+/**
+ * Why the table holds fewer rows than the platform has: our listing cap cut it, a mix never ends,
+ * or Spotify's page lists only the first 100.
+ */
 export function truncatedNote(
-  collection: Pick<Collection, 'truncated' | 'kind' | 'entries'>,
+  collection: Pick<Collection, 'truncated' | 'kind' | 'entries' | 'platform'>,
 ): string | undefined {
   if (!collection.truncated) return undefined
+  if (collection.platform === 'spotify') {
+    const list = collection.kind === 'album' ? 'an album' : 'a playlist'
+    return `Spotify shows only the first ${MAX_SPOTIFY_ENTRIES} tracks of ${list}.`
+  }
   const listed = formatCount(collection.entries.length)
   return collection.kind === 'mix'
     ? `A mix never ends: showing its first ${listed} tracks.`
     : `Showing the first ${listed} tracks.`
+}
+
+/**
+ * Where a Spotify list's audio comes from (ADR-026): Spotify's streams are DRM-protected, so each
+ * track is found on YouTube when it downloads. Nothing for other platforms.
+ */
+export function sourceNote(collection: Pick<Collection, 'platform'>): string | undefined {
+  return collection.platform === 'spotify'
+    ? 'Spotify streams are DRM-protected: each track is found on YouTube and downloaded from there.'
+    : undefined
 }
 
 /**

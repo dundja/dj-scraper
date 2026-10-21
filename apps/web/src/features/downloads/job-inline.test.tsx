@@ -5,7 +5,14 @@ import { userEvent } from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type DownloadsState, downloadsQueryKey } from '@/lib/events.ts'
 import { formatClock } from '@/lib/format.ts'
-import { batch, jobWith, liveDownloads, snapshotWith } from '@/test/downloads.ts'
+import {
+  batch,
+  jobWith,
+  liveDownloads,
+  snapshotWith,
+  spotifyJob,
+  spotifyMatch,
+} from '@/test/downloads.ts'
 import { fakeApi, json, networkError } from '@/test/fake-api.ts'
 import { renderWithQueryClient } from '@/test/render.tsx'
 import { JobInline } from './job-inline.tsx'
@@ -164,6 +171,47 @@ describe('JobInline', () => {
     // Once it runs, the queue no longer holds it back.
     await send({ type: 'jobs.updated', jobs: [jobAt('downloading')] })
     expect(note()).toBeNull()
+  })
+
+  it("holds a Spotify job by YouTube's pacing and pauses: its audio downloads from there", async () => {
+    const pausedUntil = '2026-10-02T09:20:00.000Z'
+    const { track: _youtube, ...queued } = jobsByStatus.queued
+    const rendered = renderWithQueryClient(<JobInline jobId={JOB_ID} />)
+    const { send } = await liveDownloads(
+      rendered.queryClient,
+      snapshotWith({
+        jobs: [spotifyJob({ ...queued, id: JOB_ID })],
+        batches: [batch],
+        queue: { platforms: [{ platform: 'youtube', pausedUntil, pauseCode: 'rate_limited' }] },
+      }),
+    )
+    const note = () => document.querySelector('[data-slot="queue-note"]')
+
+    expect(status().textContent).toBe('Queued')
+    expect(note()?.textContent).toBe(
+      `YouTube paused until ${formatClock(pausedUntil)}: rate-limited (retries on its own)`,
+    )
+
+    await send({
+      type: 'jobs.updated',
+      jobs: [spotifyJob({ ...queued, id: JOB_ID, status: 'downloading', startedAt: pausedUntil })],
+    })
+    expect(note()).toBeNull()
+    expect(status().textContent).toBe('Finding it on YouTube…')
+
+    await send({
+      type: 'jobs.updated',
+      jobs: [
+        spotifyJob({
+          ...queued,
+          id: JOB_ID,
+          status: 'downloading',
+          startedAt: pausedUntil,
+          match: spotifyMatch,
+        }),
+      ],
+    })
+    expect(status().textContent).toBe('Starting…')
   })
 
   it('shows why it failed with a next step, and Retry when a new try may help', async () => {

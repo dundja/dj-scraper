@@ -1,3 +1,4 @@
+import { pacingPlatform } from '@dj-scraper/shared'
 import { Download } from 'lucide-react'
 import { useState } from 'react'
 import { FolderPath } from '@/components/folder-path.tsx'
@@ -53,10 +54,11 @@ export function JobInline({ jobId, onDownloadAgain }: JobInlineProps) {
   const detail = job === undefined ? undefined : statusDetail(job)
   const progress =
     job?.status === 'downloading' && phase === 'downloading' ? job.progress : undefined
-  // Why a queued job waits: its platform is paused or paced (the downloads panel says the same).
+  // Why a queued job waits: its platform is paused or paced (the downloads panel says the same). A
+  // Spotify track downloads from YouTube, so YouTube's pauses and pacing hold it.
   const queueNote =
     (phase === 'queued' || phase === 'requeued') && job !== undefined
-      ? platformQueueNote(queue, job.track.platform)
+      ? platformQueueNote(queue, pacingPlatform(job.track.platform))
       : undefined
   const downloadAgain =
     onDownloadAgain !== undefined &&

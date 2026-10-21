@@ -5,11 +5,11 @@ import type { Locator, Page, Response } from '@playwright/test'
 
 /** The paste box at the top of the page. */
 export const linkBox = (page: Page): Locator =>
-  page.getByRole('textbox', { name: 'YouTube or SoundCloud link' })
+  page.getByRole('textbox', { name: 'YouTube, SoundCloud or Spotify link' })
 
 /** The heading of the empty state under the paste box: nothing loaded (or loading) yet. */
 export const emptyState = (page: Page): Locator =>
-  page.getByRole('heading', { name: 'Paste a YouTube or SoundCloud link' })
+  page.getByRole('heading', { name: 'Paste a YouTube, SoundCloud or Spotify link' })
 
 /** The downloads column: `<aside aria-label="Downloads">`. */
 export const downloadsPanel = (page: Page): Locator =>

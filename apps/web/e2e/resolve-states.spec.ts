@@ -1,7 +1,8 @@
 import type { Page, Request } from '@playwright/test'
 import { emptyState, linkBox } from './app.ts'
 import {
-  SPOTIFY_TRACK,
+  APPLE_MUSIC_TRACK,
+  SPOTIFY_ARTIST,
   YOUTUBE_BOT_CHECK,
   YOUTUBE_PRIVATE,
   YOUTUBE_SLOW_PLAYLIST,
@@ -65,9 +66,26 @@ test('a bot check says what to do about it, with the command as code', async ({
 test('a DRM service is refused as it is typed, without asking the server', async ({ page }) => {
   const requests = resolveRequests(page)
   await page.goto('/')
-  await linkBox(page).fill(SPOTIFY_TRACK)
+  await linkBox(page).fill(APPLE_MUSIC_TRACK)
   await expect(linkBox(page)).toHaveAccessibleDescription(/DRM service: not supported/)
   await expect(page.getByText(/DRM-protected, so DJ Scraper can't download them/)).toBeVisible()
+
+  await linkBox(page).press('Enter')
+  await expect(linkBox(page)).toHaveAttribute('aria-invalid', 'true')
+  await expect(emptyState(page)).toBeVisible()
+  expect(requests).toEqual([])
+})
+
+test('a Spotify page that is no track or list is refused as it is typed, without asking the server', async ({
+  page,
+}) => {
+  const requests = resolveRequests(page)
+  await page.goto('/')
+  await linkBox(page).fill(SPOTIFY_ARTIST)
+  await expect(linkBox(page)).toHaveAccessibleDescription(/Spotify: not a track or list/)
+  await expect(
+    page.getByText(/^Only Spotify track, album and playlist links work here/),
+  ).toBeVisible()
 
   await linkBox(page).press('Enter')
   await expect(linkBox(page)).toHaveAttribute('aria-invalid', 'true')

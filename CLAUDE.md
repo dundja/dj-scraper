@@ -1,6 +1,6 @@
 # DJ Scraper
 
-A local web app for DJs. Paste a YouTube or SoundCloud link (track or playlist), review the metadata, pick tracks, and download them as DJ-ready audio files into a folder you choose. It runs only on this machine: a Vite/React UI at localhost plus a Node server that drives yt-dlp and ffmpeg.
+A local web app for DJs. Paste a YouTube, SoundCloud or Spotify link (track or playlist), review the metadata, pick tracks, and download them as DJ-ready audio files into a folder you choose. Spotify links are track lists only: each track's audio is matched and downloaded on YouTube (ADR-026). It runs only on this machine: a Vite/React UI at localhost plus a Node server that drives yt-dlp and ffmpeg.
 
 **Status:** Phases 0–3 are done.
 - Phase 0 (scaffold): `packages/shared` (the contract), `apps/server` (guard, engine health, spawn wrapper, serving the built UI) and `apps/web` (dark shell with live engine status), with `pnpm dev`, `pnpm start` and Vitest/Playwright tests.
@@ -8,7 +8,7 @@ A local web app for DJs. Paste a YouTube or SoundCloud link (track or playlist),
 - Phase 2 (download pipeline): the paced download queue, finalize (one ffmpeg pass plus our ID3 writer, every file read back), publishing that never overwrites, the data-dir lock and startup sweep, settings, the folder picker, reveal and `GET /api/events`, with typed web client calls and one event stream feeding `['downloads']`.
 - Phase 3 (UI): paste, drop or type a link (instant badge, a cancelable resolve per paste); the track card auto-downloads; the collection view (virtualized table, selection, filter, SoundCloud rows filled in as they scroll into view, `Collection.lists` to open) with its download bar; the downloads panel beside the page; the header's folder picker (folders checked and read when chosen) and the format select; the engine banner; Playwright e2e of both flows on the fake engine (ADR-020 to ADR-025).
 
-Next is roadmap Phase 4 (DJ polish), with Phase 3's follow-ups at its end. The current phase and next items are in `docs/roadmap.md`.
+Phase 4 (DJ polish) is under way: Spotify links as track lists, matched on YouTube, are in (ADR-026). Phase 3's follow-ups are at its end. The current phase and next items are in `docs/roadmap.md`.
 
 ## Where things are explained
 | Need | Read |
@@ -49,7 +49,7 @@ To scope a script to one package: `pnpm --filter @dj-scraper/<web|server|shared>
 ```
 ./                 package.json, pnpm-workspace.yaml, tsconfig.base.json, biome.json
 apps/web/          React SPA
-apps/server/       Hono API, resolve, download queue and pacing, yt-dlp/ffmpeg engine, finalize, settings
+apps/server/       Hono API, resolve, download queue and pacing, yt-dlp/ffmpeg engine, finalize, settings, Spotify reader + YouTube matching
 packages/shared/   Zod schemas + pure helpers used by both
 docs/              product, architecture, decisions, roadmap
 .claude/           agents, skills, hooks, settings
@@ -62,7 +62,7 @@ docs/              product, architecture, decisions, roadmap
 4. **One contract.** Every API and SSE shape is a Zod schema in `packages/shared`, and both sides change together. No `any`.
 5. **Tests stay offline.** Unit, integration and e2e tests use recorded fixtures and the fake engine. Only `pnpm smoke` goes live.
 6. **Honest audio.** Show the source codec and bitrate. Never present an upconverted file as higher quality. No Opus/WebM in final files unless the user picks "original".
-7. **No DRM circumvention.** Spotify, Apple Music, Amazon Music, Tidal, Deezer and Beatport streams are out of scope (`classifyUrl` refuses them before yt-dlp runs), and so is bypassing paywalls or private content.
+7. **No DRM circumvention.** Spotify, Apple Music, Amazon Music, Tidal, Deezer and Beatport streams are never downloaded, and neither is anything behind a paywall or private. `classifyUrl` refuses the other services before yt-dlp runs. Spotify links are read only as track lists, from the public embed page with no account or token, and each track's audio comes from its YouTube match (ADR-026).
 
 ## How to work here
 - Start from the roadmap item and read the relevant doc sections before coding. Ask when a request conflicts with `docs/decisions.md`.
@@ -92,3 +92,4 @@ The full playbook is in the `ytdlp` skill.
 - `watch?v=…&list=…` defaults to the whole playlist, so we ask. `list=RD…` mixes never end, so we cap them.
 - SoundCloud originals need the uploader's permission and a login. Go+ tracks without a subscription are 30-second previews (`preview_only`): `--break-match-filters "format_id!*=preview"` makes yt-dlp exit 101 silently.
 - No DJ app plays Opus. YouTube's AAC stream (format 140) is copied as M4A, and an MP3 source stays at its own bitrate.
+- Spotify (ADR-026): the embed page (`open.spotify.com/embed/<type>/<id>`) needs no login and lists at most 100 rows, with no album or ISRC. Read only `state.data.entity`: the page also holds an anonymous token, which must never be used, logged or committed. A track's match is `ytsearch10:<artists> - <title>` filtered by `pickMatch`. Flat YouTube Music search results carry no duration, so they can't be checked.

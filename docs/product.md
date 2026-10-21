@@ -3,7 +3,7 @@
 > One paste → DJ-ready audio files in the folder you want.
 
 ## Who it's for
-One DJ on their own Mac, collecting tracks from YouTube and SoundCloud. Everything runs locally: no accounts, no cloud.
+One DJ on their own Mac, collecting tracks from YouTube and SoundCloud, and from Spotify lists matched on YouTube. Everything runs locally: no accounts, no cloud.
 
 ## Sources
 | Source | v1 |
@@ -14,7 +14,9 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud. Everythi
 | SoundCloud: tracks, sets/playlists/albums, private links with a secret token | ✅ first-class |
 | SoundCloud: a user's tracks / likes / reposts | ✅ as collections |
 | Anything else yt-dlp supports (Bandcamp, Mixcloud, Vimeo, …) | best effort, generic normalization |
-| DRM services (Spotify, Apple Music, Amazon Music, Tidal, Deezer, Beatport streaming) | ❌ out of scope, refused by URL |
+| Spotify: tracks, albums, playlists (`open.spotify.com`) | ✅ as track lists: names and covers from Spotify, the audio matched and downloaded on YouTube (ADR-026). Lists show their first 100 tracks |
+| Spotify's own streams, and other Spotify pages (artists, podcasts, `spotify.link` short links) | ❌ streams are DRM-protected and never downloaded; other pages refused by URL |
+| DRM services (Apple Music, Amazon Music, Tidal, Deezer, Beatport streaming) | ❌ out of scope, refused by URL |
 
 ## Core flows
 
@@ -28,6 +30,12 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud. Everythi
 - Show the track card: artwork, title, artist, duration, platform, and source quality (codec/bitrate when known; once the download starts, the stream it actually took).
 - Start downloading right away into the current target folder with the default format. The card then follows the download (queued, waiting, progress, done with what was written) with one button: Cancel, Retry or Reveal in Finder. Cancelling takes one click.
 - Setting: "Auto-download single tracks" (default on). When it's off, show a Download button instead.
+
+### 2b. Spotify links
+- A Spotify track, album or playlist link loads like any other: a track gets the track card (and downloads at once), a list gets the track list to pick from. Spotify's page gives the names, durations and covers; no Spotify account is involved.
+- Spotify's streams are DRM-protected, so each track's audio comes from YouTube: the download searches YouTube for the artists and title and takes the upload whose length agrees and that isn't another version (live, remix, cover, …). The card and the downloads panel show which upload it took, and the file is tagged with Spotify's title, artists, year and cover.
+- The quality is YouTube's (see Quality), never dressed up: the source line shows the YouTube stream.
+- When no upload matches, the track fails with "No YouTube upload matches", and pasting a YouTube or SoundCloud link of the track instead is the way out.
 
 ### 3. Playlist → pick → download
 - Header: artwork, title, owner, track count ("50 of 214" when the list is cut), total duration ("≈" when some are unknown).
@@ -54,7 +62,7 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud. Everythi
 - The downloads panel stays beside the page: counts, overall progress, each batch with its folder and format, and every track's status.
 - Batch controls: cancel one or all, retry failed, clear finished (for one batch or all), and **Reveal in Finder** for finished files.
 - One failing track never stops the batch.
-- Errors are written for humans: "Private video", "Not available in your country", "Age-restricted: needs browser cookies", "Preview only (SoundCloud Go+)", …
+- Errors are written for humans: "Private video", "Not available in your country", "Age-restricted: needs browser cookies", "Preview only (SoundCloud Go+)", "No YouTube upload matches this Spotify track", …
 
 ### 6. Settings
 - Format:
@@ -75,6 +83,7 @@ Every stream is lossy:
 - YouTube: Opus at ~130–160 kbps or AAC at 128 kbps (256 kbps only with Premium cookies).
 - SoundCloud without a login: AAC 160 kbps at best, otherwise MP3 128 kbps.
 - SoundCloud originals (often WAV or FLAC) exist only when the uploader enables downloads, and fetching them needs a SoundCloud login.
+- Spotify links download their YouTube match, so they are YouTube's quality. Spotify's own streams (Ogg Vorbis up to ~320 kbps, lossless on Premium) are DRM-protected and never downloaded; compare them by ear in the Spotify app.
 
 Converting to MP3 320 or AIFF improves compatibility with DJ software, not quality. The UI shows the source codec and bitrate, and uses an original file whenever one is available. Every finished file reports what it really is, read back from the file: an MP3 source is never re-encoded to look like "320", and an M4A made from a non-AAC source is marked as re-encoded.
 

@@ -29,14 +29,16 @@ src/
                     index.tsx (ResolvePage); -root.test.tsx (the '-' keeps the router plugin off it).
                     Later settings.tsx (Phase 4)
   features/<name>/  components + hooks per feature:
-    resolve/        ResolvePage: the paste box and badge (url-verdict.ts), paste anywhere, the ⌘V fallback
+    resolve/        ResolvePage: the paste box and badge (url-verdict.ts: ok, or `refused` for a DRM service or a
+                    Spotify page that isn't a track or list), paste anywhere, the ⌘V fallback
                     and drop (useLinkDrop; paste-text.ts finds the link: findLink, dropLink, carriesFiles,
                     isEditableTarget), useResolve (a useMutation per load with its own AbortController),
                     loading / error / ambiguous views, ResolvedResult (keyed by the load's number; autoStart
                     frozen at mount). testing/ = vi.mock doubles of TrackCard and CollectionView for this
                     folder's tests; resolve-autostart.test.tsx runs the real TrackCard instead
     track/          TrackCard, useTrackDownload (queues once when autoStart), track-source.tsx (the job's
-                    source once known), track-download.tsx
+                    source once known), track-download.tsx, track-match.tsx (a Spotify track: the DRM note,
+                    then the job's YouTube match as a link; ADR-026)
     collection/     CollectionView (keyed by the collection object: instance-key.ts), header and lists,
                     selection-toolbar, track-table + track-row (virtualized div table with ARIA roles; roving
                     focus in use-row-focus.ts), selection.ts (pure reducer) + use-selection.ts, download-bar;
@@ -95,6 +97,7 @@ src/
 - UI-only state (selection, filters, dialogs) stays local to its feature (`useState`/`useReducer`). Add a store only when distant features really share state.
 - Playlist selection is a `Set` of `TrackKey`s (`platform:id`, so a track listed twice is one key) in a pure reducer (`features/collection/selection.ts`), with select all/none/invert over the rows the filter shows and shift-click ranges. Filtering keeps the selection, and unavailable entries can't be selected (ADR-021).
 - Long lists use TanStack Virtual with fixed row heights (nothing is measured) and memoized rows. On lg+ a list fills its column (`flex min-h-0 flex-1 flex-col` down to a `min-h-0 flex-1 overflow-auto` scroller); below lg it gets a bounded height such as `h-[60svh]`. A virtualized table is divs with ARIA table roles and roving focus, not `<table>` (ADR-021).
+- Spotify (ADR-026): a Spotify job's audio is its YouTube match (`job.match`). Say so wherever its source or output shows ("Audio from YouTube: …", "copied from YouTube"), and read queue pauses and pacing for it with `pacingPlatform(job.track.platform)`.
 - Honest audio in the UI (`features/downloads/job-text.ts`): show a job's `output` next to its `source`, say copied or re-encoded ("from <source>" for a lossless output: it holds the source's quality, no more), and show a measured bitrate as the nominal one only when it is at most 3 % above it, never rounded up. A job offers at most one action at a time (`job-actions.ts`).
 - Use function components with named exports. Split a component once it passes ~150 lines or does two jobs.
 - Style with Tailwind utilities and the `cn()` helper. Dark theme first; respect `prefers-reduced-motion`.

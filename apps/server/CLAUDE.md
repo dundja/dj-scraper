@@ -49,6 +49,9 @@ src/
                     attempt.ts (one attempt: job dir, yt-dlp, finalize, publish, cleanup), queue.ts (state
                     machine, run order, concurrency, cancel/retry/clear, eviction: ADR-025), bus.ts (typed events)
   pacing/           token-bucket.ts (GCRA, shareable, with a reserve), gates.ts (per-platform admission, ADR-017)
+  spotify/          ADR-026: embed.ts (pure: the embed page's entity → Track/Collection), client.ts (the only code
+                    that talks to Spotify: embed pages and covers over HTTPS), match.ts (pure: search query,
+                    results, pickMatch), matcher.ts (a Spotify job's match step: embed → ytsearch → pickMatch)
   settings/         store.ts (settings.json: field-wise repair, settings.json.bad, atomic coalesced writes)
   util/             errno.ts (errnoCode, failureName: what a log may say about an error), fields.ts (lenient,
                     omitUndefined for tool JSON and optional contract fields)
@@ -58,14 +61,17 @@ scripts/smoke.ts    `pnpm smoke`: the real resolver against live platforms (the 
 test/
   *.test.ts         tests that spawn processes or open sockets (afterEach killActiveGroups)
   helpers.ts        test helpers (fake tools incl. writeFakeYtdlp, writeFakeFfmpeg, writeFakeEngine; serverEnv;
-                    temp dirs, engine fixtures, free ports, raw requests, web dist); no src/ imports
+                    temp dirs, engine fixtures, free ports, raw requests, web dist; startSpotifyFixtures,
+                    youtubeDownloadRules); no src/ imports
   e2e-server.ts     Playwright's webServer: the production server on PORT with a healthy fake engine
+                    and the Spotify fixture server (DJS_SPOTIFY_ORIGIN; the Spotify album's rows download)
                     (writeFakeEngine, a node link on PATH) and e2e rules of its own, tried first: playlist row
                     downloads, set row 6 by its API URL, a slow list, a hanging download, a private track in a
                     playlist. apps/web/e2e/fake-urls.ts lists the URLs; e2e-server.test.ts checks them
   entry.ts          bootEntry: the real entry (node src/index.ts) as a child, with its lines; lockHolder
   resolve-app.ts    harness for the resolve/entries integration tests (real server + fake yt-dlp)
   downloads-app.ts  harness for the downloads integration tests (real server + createServices + fake engine, SSE reader)
+  spotify-fixtures.test.ts  the embed-page scrubber and the Spotify fixture server
   services.test.ts  createServices as the server builds it: SoundCloud lookups and downloads share one budget (D8)
   downloads.test.ts downloads end to end; lifecycle.test.ts: shutdown, boot sweep, a second server
   id3-reader.ts     an ID3v2 reader written apart from the writer, for MP3/AIFF readback in tests and smoke
@@ -97,7 +103,8 @@ test/
   1. Send SIGINT to the process group. Not SIGTERM: it can orphan ffmpeg.
   2. Send SIGKILL after 3 s (`KILL_GRACE_MS`).
   3. Delete the job dir once `run` has settled (its group is gone by then).
-- **Pacing.** Downloads go through `pacing/gates.ts` (ADR-017); lookups through the enricher's limiter (ADR-014). SoundCloud's token bucket is one instance shared by both (`productionPacing` in `services.ts`; never build the services by hand). Every platform decision uses the classified URL's platform, never `TrackRef.platform`. No yt-dlp `--sleep-*` flags.
+- **Spotify** (ADR-026). Never request Spotify's streams, API or player token. Read only the embed page's `state.data.entity`, build its URL from the classified id, fetch covers only from Spotify's image CDNs, and take a Spotify job's names from Spotify's page, never the request. Recorded embed pages are scrubbed of the token, client id and tracing data.
+- **Pacing.** Downloads go through `pacing/gates.ts` (ADR-017); lookups through the enricher's limiter (ADR-014). A Spotify job is paced as YouTube (`pacingPlatform`). SoundCloud's token bucket is one instance shared by both (`productionPacing` in `services.ts`; never build the services by hand). Every platform decision uses the classified URL's platform, never `TrackRef.platform`. No yt-dlp `--sleep-*` flags.
 - **Data dir.** One server holds it (`server.lock`); the startup sweep relies on that. Only `jobs/` entries named `<uuid>` or `<uuid>.part.json` are ours to delete, and nothing there follows symlinks. A part record whose folder is missing (a drive not plugged in) is kept for up to 30 days. The sweep finds leftover processes by `<dataDir>/jobs/<uuid>` in their argv, so every engine argv of an attempt must name its job dir (yt-dlp's `-P`, ffmpeg's absolute paths).
 - **SSE.** `GET /api/events` writes a raw `retry: 1000`, then a snapshot taken in the same tick as the bus subscription, then every event in order. Heartbeats are a typed `{ type: 'heartbeat' }` every 15 s (comments never reach page JS). No progress throttle: `--progress-delta 0.5` already caps DL lines at about two a second per job. A bulk change is one event. Unsubscribe on disconnect, and end every stream cleanly at shutdown. HEAD never opens a stream (Hono runs the GET handler for it and drops the body unread, so the stream would never hear the client go). The bus serializes each event once and checks it against `ServerEventSchema` in dev and tests.
 - **Fixtures.** Record new cases with real yt-dlp (and ffprobe), and note each in its directory's README (URL, options, exit, version, date; mark synthetic logs as such). Meta-tests fail if a fixture lacks its test entry or manifest rule:
@@ -105,6 +112,8 @@ test/
   - A stderr `.log` is kept verbatim and gets a `FIXTURES` entry in `ytdlp-errors.test.ts`.
   - A download case (`downloads/<case>.stdout.log` + `.stderr.log`, the job dir as `{JOBDIR}`) gets a `DOWNLOAD_FIXTURES` row in `ytdlp-progress.test.ts` and a `DOWNLOAD_FAILURES` or `DOWNLOAD_SUCCESSES` entry in `ytdlp-errors.test.ts`.
   - An ffprobe JSON (`ffprobe/<name>.json`, recorded with finalize's `-show_entries`) gets a `PROBES` entry in `finalize-plan.test.ts`.
+  - A Spotify embed page goes through `test/fixtures/spotify/trim-embed.mjs` (only `state.data`; it refuses tokens, client or correlation ids, Sentry data and sessions) and gets a `RECORDED_PAGES` entry in `spotify/embed.test.ts`. `startSpotifyFixtures` in `test/helpers.ts` serves them on 127.0.0.1 with their covers rewritten to itself, so no test reaches Spotify's CDN.
+  - A YouTube search recording (`youtube/search.json`, the exact `searchArgs` argv) gets a `RECORDED_URLS` entry (its `ytsearch10:…`) and a `fake-yt-dlp.json` rule.
   - Recordings get a `fake-yt-dlp.json` rule (`download: '<case>'` for download cases), or a `WITHOUT_RULES` reason in `test/fake-yt-dlp.test.ts`.
 - **Fake binaries.** `fake-yt-dlp.mjs`, `fake-ffmpeg.mjs` and `fake-tool.sh` are checked in with their exec bit (git mode 100755) and symlinked per test: endpoint security scans every newly written executable on its first run. The fakes exit 2 on argv our builders never produce, so drift fails loudly.
 - **Security middleware.** The Host/Origin guard and JSON-only mutations apply to every route. Never add CORS headers.

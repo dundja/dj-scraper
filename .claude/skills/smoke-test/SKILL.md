@@ -45,8 +45,10 @@ Public URLs from yt-dlp's own extractor tests, checked 2026-10-01. Replace any t
 | SoundCloud set | https://soundcloud.com/the-concept-band/sets/the-royal-concept-ep |
 | SoundCloud album set | https://soundcloud.com/leviryan/sets/out-of-spite |
 | SoundCloud downloadable track (the original needs a login) | https://soundcloud.com/the80m/the-following |
+| Spotify track (read from its embed page, ADR-026) | https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC |
+| Spotify album (10 tracks) | https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4 |
 
-Shortest download candidates: the SoundCloud secret link (10 s), then the YouTube video (19 s). For previews: the Go+ track https://soundcloud.com/the-concept-band/world-on-fire-1 (it should end `preview_only`, with and without `--bare`).
+Shortest download candidates: the SoundCloud secret link (10 s), then the YouTube video (19 s). A Spotify track downloads its YouTube match (`pnpm smoke --download 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC'` prints a `match` line); a failed Spotify resolve that says "Spotify's page has changed" means the embed page's `__NEXT_DATA__` moved. For previews: the Go+ track https://soundcloud.com/the-concept-band/world-on-fire-1 (it should end `preview_only`, with and without `--bare`).
 
 Last live download run (2026-10-03, yt-dlp 2026.08.19, ffmpeg 8.0). Every result matched the design:
 

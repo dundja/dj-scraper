@@ -10,7 +10,9 @@ Browser: React SPA (apps/web)
   ▼
 Local server: Node + Hono (apps/server), 127.0.0.1:4747
   ├─ resolve     yt-dlp -J --flat-playlist → Track | Collection
+  │              (a Spotify link: its public embed page over HTTPS instead, ADR-026)
   ├─ downloads   job queue (paced per platform) → one yt-dlp process per track,
+  │              (a Spotify track: its YouTube match, found with a yt-dlp search first)
   │              downloading the stream as is into that attempt's temp dir
   │              → finalize: ffprobe, one ffmpeg pass (convert, tags, cover), read back, our ID3 tag
   │              → publish into the target folder, never overwriting
@@ -35,6 +37,7 @@ The server runs its TypeScript source directly on Node, with no build step (ADR-
 - `FFMPEG_PATH`: an absolute path to the ffmpeg binary, or to a directory holding ffmpeg and ffprobe, as with `--ffmpeg-location`.
 - `DJS_WEB_DIST`: an absolute path to the built UI. The default is `apps/web/dist`, found from the server's source location rather than the cwd (ADR-009). Tests and the e2e server set it.
 - `DJS_DATA_DIR`: an absolute path to the app data dir, instead of `~/Library/Application Support/DJ Scraper`. Tests give every spawned server its own.
+- `DJS_SPOTIFY_ORIGIN`: an http(s) origin to read Spotify's embed pages from instead of `https://open.spotify.com` (ADR-026). Only tests and the e2e server set it, to a local fixture server; covers from that origin are then accepted too.
 - The home folder (`os.homedir()`, so `HOME` when set) must be absolute. The default data dir and the default download folder, `~/Music/DJ Scraper`, are in it.
 - An empty variable counts as unset.
 - Flags:
@@ -95,7 +98,7 @@ The reasons are in ADR-007.
 | `engine/versions.ts` | pure: version output → version, release date, major, checked against the minimums from `@dj-scraper/shared` |
 | `engine/health.ts` | cached health check (10 min, one probe at a time) |
 | `engine/run.ts` | the **only** place that spawns processes: argv only, detached process group, line streaming, abort, timeout; the group is SIGKILLed when a run closes |
-| `engine/ytdlp-args.ts` | pure: the base argv every call shares; resolve, entry and download argv; the download selectors |
+| `engine/ytdlp-args.ts` | pure: the base argv every call shares; resolve, entry, search (`ytsearch<n>:<query>`) and download argv; the download selectors |
 | `engine/ytdlp-parse.ts` | pure: info JSON → Track/Collection, read with tolerant schemas and checked against the contract; `trackNames`, shared with finalize |
 | `engine/ytdlp-progress.ts` | pure: one download line → DL progress, PP, START or DONE; `waitingUntil` |
 | `engine/ytdlp-errors.ts` | pure: yt-dlp stderr + exit code → `ErrorInfo` with a human message, from ordered pattern tables backed by fixtures; `mapDownloadExit` for downloads (transfer errors, the preview break filter's exit 101) |
@@ -107,15 +110,19 @@ The reasons are in ADR-007.
 | `fs/folder-picker.ts` | the macOS folder picker (osascript `choose folder`), one at a time, 300 s timeout |
 | `fs/reveal.ts` | `open -R` on a finished file |
 | `jobs/types.ts` | `StartInfo`, `DoneInfo`, `TargetFolder`, the attempt, finalize and publish signatures, `PartRecord`, `StepError` |
-| `jobs/attempt.ts` | one attempt of one job: job dir, yt-dlp, its lines → updates, finalize, publish, cleanup |
+| `jobs/attempt.ts` | one attempt of one job: job dir, (a Spotify track: its YouTube match and cover first), yt-dlp, its lines → updates, finalize, publish, cleanup |
 | `jobs/queue.ts` | jobs and batches, dedupe, run order, concurrency, gates, the state machine, cancel/retry/clear, eviction of finished jobs (ADR-025) |
 | `jobs/bus.ts` | typed event bus: each event serialized once for every listener, checked against the contract when asked |
 | `pacing/token-bucket.ts` | GCRA token bucket with an optional reserve; one instance can be shared |
 | `pacing/gates.ts` | per-platform admission for downloads: bucket, cooldown, strikes, half-open, persistent block (ADR-017) |
 | `settings/store.ts` | `settings.json`: field-wise repair on read, atomic coalesced writes, recent folders |
 | `util/errno.ts`, `util/fields.ts` | `errnoCode` and `failureName` (an error's code or name for logs, never its message); `lenient` and `omitUndefined` for tool JSON and optional fields |
-| `resolve/plan.ts` | pure: classified URL + mode → what to ask yt-dlp (URL, playlist flag, entry cap, timeout, `ambiguous` wrapping) |
-| `resolve/resolver.ts` | `POST /api/resolve`: plan → one yt-dlp call → normalize → contract check; at most 4 at a time |
+| `resolve/plan.ts` | pure: classified URL + mode → what to ask yt-dlp (URL, playlist flag, entry cap, timeout, `ambiguous` wrapping); never a Spotify link |
+| `spotify/embed.ts` | pure: Spotify's embed page → `SpotifyEntity` (only `props.pageProps.state.data.entity` of `__NEXT_DATA__`) → Track/Collection; `SPOTIFY_EMBED_LIMIT` (100) (ADR-026) |
+| `spotify/client.ts` | the only code that talks to Spotify: the embed page of a classified link (URL built from its id, 2 MiB cap, 20 s, no redirects) and cover images (Spotify's image CDNs only, 5 MiB); failures as `SpotifyError` with a user message and a log-safe detail |
+| `spotify/match.ts` | pure: the YouTube search query, the flat search results → candidates, `pickMatch` (duration within 5 s, the song's words, an artist named, no other version; scored) |
+| `spotify/matcher.ts` | `createSpotifyDownloads`: a Spotify job's match step (embed page → `yt-dlp ytsearch10:` → `pickMatch` → the classified YouTube URL and a `TrackMatch`), and the cover |
+| `resolve/resolver.ts` | `POST /api/resolve`: plan → one yt-dlp call → normalize → contract check; a Spotify link reads its embed page instead; at most 4 at a time |
 | `resolve/enricher.ts` | `POST /api/resolve/entries`: per-row lookups with per-platform pacing, SoundCloud's request budget (shared with downloads), rate-limit cooldown and a 30 min cache; `peek` reads the cache for the downloads route |
 | `resolve/limiter.ts`, `lru.ts`, `input.ts`, `ytdlp-call.ts` | FIFO limiter (concurrency, min gap between starts, an optional token bucket of its own or a shared one, abortable waits, a bypass for answers from cache), TTL/LRU cache, URL checks shared by both services and the downloads route, one yt-dlp call → JSON or `ErrorInfo` |
 
@@ -135,7 +142,7 @@ The reasons are in ADR-007.
 | `src/lib/query-client.ts` | `queryClientDefaults` and `createQueryClient`: `networkMode: 'always'` for queries and mutations, since the API is on 127.0.0.1 and the browser's online state says nothing about reaching it. Tests use the same defaults (`createTestQueryClient`) |
 | `src/lib/focus.ts`, `use-throttled-value.ts` | `focusNextAfter` (focus moves on, as Tab would, when a control removes itself); `useThrottledValue` (a live region's text at most once per interval) |
 | `src/features/resolve/` | the paste flow (ADR-020): the link box and its badge (`classifyUrl`), paste anywhere (a document `paste` listener outside text fields, plus a ⌘V fallback that focuses the box), drop (`text/uri-list`, then `text/plain`; a dragged file is refused so the browser never opens it in place of the app, and text without a link dropped on another text field such as the filter goes into that field), every way in (Try again and the list fallback too) loading through the link box, `useResolve` (a `useMutation` per load with its own AbortController; a new load aborts the last), loading skeletons with the elapsed time and the big-list note, errors with hints and the list fallback, the "This track or the whole playlist?" prompt, results keyed by the load's number. `testing/` holds `vi.mock` doubles of the result views for its own tests |
-| `src/features/track/` | `TrackCard`: artwork, names, duration, platform, the source (the job's once it reports one); `useTrackDownload` queues the track once when `autoStart` (frozen at mount), else a Download button beside the format |
+| `src/features/track/` | `TrackCard`: artwork, names, duration, platform, the source (the job's once it reports one); `useTrackDownload` queues the track once when `autoStart` (frozen at mount), else a Download button beside the format; `TrackMatch` for a Spotify track: the DRM note, then the job's YouTube match as a link (ADR-026) |
 | `src/features/collection/` | `CollectionView` (keyed by the collection object): the header (counts, total duration, notes, `lists` to open), the toolbar (all/none/invert, a filter that keeps the selection and ignores case and accents, the count and duration of the selection, of which only the count is announced), the virtualized track table (44 px div rows with ARIA table roles, roving focus that also scrolls the page below lg, shift-click ranges, each row's job chip read by job id), the selection reducer over `TrackKey`s, and the download bar (folder, format, subfolder switch, "Download N tracks"; sticky only on lg+) (ADR-021). `useEnrichment` fills partial rows from `enrich-session.ts`, outside TanStack Query (ADR-022) |
 | `src/features/downloads/` | `['downloads']` readers (`useDownloads`, `useJob`, `useJobIdsByTrack`, `useQueue`); `useCreateDownloads` (reads settings, invalidates `['settings']`); `track-ref.ts` (`toTrackRef`, `trackKey`, `downloadOptionsFrom`); `JobRow` (56 px) and `JobInline` with their wording (`job-text.ts`: output next to source, waiting and requeued states) and one action per job (`job-actions.ts`); the panel (`downloads-panel.tsx`, `panel-*`): counts, overall progress over the batches at work since the panel was last idle (`use-running-summary.ts`, `summary.ts`), bulk menus for all or one batch, queue notes, and one virtualized list of batch headers and job rows |
 | `src/features/folder/` | `FolderPicker` in the header: recent folders and "Choose folder…" (`usePickFolder`, aborted by Cancel or unmount); refusals in a popover |
@@ -145,13 +152,13 @@ The reasons are in ADR-007.
 | `src/test/` | test helpers: fake `fetch` at the network edge, `FakeEventSource` and `liveDownloads` (the real stream over it), Health, download and resolve fixtures, render with a fresh QueryClient, the console guard |
 
 ## API (v1)
-JSON bodies are validated with the shared schemas. Errors use the shape `{ error: { code: ErrorCode, message } }` (`ApiErrorBody`) with the status from `http/errors.ts`: 400 `invalid_url`/`invalid_request`, 403 `forbidden`, 404 `not_found`, 409 `canceled`, 413 `invalid_request` for a body over its route's limit (64 KiB unless the route says otherwise), 415 `invalid_request` for a non-JSON mutation, 422 `unsupported_url`, `folder_unavailable` and content the platform refuses (`unavailable`, `private`, `geo_blocked`, `age_restricted`, `login_required`, `bot_check`, `preview_only`), 429 `rate_limited`, 502 `network`, 503 `engine_missing`, 507 `disk_full`, 500 `postprocess_failed`/`unknown`. A route may override the status with `ApiError`'s `status` option: 409 `invalid_request` for a retry that can't run or a second folder picker, and 503 `unknown` while the server shuts down or when too many event streams are open.
+JSON bodies are validated with the shared schemas. Errors use the shape `{ error: { code: ErrorCode, message } }` (`ApiErrorBody`) with the status from `http/errors.ts`: 400 `invalid_url`/`invalid_request`, 403 `forbidden`, 404 `not_found`, 409 `canceled`, 413 `invalid_request` for a body over its route's limit (64 KiB unless the route says otherwise), 415 `invalid_request` for a non-JSON mutation, 422 `unsupported_url`, `folder_unavailable`, `no_match` (a Spotify track without a YouTube match; jobs only) and content the platform refuses (`unavailable`, `private`, `geo_blocked`, `age_restricted`, `login_required`, `bot_check`, `preview_only`), 429 `rate_limited`, 502 `network`, 503 `engine_missing`, 507 `disk_full`, 500 `postprocess_failed`/`unknown`. A route may override the status with `ApiError`'s `status` option: 409 `invalid_request` for a retry that can't run or a second folder picker, and 503 `unknown` while the server shuts down or when too many event streams are open.
 
 | Route | Request | Response |
 |---|---|---|
 | `GET /api/health` | – | `Health` (cached up to 10 min): per tool `ok`/`missing`/`error` with path, version and minimum checks, yt-dlp age, JS runtimes, overall `ok` |
 | `POST /api/health/recheck` | – | `Health`, probed now (e.g. after installing yt-dlp) |
-| `POST /api/resolve` | `ResolveRequest`: `{ url, mode?: 'auto' \| 'track' \| 'collection' }` | `ResolveResult`. Errors: 400 `invalid_url`, 422 `unsupported_url` (DRM services, unsupported sites) and the platform's refusals, 429, 502, 503 `engine_missing` |
+| `POST /api/resolve` | `ResolveRequest`: `{ url, mode?: 'auto' \| 'track' \| 'collection' }` | `ResolveResult`. Errors: 400 `invalid_url`, 422 `unsupported_url` (DRM services, Spotify pages that aren't a track, album or playlist, unsupported sites) and the platform's refusals (a private or removed Spotify list: `unavailable`), 429, 502, 503 `engine_missing` (not for a Spotify link) |
 | `POST /api/resolve/entries` | `ResolveEntriesRequest`: `{ entries: { platform, id, url }[] }`, 1–25 partial rows | `{ results: EntryResult[] }`, one per distinct platform + id in request order: `{ status: 'ok', platform, id, track }` or `{ status: 'error', platform, id, error }`. A failed row never fails the batch; only a missing yt-dlp fails the request (503) |
 | `POST /api/downloads` | `DownloadRequest`: `{ items: TrackRef[] (1–5,000), folder, options: DownloadOptions, label? }`, at most 8 MiB | `CreateDownloadsResponse`: `{ batchId?, jobIds, duplicates }`, one job id per item (a duplicate maps to its job). Items that can't download become jobs that fail at once (see Flows > Download). Errors: 400 `invalid_request` (a folder that isn't an absolute path, an unusable subfolder name, a path too long for the file names), 422 `folder_unavailable` (missing, not a folder, not writable, inside the data dir, or blocked by macOS privacy settings, which the message names), 503 `engine_missing` (no job is created), 503 while shutting down |
 | `GET /api/downloads` | – | `DownloadsSnapshot` (`{ serverId, jobs, batches, queue }`), for tests and tools; the web uses the event stream |
@@ -173,7 +180,7 @@ The schemas in `packages/shared/src` are authoritative. The blocks below summari
 
 ```ts
 // Every URL field accepts http(s) only.
-type Platform = 'youtube' | 'soundcloud' | 'other'
+type Platform = 'youtube' | 'soundcloud' | 'spotify' | 'other'   // spotify: a track list only (ADR-026)
 
 type Track = {
   id: string                  // platform id from yt-dlp
@@ -226,7 +233,7 @@ type EntryResult =
 
 type ErrorCode =
   | 'invalid_url' | 'unsupported_url' | 'unavailable' | 'private' | 'geo_blocked'
-  | 'age_restricted' | 'login_required' | 'bot_check' | 'rate_limited' | 'preview_only'
+  | 'age_restricted' | 'login_required' | 'bot_check' | 'rate_limited' | 'preview_only' | 'no_match'
   | 'network' | 'engine_missing' | 'postprocess_failed' | 'disk_full' | 'folder_unavailable'
   | 'canceled' | 'invalid_request' | 'forbidden' | 'not_found' | 'unknown'
 
@@ -291,6 +298,7 @@ type Job = {
   format: DownloadFormat; folder: FolderPath   // the resolved folder, subfolder included
   attempt: number; createdAt: string; startedAt?: string
   source?: AudioSource        // the stream yt-dlp downloaded (codec as yt-dlp reports it)
+  match?: TrackMatch          // a Spotify track's YouTube match, once the attempt found it; cleared on retry
   cancelRequested?: true      // cancel was asked while it ran; done and skipped still stand
 } & (
   | { status: 'queued'; lastError?: ErrorInfo }      // requeued after a platform's rate limit
@@ -300,6 +308,9 @@ type Job = {
   | { status: 'skipped'; outputPath: string; finishedAt: string }   // the file that was already there
   | { status: 'failed'; error: ErrorInfo; finishedAt: string }
   | { status: 'canceled'; finishedAt: string })
+
+// The upload a Spotify job's audio comes from (ADR-026); source and output describe its stream.
+type TrackMatch = { platform: 'youtube'; id: string; url: string; title: string; uploader?: string; durationSec?: number }
 
 type Batch = { id: string; label?: string; folder: FolderPath; format: DownloadFormat; createdAt: string }
 type QueueState = { platforms: {     // only platforms with something to report
@@ -342,8 +353,12 @@ type FolderPickResponse = { path: FolderPath } | { canceled: true }
 Pure helpers and constants in `packages/shared`, used by both apps:
 ```ts
 // URLs (classify.ts, artist-title.ts). classifyUrl(text) → ClassifiedUrl (platform, UrlKind, guess,
-// ids, collectionKind, channelRoot, embeddedList, secret) or a UrlRejection;
-// urlRejectionMessage(reason); splitArtistTitle(title); youtubeListKind(listId); isYoutubeChannelId(id)
+// ids incl. spotifyId, collectionKind, channelRoot, embeddedList, secret) or a UrlRejection;
+// urlRejectionMessage(reason); splitArtistTitle(title); youtubeListKind(listId); isYoutubeChannelId(id);
+// spotifyUrl(kind, id) (a Spotify track, album or playlist's canonical open.spotify.com page)
+
+// Platforms (platform.ts): pacingPlatform(platform) → the platform whose download pacing, order and
+// pauses apply ('spotify' → 'youtube': a Spotify track downloads from YouTube)
 
 // Durations (duration.ts): formatDuration(sec) → "3:07", "1:02:03" (the web's track and row lengths)
 
@@ -374,7 +389,8 @@ allowedByFetchMetadata(req: { method: string; site?: string; mode?: string; dest
 ### Resolve
 The reasons are in ADR-013 and ADR-014.
 1. **Web.** `classifyUrl(text)` from shared gives an instant platform and type badge (`guess`: track, collection, ambiguous or unknown) and rejects invalid input: empty, too long, not http(s), or carrying a username or password.
-2. **Server: check.** The same `classifyUrl` validates the URL (400 `invalid_url`). DRM services (Spotify, Apple Music, Amazon Music, Tidal, Deezer, Beatport) get 422 `unsupported_url` without starting yt-dlp.
+2. **Server: check.** The same `classifyUrl` validates the URL (400 `invalid_url`). DRM services (Apple Music, Amazon Music, Tidal, Deezer, Beatport) and Spotify pages that aren't a track, album or playlist get 422 `unsupported_url` without starting yt-dlp.
+   - **Spotify** (ADR-026): a track, album or playlist link never reaches yt-dlp. The resolver reads `open.spotify.com/embed/<type>/<id>` (`spotify/client.ts`, inside the same limit of 4 at a time) and maps its entity (`spotify/embed.ts`): a `Track`, or a `Collection` of complete rows (title, artists joined with ", ", duration, an album's cover; never `partial`, no `source`, no `trackCount`). The page lists at most 100 rows: 100 means `truncated`. Podcast episodes count in `skippedEntries`, and a track listed twice is listed once. 404 is `unavailable` (private, removed or mistyped), 429 `rate_limited`, other failures `network`, and a page we can't read `unknown`.
 3. **Server: plan** (`resolve/plan.ts`, pure). It decides the URL, the playlist flag, the entry cap and the timeout:
    - The entry cap is 5,000 (YouTube's own playlist limit) and 50 for a mix. yt-dlp is asked for one row more (`-I 1:<cap+1>`), and getting that extra row is what sets `truncated`. `playlist_count` can't tell, because it is null for channel tabs, mixes and SoundCloud user pages.
    - The timeout is 60 s for a track and 180 s for a list (5,001 rows took 38–56 s live).
@@ -405,6 +421,7 @@ The reasons are in ADR-015 to ADR-019.
    - The queue emits one `jobs.added` before anything starts, and the folder goes to the front of the settings' `recentFolders`.
 2. **Queue** (`jobs/queue.ts`). Jobs keep their creation order for display. Each platform has its own run order, and the oldest runnable job across platforms starts first, while fewer than `concurrency` jobs run (a setting, default 3, at most 6) and the platform's gate admits one (`pacing/gates.ts`, ADR-017). A job is `downloading` and holds its slot and token from the moment it is picked.
 3. **Attempt** (`jobs/attempt.ts`). The URL is classified again and must match the queued one; only that classified URL reaches yt-dlp. The attempt gets its own job dir, `<dataDir>/jobs/<attemptId>` (0700).
+   - **A Spotify track** (ADR-026) is matched first (`spotify/matcher.ts`): its embed page gives the title, artists, duration, year and cover (the request's names are never used), then `yt-dlp -J --flat-playlist -- ytsearch10:<artists> - <title>` lists YouTube's first results, and `rankMatches` keeps the results within 5 s that name the song, an artist and the Spotify title's own version (instrumental, acoustic, a remixer) and aren't another version, best first. None: the job fails `no_match`. When yt-dlp then fails with `unavailable`, `private`, `geo_blocked`, `age_restricted` or `login_required`, the next match is tried (up to 3), each announced as the job's new `match`. The search's argv names the job dir (`-P`), like every engine argv of an attempt. Found: the job reports `match`, and from here on the matched video's classified watch URL is the attempt's URL, downloaded like any YouTube track. The queue paces Spotify jobs as YouTube (`pacingPlatform`).
 4. **yt-dlp** downloads the selected stream as is (no `-x`), quiet, with `--progress` and two prints (exact argv in the `ytdlp` skill). `engine/ytdlp-progress.ts` reads its lines:
    - `START` (before the download): the stream picked, which becomes the job's `source`. When its `available_at` is in the future, the site makes yt-dlp wait silently: the job shows `progress.waitingUntil`.
    - `DL`: progress. The percent comes from fragments when there are any (HLS byte estimates jump), else from bytes, and never goes back within an attempt. The first `DL` line ends the wait.
@@ -418,6 +435,7 @@ The reasons are in ADR-015 to ADR-019.
    - Cover: when `embedArtwork` is on and the target can hold one, yt-dlp's thumbnail (not a placeholder, sniffed as an image) becomes a baseline JPEG of at most 1000 px. A failure here costs only the artwork. yt-dlp fetched the thumbnail only if `canHoldCover(format, platform)`: never for WAV or a YouTube original, which is WebM (ADR-015's amendment).
    - One audio pass (`-xerror` unless the source is MP3, ADR-015). Then ffprobe reads the output back: codec, ffmpeg's tags, the cover, and the duration against the input's. ffmpeg's exit 0 alone is never trusted. A full data drive, reported by yt-dlp or ffmpeg, fails `disk_full`.
    - MP3 and AIFF: our ID3v2.3 tag goes in (ADR-016).
+   - A Spotify track is tagged with Spotify's title, artists and year (`withSpotifyNames`; YouTube's album fields are dropped), and its cover is Spotify's 640 px image, fetched into the job dir when the format holds a cover (YouTube's thumbnail if that fails). The comment tag is the YouTube page the audio came from. The finished job keeps its Spotify link and shows the Spotify cover.
 6. **Publish** (`fs/move.ts`, ADR-018). The folder is resolved again and must be the one from enqueue. The file name is then claimed without overwriting: the job ends `done`, or `skipped` when a file of that name is already there.
 7. **Cleanup.** The job dir is removed after every attempt, whatever happened, once its process groups are gone (`run.ts` SIGKILLs a run's group as it closes).
 8. **Failures.**
@@ -485,6 +503,7 @@ The server can spawn processes and write files, so other websites must not be ab
 - **Logs.**
   - Resolve and enrichment logs carry the URL kind, counts, error codes and timings, never URLs, titles or argv.
   - Download logs carry the first 8 characters of job ids, platforms, error codes, counts and timings. Never URLs, titles, paths, argv, `DONE` lines or `ps` output, and never the message of a filesystem or spawn error, which can hold a path (its code instead).
+- **Spotify** (ADR-026). The server reads only public embed pages and cover images, over HTTPS, with no account, cookie or API key. The page URL is built from the classified id (`https://open.spotify.com/embed/<type>/<id>`); a cover is fetched only from Spotify's image CDNs (`*.scdn.co`, `*.spotifycdn.com`) or the configured origin; redirects are refused and bodies capped. The page's anonymous web-player token is never read past the parse, used, logged or recorded (fixtures are scrubbed). The YouTube search query comes from Spotify's page, never the request, with controls removed, and goes after `--`. Spotify's streams are never requested.
 - **Secret links.** SoundCloud secret links (`/s-…`, `secret_token=`) are credentials. They are never logged, and never written into a file: the comment tag holds only a public page URL (ADR-016).
 - **Secrets:**
   - Sign-ins are opt-in and per platform. yt-dlp reads browser cookies at runtime, and the app never stores cookies.
@@ -525,22 +544,25 @@ App data dir: `~/Library/Application Support/DJ Scraper/` on macOS, or `DJS_DATA
 | Layer | Tool | Scope | Network |
 |---|---|---|---|
 | Unit | Vitest | shared helpers and schemas, argv builders, parsers (`-J`, download lines, ffprobe JSON), error mapping, the finalize plan and ID3 writer, folders and publish (with scripted filesystem errors), gates and token bucket, queue state machine, settings store, hooks/components | never |
-| Integration | Vitest | real server and processes against the fake engine (`test/fake-yt-dlp.mjs` and `test/fake-ffmpeg.mjs` replaying fixtures, `test/fake-tool.sh` for version probes): spawn, boot, the data-dir lock and sweep, resolve, enrichment, abort, errors, and downloads end to end (below) | never |
+| Integration | Vitest | real server and processes against the fake engine (`test/fake-yt-dlp.mjs` and `test/fake-ffmpeg.mjs` replaying fixtures, `test/fake-tool.sh` for version probes) and a local Spotify (`startSpotifyFixtures`, below): spawn, boot, the data-dir lock and sweep, resolve, enrichment, abort, errors, and downloads end to end (below) | never |
 | Opt-in | Vitest, `DJS_TEST_REAL_FFMPEG=1` / `DJS_TEST_EXFAT=1` | `test/finalize-real-ffmpeg.test.ts`: finalize against the real ffmpeg 8 on generated audio (our COMM and cover read back from MP3 and AIFF, copies bit-identical, a truncated WebM refused). `test/move-exfat.test.ts`: publishing onto an exFAT disk image it mounts with `hdiutil` | never |
 | E2E | Playwright (Chromium, WebKit) | UI flows against the production server + fake engine (`apps/server/test/e2e-server.ts`) | never |
 | Smoke | `pnpm smoke ['<url>' …] [--mode …] [--entries N] [--json]`; `pnpm smoke --download [--format f]… [--keep] [--bare] ['<url>' …]` | the real resolver against live YouTube/SoundCloud; with `--download`, the real download pipeline into a fresh temp dir, each file read back with ffprobe and the test ID3 reader. With no URL, the sample set from the `smoke-test` skill (its two shortest tracks with `--download`) | yes, run by hand |
 
 Downloads integration tests:
 - `test/downloads-app.ts` is the harness: the real app (`startServer` + `createApp`) with the real queue, attempt, finalize, publish, gates, bus, event streams and settings (`createServices`, as the server builds them), against the fake engine, with no download buckets and short cooldowns. `test/services.test.ts` checks the production wiring itself: one SoundCloud budget for lookups and downloads. It reads the SSE stream like a browser. Its `stop()` runs the real shutdown, and fails the test on any event off the contract or any log line holding a URL, a path, or a title or artist from the fixtures.
-- `test/downloads.test.ts` covers a mixed batch (file names, COMM and APIC read back with `test/id3-reader.ts`, `jobs/` empty afterwards), cancel (queued, downloading, inside yt-dlp's postprocessing, inside our ffmpeg pass), retry, an existing file (skipped, the user's file byte-identical), rate limits and a persistent bot check, previews, reconnecting to a fresh snapshot, a folder renamed before publishing, and bulk actions as one event.
+- `test/downloads.test.ts` covers a mixed batch (file names, COMM and APIC read back with `test/id3-reader.ts`, `jobs/` empty afterwards), cancel (queued, downloading, inside yt-dlp's postprocessing, inside our ffmpeg pass), retry, an existing file (skipped, the user's file byte-identical), rate limits and a persistent bot check, previews, reconnecting to a fresh snapshot, a folder renamed before publishing, and bulk actions as one event. Spotify tracks (ADR-026) download with the harness's `spotifyOrigin`: the job's `match` comes before any progress, yt-dlp sees only the search and the matched video, and the file's tags read back with Spotify's title, artist and year, no YouTube album, the YouTube page as COMM and Spotify's cover as APIC; the next match downloading when YouTube refuses the best one; plus `no_match`, a track Spotify doesn't show, and an album link refused as one download.
+- Spotify, offline: `startSpotifyFixtures` (`test/helpers.ts`) is a server on 127.0.0.1 that answers `/embed/<type>/<id>` with the scrubbed pages in `fixtures/spotify/` (a test may add pages or answer a path with a bare status) and rewrites every cover URL on Spotify's CDNs to its own `/image/<hash>`, a fake 640 px JPEG, so no test fetches Spotify. The services read it through `spotifyOrigin` (`DJS_SPOTIFY_ORIGIN` for a spawned entry); `test/resolve-app.ts` gives the resolver a client only when a test passes one, so a Spotify link can never reach open.spotify.com. `test/resolve.test.ts` resolves the track, album and playlists through it, its HTTP errors and unreadable pages, and `DJS_SPOTIFY_ORIGIN` through the real entry. `test/spotify-fixtures.test.ts` checks the scrubber (`fixtures/spotify/trim-embed.mjs`) and the fixture server.
+- `youtubeDownloadRules` (`test/helpers.ts`) builds download rules for any YouTube video from the one recorded download of jNQXAC9IVRw (both selectors): its id, its DONE line's names and duration (and extra DONE fields), a probe at its duration. `test/downloads.test.ts` downloads Spotify's match, dQw4w9WgXcQ, with it, and `test/e2e-server.ts` every e2e row.
 - `test/lifecycle.test.ts` boots the real entry (`test/entry.ts`): shutdown with a hanging download and an open stream, the boot sweep of a leftover process group and part file, and a second server on the same data dir (it waits 9 s, then exits 1).
 - Every spawned server entry gets its own `DJS_DATA_DIR` and `HOME` (`serverEnv` in `test/helpers.ts`; servers that must share a data dir share one), so no test touches the user's data dir or `~/Music`.
 - `test/smoke-download.test.ts` runs the smoke script's download path offline against the fake engine.
 
 E2E (`pnpm test:e2e` = `playwright test` in `apps/web`; `pnpm test:e2e:install` downloads Chromium's headless shell and WebKit once):
 - Playwright's `webServer` first builds the UI into its own `node_modules/.e2e-dist`, never `dist`, which `pnpm start` may be serving. It then runs `apps/server/test/e2e-server.ts` on that build, on port 4849, so e2e can run beside `pnpm dev` and `pnpm start`.
-- That script serves the freshly built UI in production mode with a healthy fake engine (`writeFakeEngine`: fake yt-dlp at today's version, fake ffmpeg and ffprobe, and a `node` link for the fakes, as the whole PATH), and its own data dir and home folder; downloads land in the temp home's `Music/DJ Scraper`. Before the recorded rules, the fake gets e2e rules of its own: a download for every row of the e2e playlist and for the watch+list and mix tracks, made from the one recorded YouTube download with each row's id, names and duration and 250 ms between lines so the UI shows each stage; set row 6 by its API URL; a list that takes 20 s to load; a download that hangs until canceled; and a private track inside a playlist. `e2e/fake-urls.ts` lists every URL it answers. The script keeps the server child in its own process group, so Playwright's signals reach it, and it removes its temp dir on exit.
-- One server serves the whole run, so `workers: 1`: both browsers run one test at a time, since settings, jobs, pacing and files outlive a test. YouTube's pacing is real (10 downloads at once, then one per 12 s, counted over the run): the playlist and cancel specs spend that burst, so the single-track and panel specs download the SoundCloud track, and a new spec that downloads from YouTube waits 12 s per extra download.
+- That script serves the freshly built UI in production mode with a healthy fake engine (`writeFakeEngine`: fake yt-dlp at today's version, fake ffmpeg and ffprobe, and a `node` link for the fakes, as the whole PATH), and its own data dir and home folder; downloads land in the temp home's `Music/DJ Scraper`. Before the recorded rules, the fake gets e2e rules of its own: a download for every row of the e2e playlist and for the watch+list and mix tracks, made from the one recorded YouTube download with each row's id, names and duration and 250 ms between lines so the UI shows each stage; set row 6 by its API URL; a list that takes 20 s to load; a download that hangs until canceled; and a private track inside a playlist. Spotify is a `startSpotifyFixtures` server it starts and passes as `DJS_SPOTIFY_ORIGIN`: the recorded track, album and playlists resolve, the track's search answers after 1.5 s (so the UI shows the DRM note and "Finding it on YouTube…"), and every row of the album downloads (rows 2 to 10 through synthetic track pages, searches and matches made from the recordings). `e2e/fake-urls.ts` lists every URL it answers. The script keeps the server child in its own process group, so Playwright's signals reach it, and it removes its temp dir on exit.
+- One server serves the whole run, so `workers: 1`: both browsers run one test at a time, since settings, jobs, pacing and files outlive a test. YouTube's pacing is real (10 downloads at once, then one per 12 s, counted over the run), and a Spotify download counts as YouTube's: the playlist, cancel and Spotify specs spend that burst (3 per browser each for playlist and Spotify), so the single-track and panel specs download the SoundCloud track, and a new spec that downloads from YouTube waits 12 s per extra download.
+- 11 specs, 29 tests per browser (58 per run, about 1.5 min). `spotify.spec.ts` pastes the Spotify track (the green badge, the DRM note, "Finding it on YouTube…", the match linked as "Audio from YouTube: …", "re-encoded from YouTube's …"), downloads 2 of the album's rows, and checks the truncated playlist's note; `resolve-states.spec.ts` refuses an Apple Music link as DRM and a Spotify artist page as "Spotify: not a track or list".
 - Specs import `test` and `expect` from `e2e/fixtures.ts`. Its automatic fixtures:
   - a console guard that fails a test on any console error, warning or page error. That includes the browser's own "Failed to load resource" lines (an error answer, or `/api/events` while the server is down), which a spec expects one by one with `expectConsoleError(failedLoad(status, path))`; an expected line that never comes fails too;
   - a network guard: a request that would leave the server's origin fails the test, except remote thumbnails, which get a 1×1 PNG;
@@ -557,16 +579,17 @@ Web tests (`apps/web`) run in jsdom with Testing Library. They fake `fetch` at t
 - jsdom lays nothing out, so virtualized lists get a stubbed `offsetHeight`/`offsetWidth` (`stubTableViewport`, and the panel's test).
 
 Fixtures:
-- **Where:** `apps/server/test/fixtures/youtube/` and `soundcloud/` (`-J` output), `errors/` (stderr), `engine/` (version probe output), `downloads/` (a stdout + stderr pair per download run with the real download argv) and `ffprobe/` (ffprobe JSON of real downloads and of finalize's outputs).
-- **Recording:** each is recorded from a real run. `-J` dumps are piped through `fixtures/trim.mjs`, which trims bulk and scrubs signed stream URLs and IPs; stderr logs are kept verbatim. Download logs replace the job dir with `{JOBDIR}`, and synthetic ones may use `{NOW+<sec>}` for a time the fake fills in. The tool version and date are noted in the directory's `README.md`. The checklist for a new case is the Fixtures rule in `apps/server/CLAUDE.md`.
+- **Where:** `apps/server/test/fixtures/youtube/` and `soundcloud/` (`-J` output; a YouTube search recording too), `spotify/` (embed pages, scrubbed to `state.data`), `errors/` (stderr), `engine/` (version probe output), `downloads/` (a stdout + stderr pair per download run with the real download argv) and `ffprobe/` (ffprobe JSON of real downloads and of finalize's outputs).
+- **Recording:** each is recorded from a real run. `-J` dumps are piped through `fixtures/trim.mjs`, which trims bulk and scrubs signed stream URLs and IPs; stderr logs are kept verbatim. Spotify embed pages are piped through `fixtures/spotify/trim-embed.mjs`, which keeps only `props.pageProps.state.data` (without preview URLs and a playlist's `attributes`) and refuses output that still names an access token, a client or correlation id, Sentry or a session. Download logs replace the job dir with `{JOBDIR}`, and synthetic ones may use `{NOW+<sec>}` for a time the fake fills in. The tool version and date are noted in the directory's `README.md`. The checklist for a new case is the Fixtures rule in `apps/server/CLAUDE.md`.
 - **Synthetic logs:** error logs that can't be produced on demand (429, bot check, geo block) are synthetic, built from upstream wording, and marked as such.
-- **Meta-tests:** a fixture without its test entry fails. `-J` dumps need a `RECORDED_URLS` entry (`ytdlp-parse.test.ts`), stderr logs a `FIXTURES` entry (`ytdlp-errors.test.ts`), download cases a `DOWNLOAD_FIXTURES` row (`ytdlp-progress.test.ts`) and a `DOWNLOAD_FAILURES` or `DOWNLOAD_SUCCESSES` entry (`ytdlp-errors.test.ts`), and ffprobe files a `PROBES` entry (`finalize-plan.test.ts`). Every recording also needs a rule in `fake-yt-dlp.json` or a `WITHOUT_RULES` reason (`test/fake-yt-dlp.test.ts`).
+- **Meta-tests:** a fixture without its test entry fails. `-J` dumps need a `RECORDED_URLS` entry (`ytdlp-parse.test.ts`; a search's is its `ytsearch10:…`, and `spotify/match.test.ts` reads it), Spotify pages a `RECORDED_PAGES` entry (`spotify/embed.test.ts`, which also checks each is scrubbed; `test/spotify-fixtures.test.ts` checks the scrubber leaves each unchanged), stderr logs a `FIXTURES` entry (`ytdlp-errors.test.ts`), download cases a `DOWNLOAD_FIXTURES` row (`ytdlp-progress.test.ts`) and a `DOWNLOAD_FAILURES` or `DOWNLOAD_SUCCESSES` entry (`ytdlp-errors.test.ts`), and ffprobe files a `PROBES` entry (`finalize-plan.test.ts`). Every recording also needs a rule in `fake-yt-dlp.json` or a `WITHOUT_RULES` reason (`test/fake-yt-dlp.test.ts`).
 
 Fake engine:
 - **Fake binaries:** they are checked in with their exec bit and symlinked per test, because endpoint security scans each newly written executable on its first run. `test/fake-tool.sh` stands in for the version probes.
 - **`test/fake-yt-dlp.mjs`:** it replays the fixtures through the manifest `fixtures/fake-yt-dlp.json`, matching by URL and flags.
   - For `-J` calls it matches the playlist flag and applies `-I` to recorded lists.
   - A download call (`-P` and the `DONE` print) replays a `downloads/` case: the recorded lines in order, and the files the run left (the thumbnail before `START`, a `.part` while downloading, a fake audio file once finished), with `{JOBDIR}` and `{NOW+n}` filled in.
+  - A YouTube search (`ytsearch10:<query>` after `--`, what a Spotify job's match step runs) is answered by its rule, like a flat `-J` list (an attempt's search names its job dir with an absolute `-P`); a search without a rule, or with argv `searchArgs` never builds (no `-J --flat-playlist`, a playlist flag, `-I`, a relative `-P`, no count or query), exits 2.
   - It exits 2 on argv that breaks our rules (no `--ignore-config`, no `--`, or a download argv without its required flags).
   - Env knobs add a delay, a hang until SIGINT, a shorter forced wait, extra rules, or a calls log.
 - **`test/fake-ffmpeg.mjs`:** one script that is ffprobe or ffmpeg by the name of its link. Its media are FAKEAUDIO files (`test/fake-media.mjs`): ffmpeg writes them as its argv says (an AIFF inside a real FORM container), and ffprobe answers with the recorded `ffprobe/` JSON the file's header names. It exits 2 on argv finalize never builds, and otherwise answers like ffmpeg 8 (exit 0 on an existing output, 234 for a cover a container can't hold, `-vn` dropping a mapped cover). Knobs make a pass fail, hang, come out short or lose its tags. It doesn't read ID3 tags; tests read those with `test/id3-reader.ts`.

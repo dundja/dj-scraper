@@ -98,9 +98,13 @@ Done when the full flow works in the browser: paste → (track: auto-download | 
 - [ ] Drag and drop: the full-window "Drop the link to load it" overlay still covers another text field (the filter) while plain text is dragged over it; a drag that carries both a file and a link (an image inside a link) is refused as a file; a refused drop says nothing beyond the not-allowed cursor
 - [ ] `test/e2e-server.test.ts` and `test/boot.test.ts` time out (about 4 s) starting a server when the machine is heavily loaded (load average about 18, parallel agent runs). Consider a longer startup budget if it shows up again
 
+- [x] Spotify links (tracks, albums, playlists) as track lists, with the audio matched and downloaded on YouTube, no sign-in (ADR-026). `spotify/` on the server: the embed page reader, the YouTube search and `pickMatch`, the attempt's match step with Spotify's tags and cover; `Job.match` and `no_match` in the contract; the Spotify badge, match line and notes in the web
+- [ ] Spotify matching: a review step for doubtful matches (a lyric re-upload, a second upload within 5 s), choosing another match by hand, and SoundCloud as a second match source. Today the job only shows the match it took
+- [ ] Spotify lists over 100 tracks show their first 100 (the embed page's limit). Revisit only if it matters in practice (ADR-026 rejects the web-player token)
+
 ## Phase 5 — Distribution (optional)
 - [ ] App-managed yt-dlp (pinned, unpacked `yt-dlp_macos.zip` build; the app downloads stable/nightly updates itself, since that build can't use `-U`) and ffmpeg/ffprobe
 - [ ] Desktop wrapper (Tauri or Electron) and Windows support
 
 ## Ideas (unscheduled)
-BPM/key detection · Rekordbox XML / M3U export · square-crop 16:9 YouTube artwork · Spotify playlist → match tracks on YouTube/SoundCloud · first-class Bandcamp and Mixcloud
+BPM/key detection · Rekordbox XML / M3U export · square-crop 16:9 YouTube artwork · first-class Bandcamp and Mixcloud

@@ -186,7 +186,7 @@ The web enriches partial rows through `POST /api/resolve/entries`, which returns
 **Consequences.** No ETag, Last-Modified or Range support. Files in `apps/web/public` must have names inside the allowed character set. During a rebuild, which empties `dist`, requests can briefly get 404 until Vite finishes.
 
 ## ADR-013 — Resolve: one flat yt-dlp call, capped listings, `ambiguous` for a track inside a list
-*2026-10-02 · accepted · amended by ADR-023 (`lists`)*
+*2026-10-02 · accepted · amended by ADR-023 (`lists`) and ADR-026 (Spotify links are read, not refused)*
 
 **Context.** Pasting a link must answer quickly with what it is: a track, a list, or both (`watch?v=…&list=…`). The roadmap asked to reconcile the original 1,000-entry cap with "smooth with 1,000+ tracks". Live probes with yt-dlp 2026.08.19 found:
 - Listing 5,001 rows takes 38–56 s, and a 200-row playlist about 2 s.
@@ -538,3 +538,37 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 - A track the user just canceled keeps its Canceled row and its Retry at the cap; the oldest done or skipped record goes instead.
 - Once no older canceled job is left to drop, a done job's record (never its file) still goes before a failed one.
 - No e2e covers it, since it needs more than 2,000 finished jobs on the shared e2e server; `queue.test.ts` does.
+
+## ADR-026 — Spotify links are track lists; the audio is matched and downloaded on YouTube
+*2026-10-21 · accepted · amends non-negotiable 7 and ADR-013 (Spotify is no longer refused by URL)*
+
+**Context.** The user wants Spotify links to work like YouTube and SoundCloud ones: a track downloads at once, and a playlist or album offers all or a selection of its tracks. They want it without a sign-in, a developer app or an API key (paste the link and go, as sites like spotsaver.net work), and only on this machine. They also want to compare Spotify's quality with the other platforms'. Spotify's streams are DRM-protected (Widevine). Downloading them means breaking that protection, which non-negotiable 7 forbids and which the law forbids even for private use (DMCA §1201, EU InfoSoc art. 6). The 2026-10-03 brainstorm had ruled it out too. Sites like spotsaver download a YouTube match and re-encode it to "320 kbps MP3", which non-negotiable 6 forbids.
+
+**Decision.**
+- **Spotify is a track list, never a source of audio.** `classifyUrl` knows `open.spotify.com` track, album and playlist links (`spotify_track`, `spotify_album`, `spotify_playlist`, also with `/intl-<lang>/` or `/embed/`), normalized to `https://open.spotify.com/<type>/<id>`. Other Spotify pages and `spotify.link` short links are `spotify_other`, refused with 422 `unsupported_url`. Apple Music, Amazon Music, Tidal, Deezer and Beatport stay refused as DRM services. `Platform` gains `spotify`.
+- **Resolve reads Spotify's public embed page** (`open.spotify.com/embed/<type>/<id>`, `spotify/client.ts` and `embed.ts`) with plain HTTPS, no account. Only `props.pageProps.state.data.entity` of its `__NEXT_DATA__` JSON is read. The page also carries an anonymous web-player token, which is never used, stored or logged, and recorded fixtures are scrubbed of it. A track becomes a `Track`. An album or playlist becomes a `Collection` whose rows are complete (title, artists, duration; an album's rows get its cover), so there is no enrichment. The embed page lists at most 100 rows and never says how many there are, so a list of 100 rows is `truncated`.
+- **A download matches on YouTube** (`spotify/matcher.ts`, `match.ts`). The attempt reads the track's embed page again: names come from Spotify, never from the request. It searches `ytsearch10:<artists> - <title>` and takes the best result (`pickMatch`) that passes every check:
+  - the duration is within 5 s;
+  - every word of the song's name is in the title (featured artists, remaster notes and version notes aside);
+  - an artist is named in the title or channel;
+  - it has no version word the Spotify title or an artist's name lacks (live, remix, cover, piano, sped up, reaction, 1-hour loop, …);
+  - the Spotify title's own version is named too: "Instrumental", "Acoustic", a remixer's name.
+  The score prefers a closer duration, the artist's own or Topic channel, "official audio" and no "lyrics" re-upload. No result passing means `no_match` (a new `ErrorCode`, 422, not retried in bulk). When YouTube refuses the upload it picked (blocked, private, age-restricted, login), the attempt tries the next match, up to 3. The job shows the match (`Job.match`), and `source` and `output` describe the YouTube stream. That keeps the quality honest: a Spotify download is exactly as good as YouTube's AAC 128 kbps or Opus ~130 kbps, whatever format the user picks.
+- **Tags come from Spotify:** title, artists and release year, plus the 640 px cover from Spotify's image CDN when the format holds one (YouTube's thumbnail when the cover can't be had). YouTube's album fields are dropped (the upload may come from a compilation). The comment tag is the YouTube page the audio came from. The job keeps its Spotify link, so a retry matches again.
+- **Pacing:** a Spotify job searches and downloads on YouTube, so it is paced, ordered and paused as YouTube (`pacingPlatform` in shared). Each Spotify job costs one embed read, one YouTube search and one YouTube download. A Spotify rate limit on that read fails the job `network` (retryable), never `rate_limited`, which would pause YouTube's queue.
+- **Tests:** `DJS_SPOTIFY_ORIGIN` points the server at a local fixture server (tests and e2e only), so tests stay offline.
+
+**Rejected.**
+- *Downloading Spotify's own stream* (librespot-style clients, "rippers"): DRM circumvention. It is also pointless for the quality comparison, since Spotify's own quality (Ogg Vorbis about 320 kbps on Premium, lossless FLAC for Premium since late 2025) can be heard in Spotify's app.
+- *The Spotify Web API with a sign-in or a client id*: the user declined it. Since February 2026 it would also need a Premium developer and could only read the user's own playlists.
+- *The anonymous web-player token, to list past 100 rows*: it means imitating Spotify's player (its TOTP-signed token endpoint), a step further than reading a public page, and it breaks often.
+- *Matching every row when a list loads*: a search per row before the user has picked anything, against YouTube's budget. Matching at download time keeps the list instant.
+- *YouTube Music's song search*: its flat results carry no duration or artist, so checking a result would need a second lookup each.
+- *Re-encoding to "320 kbps" to look like Spotify Premium*: forbidden by non-negotiable 6.
+
+**Consequences.**
+- Reading Spotify's pages goes against Spotify's terms of use, which forbid scraping. This is the user's choice for a personal tool that never goes public; the app reads one public page per link or track, at the user's pace, and never touches the streams.
+- The embed page is undocumented and may change: an unreadable page fails `unknown` ("Spotify's page has changed"), and the smoke test is the place to notice.
+- Matching can pick the wrong upload: a lyric re-upload, or a different master within 5 s. The job always shows its match. Without an ISRC (the embed page has none), versions are told apart by duration and words only, and extended mixes and obscure tracks are the weak spots (a live check of 35 tracks from two playlists: all matched, after one "Piano Version" taught the version words).
+- Lists over 100 tracks show their first 100 and say so.
+- Follow-ups: a review step for doubtful matches, SoundCloud as a second match source, and choosing another match by hand.

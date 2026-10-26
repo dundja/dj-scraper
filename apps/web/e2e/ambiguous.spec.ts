@@ -45,6 +45,9 @@ test('a track in a playlist asks first: This track shows its card at once, Whole
   await expect(card.getByRole('button', { name: 'Download' })).toBeVisible()
   await expect(prompt).toHaveCount(0)
   expect(resolves).toHaveLength(1)
+  // Its remixes (ADR-027): the e2e server's searches for this track are empty.
+  const remixes = page.getByRole('region', { name: /^Remixes/ })
+  await expect(remixes).toContainText('No remixes found on YouTube or SoundCloud.')
 
   // The same link again, and the other choice: the whole list.
   await load(page, YOUTUBE_WATCH_LIST)

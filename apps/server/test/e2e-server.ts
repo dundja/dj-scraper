@@ -38,6 +38,9 @@ import path from 'node:path'
 import { PortSchema } from '@dj-scraper/shared'
 import { z } from 'zod'
 import { DEFAULT_WEB_DIST } from '../src/config.ts'
+import { normalizeEntry } from '../src/engine/ytdlp-parse.ts'
+import { remixQuery, SEARCH_COUNTS, songOf } from '../src/remix/suggest.ts'
+import { checkUrl } from '../src/resolve/input.ts'
 import { hasBuiltUi } from '../src/routes/web.ts'
 import { parseEmbedPage } from '../src/spotify/embed.ts'
 import { SEARCH_RESULTS, searchQuery } from '../src/spotify/match.ts'
@@ -180,9 +183,148 @@ function rowsOf(fixture: string): Row[] {
 }
 
 /**
+ * The single tracks the specs paste whose remix searches (ADR-027) nobody recorded: each link and
+ * the -J answer it resolves with (relative to test/fixtures, or absolute). The mix's seed video
+ * and the Spotify track have recorded searches (fake-yt-dlp.json).
+ */
+const SINGLE_TRACKS: readonly { url: string; info: string }[] = [
+  { url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw', info: 'youtube/video.json' },
+  {
+    url: 'https://soundcloud.com/jaimemf/youtube-dl-test-video-a-y-baw/s-8Pjrp',
+    info: 'soundcloud/track-secret.json',
+  },
+  {
+    url: 'https://www.youtube.com/watch?v=gHKT4uU8Zng&list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0',
+    info: 'youtube/watch-list-track.json',
+  },
+]
+
+/**
+ * The one remix search left failing, for the UI's per-platform error and its Try again: the
+ * SoundCloud track's SoundCloud search. With no rule the fake exits 2, so the answer's
+ * `searches.soundcloud` is `error` (`unknown`) and its YouTube search is empty.
+ */
+const FAILING_REMIX_SEARCH = { url: SINGLE_TRACKS[1]?.url, site: 'soundcloud' } as const
+
+/**
+ * Empty remix searches for each of `tracks`, on both platforms, so their remix sections show "No
+ * remixes found" instead of an error (but FAILING_REMIX_SEARCH). The query is the one the server
+ * builds: the track as resolve gives it (normalizeEntry), its song (songOf) and remixQuery, so it
+ * follows any change to them. The empty answers are the recorded searches with no entries.
+ */
+async function emptyRemixRules(
+  dir: string,
+  tracks: readonly { url: string; info: string }[],
+): Promise<FakeYtdlpRule[]> {
+  const sites = {
+    youtube: { prefix: 'ytsearch', recorded: 'youtube/search-remixes-never-gonna.json' },
+    soundcloud: { prefix: 'scsearch', recorded: 'soundcloud/search-remixes-never-gonna.json' },
+  } as const
+  const rules: FakeYtdlpRule[] = []
+  for (const [index, { url, info }] of tracks.entries()) {
+    const input = checkUrl(url)
+    if (!input.ok) throw new Error(`not a valid link: ${url}`)
+    const track = normalizeEntry(JSON.parse(readFile(info)), input.input)
+    const song = songOf(track)
+    if (song === undefined) throw new Error(`nothing to search remixes of for ${url}`)
+    const query = remixQuery(song)
+    for (const site of ['youtube', 'soundcloud'] as const) {
+      if (FAILING_REMIX_SEARCH.url === url && FAILING_REMIX_SEARCH.site === site) continue
+      const { prefix, recorded } = sites[site]
+      const searchUrl = `${prefix}${SEARCH_COUNTS[site]}:${query}`
+      const search = JsonObject.parse(JSON.parse(readFixture(recorded)))
+      const file = path.join(dir, `remixes-${index + 1}-${site}.search.json`)
+      await writeFile(
+        file,
+        JSON.stringify({
+          ...search,
+          id: query,
+          title: query,
+          webpage_url: query,
+          original_url: searchUrl,
+          playlist_count: 0,
+          entries: [],
+        }),
+      )
+      rules.push({ url: searchUrl, stdout: file, note: `e2e: no remixes of ${url} on ${site}` })
+    }
+  }
+  return rules
+}
+
+/**
+ * The remix the e2e spec downloads: the Kryptonik remix in the mix track's recorded SoundCloud
+ * search (one upload, its genre set on SoundCloud). A SoundCloud upload, so the spec spends none
+ * of YouTube's pacing.
+ */
+const REMIX_DOWNLOAD = { search: 'soundcloud/search-remixes-never-gonna.json', id: '83083711' }
+/** The recorded SoundCloud download its rule replays, and that source's probe. */
+const SOUNDCLOUD_TEMPLATE = {
+  download: 'soundcloud-hls-aac',
+  probe: 'ffprobe/src-soundcloud-hls-aac-m4a.json',
+}
+
+const SearchEntrySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  duration: z.number().positive(),
+  uploader: z.string(),
+  webpage_url: z.url(),
+})
+
+/**
+ * REMIX_DOWNLOAD's download, files written to `dir`: the recorded SoundCloud download with the
+ * upload's id, its DONE line with the upload's names, page and length (from the search), and the
+ * source's probe at that length. Its lines come ROW_LINE_DELAY_MS apart, so the row shows progress.
+ */
+async function remixDownloadRule(dir: string): Promise<FakeDownloadRule> {
+  const search = JsonObject.parse(JSON.parse(readFixture(REMIX_DOWNLOAD.search)))
+  const entries = z.array(JsonObject).parse(search.entries)
+  const entry = SearchEntrySchema.parse(entries.find((item) => item.id === REMIX_DOWNLOAD.id))
+  const log = (stream: string) =>
+    readFixture(`downloads/${SOUNDCLOUD_TEMPLATE.download}.${stream}.log`)
+  const doneLine = log('stdout')
+    .split('\n')
+    .find((line) => line.startsWith('DONE '))
+  const recordedId = z.object({ id: z.string() }).parse(JSON.parse(doneLine?.slice(5) ?? 'null')).id
+  const stdout = log('stdout')
+    .replaceAll(recordedId, entry.id)
+    .split('\n')
+    .map((line) => {
+      if (!line.startsWith('DONE ')) return line
+      const done = JsonObject.parse(JSON.parse(line.slice('DONE '.length)))
+      const { title, duration, uploader, webpage_url } = entry
+      return `DONE ${JSON.stringify({ ...done, title, track: title, duration, uploader, webpage_url })}`
+    })
+    .join('\n')
+  const probe = JsonObject.parse(JSON.parse(readFixture(SOUNDCLOUD_TEMPLATE.probe)))
+  const format = JsonObject.parse(probe.format)
+  const prefix = path.join(dir, `remix-${entry.id}`)
+  const probeFile = `${prefix}.probe.json`
+  await writeFile(`${prefix}.stdout.log`, stdout)
+  await writeFile(`${prefix}.stderr.log`, log('stderr').replaceAll(recordedId, entry.id))
+  await writeFile(
+    probeFile,
+    JSON.stringify({ ...probe, format: { ...format, duration: entry.duration.toFixed(6) } }),
+  )
+  return {
+    url: entry.webpage_url,
+    download: prefix,
+    probe: probeFile,
+    lineDelayMs: ROW_LINE_DELAY_MS,
+    note: `e2e: the recorded SoundCloud download as the remix ${entry.id}`,
+  }
+}
+
+/** A fixture (relative to test/fixtures) or a file a rule wrote (absolute). */
+const readFile = (file: string): string =>
+  path.isAbsolute(file) ? readFileSync(file, 'utf8') : readFixture(file)
+
+/**
  * The e2e rules, their files written to `dir`: the UI states no recording shows (the slow list, the
  * private track in a playlist, the hanging download), then downloads for the set row and for every
- * row of DOWNLOADABLE.
+ * row of DOWNLOADABLE, then empty remix searches for the single tracks the specs paste and the
+ * download of the remix the remix spec downloads.
  */
 async function e2eRules(dir: string): Promise<FakeYtdlpRule[]> {
   await mkdir(dir)
@@ -192,6 +334,11 @@ async function e2eRules(dir: string): Promise<FakeYtdlpRule[]> {
     PRIVATE_IN_PLAYLIST,
     ...(await hangingRules(dir)),
     SET_ROW_BY_API_URL,
+    ...(await emptyRemixRules(dir, [
+      ...SINGLE_TRACKS,
+      { url: HANGING_URL, info: path.join(dir, `${HANGING_ID}.info.json`) },
+    ])),
+    await remixDownloadRule(dir),
   ]
   for (const row of rows.values()) {
     rules.push(

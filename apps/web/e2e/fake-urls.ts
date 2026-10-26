@@ -17,6 +17,12 @@
 //   playlist rows (and the watch+list and mix tracks) take about 1.6 s each, 3 at a time: 250 ms
 //   between lines, so each one shows starting, downloading and processing.
 // - POST /api/downloads/:id/reveal runs `open -R` on the machine: intercept it with page.route.
+// - Remix suggestions (ADR-027): every single track a spec shows gets a remix section. The mix's
+//   seed track and SPOTIFY_TRACK have recorded searches (20 remixes of "Never Gonna Give You Up";
+//   only the Kryptonik remix's SoundCloud upload downloads). YOUTUBE_TRACK, YOUTUBE_WATCH_LIST's
+//   track and YOUTUBE_HANGING_TRACK find none ("No remixes found on YouTube or SoundCloud.").
+//   SOUNDCLOUD_TRACK finds none on YouTube, and its SoundCloud search fails: the per-platform
+//   error state. The server caches a search that went fine for 30 minutes, over the whole run.
 // - The error URLs below answer 4xx/5xx, and both browsers log that as a console error ("Failed to
 //   load resource: … 422"), which the console guard (fixtures.ts) fails on: expect it explicitly.
 
@@ -26,7 +32,10 @@
  */
 export const YOUTUBE_TRACK = 'https://www.youtube.com/watch?v=jNQXAC9IVRw'
 
-/** A secret link: "Dl Test Video '' Ä↭" by Youtube (0:10), MP3 128 kbps, kept as is. Downloads. */
+/**
+ * A secret link: "Dl Test Video '' Ä↭" by Youtube (0:10), MP3 128 kbps, kept as is. Downloads. Its
+ * remix search finds nothing on YouTube and fails on SoundCloud ("SoundCloud search failed: …").
+ */
 export const SOUNDCLOUD_TRACK =
   'https://soundcloud.com/jaimemf/youtube-dl-test-video-a-y-baw/s-8Pjrp'
 
@@ -50,7 +59,11 @@ export const YOUTUBE_WATCH_LIST =
 /**
  * Ambiguous, a mix. "This track" is "Never Gonna Give You Up (Official Video) (4K Remaster)" by
  * Rick Astley (3:33) and downloads. The mix loads 50 rows (truncated); only that first row
- * downloads, the others fail with unsupported_url.
+ * downloads, the others fail with unsupported_url. "This track" has 20 remixes from the recorded
+ * searches, most played first: "Rick Astley - Never Gonna Give You Up (Krysiek Remix)" (579K views,
+ * 3 YouTube uploads), then the Timmo Hendriks remix (SoundCloud, 556K plays); 7 genres, Nu Disco
+ * twice. Of their uploads only the Kryptonik remix (SoundCloud, Electro House) downloads (1.6 s,
+ * SoundCloud's pacing); the others fail with unsupported_url.
  */
 export const YOUTUBE_MIX = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ'
 
@@ -144,7 +157,8 @@ export const UNSUPPORTED = 'https://example.com/'
  * platform spotify, no source). Its download matches dQw4w9WgXcQ, "Rick Astley - Never Gonna Give
  * You Up (Official Video) (4K Remaster)" (3:34, channel Rick Astley), and downloads that with 250 ms
  * between lines: "Rick Astley - Never Gonna Give You Up.mp3", tagged with Spotify's names and 1987.
- * It is no longer refused as DRM: a spec about DRM refusals needs another service's link.
+ * It is no longer refused as DRM: a spec about DRM refusals needs another service's link. Its
+ * remixes are the mix track's: the same search.
  */
 export const SPOTIFY_TRACK = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC'
 

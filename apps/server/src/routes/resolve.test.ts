@@ -17,7 +17,7 @@ import { createApp } from '../app.ts'
 import { ApiError, ERROR_STATUS } from '../http/errors.ts'
 import type { Enricher } from '../resolve/enricher.ts'
 import type { Resolver } from '../resolve/resolver.ts'
-import { UNUSED_DOWNLOAD_DEPS } from '../stubs.ts'
+import { UNUSED_DOWNLOAD_DEPS, UNUSED_REMIX_DEPS } from '../stubs.ts'
 
 const PORT = 4747
 const HOST = `127.0.0.1:${PORT}`
@@ -80,6 +80,7 @@ function setup({
     resolver,
     enricher,
     webRoot,
+    ...UNUSED_REMIX_DEPS,
     ...UNUSED_DOWNLOAD_DEPS,
   })
   return { app, resolver, enricher }

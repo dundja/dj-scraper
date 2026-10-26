@@ -1,6 +1,7 @@
 // From a paste to its download with the real TrackCard (no doubles, unlike resolve-page.test.tsx):
 // under StrictMode each paste queues the track exactly once, and the ['settings'] refetch that a
 // created download sets off doesn't queue it again. A Spotify track goes the same way (ADR-026).
+// The remix search under the card never answers here: remix-section.test.tsx covers it.
 import { type CreateDownloadsResponse, DownloadRequestSchema } from '@dj-scraper/shared'
 import { testUuid } from '@dj-scraper/shared/test-helpers'
 import { act, screen, waitFor, within } from '@testing-library/react'
@@ -9,7 +10,7 @@ import { StrictMode } from 'react'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { toTrackRef } from '@/features/downloads/track-ref.ts'
 import { batch, liveDownloads, settings, spotifyJob, spotifyMatch } from '@/test/downloads.ts'
-import { fakeApi, json, jsonBody } from '@/test/fake-api.ts'
+import { fakeApi, json, jsonBody, noAnswer } from '@/test/fake-api.ts'
 import { renderWithQueryClient } from '@/test/render.tsx'
 import { spotifyTrack, track, trackResult, urls } from '@/test/resolve.ts'
 import { ResolvePage } from './resolve-page.tsx'
@@ -23,6 +24,7 @@ beforeEach(() => {
   server = fakeApi()
   server.on(SETTINGS, () => json(settings))
   server.on('POST /api/resolve', () => json(trackResult()))
+  server.on('POST /api/remixes', noAnswer)
   let next = 40
   server.on(CREATE, () =>
     json({

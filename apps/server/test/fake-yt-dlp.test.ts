@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { canHoldCover } from '../src/engine/finalize-plan.ts'
 import { killActiveGroups, type RunResult, run } from '../src/engine/run.ts'
 import { downloadArgs, resolveArgs, searchArgs } from '../src/engine/ytdlp-args.ts'
+import { remixQuery, SEARCH_COUNTS, songOf } from '../src/remix/suggest.ts'
 import { SEARCH_RESULTS, searchQuery } from '../src/spotify/match.ts'
 import {
   FAKE_YTDLP,
@@ -266,6 +267,47 @@ describe('fake yt-dlp: YouTube searches', () => {
     expect(result).toMatchObject({ exitCode: 2, stdout: '' })
     expect(result.stderr).toMatch(/^fake-yt-dlp: .*search.*\n$/)
   })
+})
+
+describe('fake yt-dlp: remix searches', () => {
+  // What POST /api/remixes runs (remix/finder.ts): one search per platform, 30 results each.
+  const song = songOf({ title: 'Porcelain', artist: 'Moby' })
+  if (song === undefined) throw new Error('Porcelain has words')
+  const QUERY = remixQuery(song)
+  const search = (site: 'youtube' | 'soundcloud', query = QUERY) =>
+    searchArgs({ query, count: SEARCH_COUNTS[site], jsRuntime: process.execPath, site })
+
+  it.each([
+    ['youtube', 'youtube/search-remixes-porcelain.json'],
+    ['soundcloud', 'soundcloud/search-remixes-porcelain.json'],
+  ] as const)('answers the %s search searchArgs builds with its recording', async (site, file) => {
+    const ytdlp = await fake()
+    const result = await run(ytdlp.path, search(site))
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' })
+    expect(JSON.parse(result.stdout)).toEqual(fixtureInfo(file))
+    expect(parseInfo(result.stdout).entries).toHaveLength(30)
+  })
+
+  it.each([
+    ['there is no rule for the search', search('soundcloud', 'Nobody Nothing remix')],
+    ['it has no -J', search('soundcloud').filter((arg) => arg !== '-J')],
+    ['it is not flat', search('soundcloud').filter((arg) => arg !== '--flat-playlist')],
+    [
+      'it has a playlist flag',
+      [...search('soundcloud').slice(0, -2), '--no-playlist', ...search('soundcloud').slice(-2)],
+    ],
+    ['it has no count', [...search('soundcloud').slice(0, -1), `scsearch:${QUERY}`]],
+    ['it asks for no results', [...search('soundcloud').slice(0, -1), `scsearch0:${QUERY}`]],
+    ['it has no query', [...search('soundcloud').slice(0, -1), 'scsearch30:']],
+  ])(
+    'exits 2 for a SoundCloud search when %s: searchArgs never builds that',
+    async (_why, argv) => {
+      const ytdlp = await fake()
+      const result = await run(ytdlp.path, argv)
+      expect(result).toMatchObject({ exitCode: 2, stdout: '' })
+      expect(result.stderr).toMatch(/^fake-yt-dlp: .*search.*\n$/)
+    },
+  )
 })
 
 describe('fake yt-dlp: -I', () => {
@@ -1050,9 +1092,19 @@ describe('fake yt-dlp: the recorded manifest', () => {
 
   it('matches each URL in the normalized form the server passes after --', () => {
     for (const rule of MANIFEST_RULES) {
-      // A YouTube search isn't a link: it must be what searchArgs builds (see the search tests).
-      if (rule.url.startsWith('ytsearch')) {
-        expect(rule.url, rule.url).toMatch(new RegExp(`^ytsearch${SEARCH_RESULTS}:\\S`))
+      // A search isn't a link: it must be what searchArgs builds (see the search tests), for a
+      // Spotify match (ytsearch10) or a song's remixes (ytsearch30, scsearch30).
+      if (/^(?:yt|sc)search/.test(rule.url)) {
+        const searches = [
+          `ytsearch${SEARCH_RESULTS}:`,
+          `ytsearch${SEARCH_COUNTS.youtube}:`,
+          `scsearch${SEARCH_COUNTS.soundcloud}:`,
+        ]
+        expect(
+          searches.some((prefix) => rule.url.startsWith(prefix)),
+          rule.url,
+        ).toBe(true)
+        expect(rule.url, rule.url).toMatch(/^\w+search\d+:\S/)
         continue
       }
       const classified = classifyUrl(rule.url)

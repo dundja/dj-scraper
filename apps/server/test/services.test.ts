@@ -60,4 +60,31 @@ describe('createServices', () => {
     const after = gates.readyAt('soundcloud', monotonicClock())
     expect(after - before).toBeCloseTo(refillMs)
   })
+
+  it("spends the same budget on remix searches (ADR-027): SoundCloud's, not YouTube's", async () => {
+    const fake = await writeFakeYtdlp(path.join(root, 'bin-remixes'))
+    const write = () => {}
+    const { remixes, gates } = createServices({
+      engine: { YTDLP_PATH: fake.path },
+      dataDirReal: root,
+      settings: { get: () => ({ ...DEFAULT_SETTINGS, recentFolders: [], folder: root }) },
+      assertContract: true,
+      log: { info: write, warn: write, error: write },
+    })
+    const { refillMs } = SOUNDCLOUD_LOOKUP_BUDGET
+    const now = monotonicClock()
+    while (gates.readyAt('soundcloud', now) < now + refillMs / 2) gates.take('soundcloud', now)
+    const before = gates.readyAt('soundcloud', monotonicClock())
+
+    // The recorded searches: YouTube first takes no SoundCloud token, then SoundCloud's takes one.
+    await remixes.find({ title: 'Porcelain', artist: 'Moby', platforms: ['youtube'] })
+    expect(gates.readyAt('soundcloud', monotonicClock()) - before).toBeCloseTo(0)
+    const answer = await remixes.find({ title: 'Porcelain', artist: 'Moby' })
+    expect(answer.searches.soundcloud).toEqual({ status: 'ok', found: 27 })
+    expect(gates.readyAt('soundcloud', monotonicClock()) - before).toBeCloseTo(refillMs)
+    expect((await fake.calls()).map((call) => call.url)).toEqual([
+      'ytsearch30:Moby Porcelain remix',
+      'scsearch30:Moby Porcelain remix',
+    ])
+  })
 })

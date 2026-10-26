@@ -54,7 +54,8 @@ const Url = lenient(HttpUrlSchema.max(MAX_URL_LENGTH))
 const Seconds = lenient(z.number().nonnegative())
 const Kbps = lenient(z.number().positive())
 
-const ThumbnailSchema = z.looseObject({
+/** One of yt-dlp's `thumbnails`; remix/suggest.ts reads search results' with it too. */
+export const ThumbnailSchema = z.looseObject({
   url: Url,
   width: lenient(z.number()),
   height: lenient(z.number()),
@@ -452,7 +453,7 @@ function audioSource(formats: (Format | undefined)[], platform: Platform): Audio
  * yt-dlp's own pick (`thumbnail`), else the best of `thumbnails` ranked the way yt-dlp ranks them:
  * preference, then width, then height, a later entry winning a tie. Placeholders don't count.
  */
-function bestThumbnail(row: Row): string | undefined {
+export function bestThumbnail(row: Pick<Row, 'thumbnail' | 'thumbnails'>): string | undefined {
   if (row.thumbnail !== undefined && !isPlaceholder(row.thumbnail)) return row.thumbnail
   let best: { url: string; rank: number[] } | undefined
   for (const thumbnail of row.thumbnails ?? []) {

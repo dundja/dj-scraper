@@ -118,6 +118,39 @@ describe('searchArgs', () => {
     ])
   })
 
+  it('searches YouTube unless told otherwise, and YouTube when told so', () => {
+    expect(searchArgs({ query, count: 30, jsRuntime: NODE, site: 'youtube' })).toEqual(
+      searchArgs({ query: 'Rick Astley - Never Gonna Give You Up', count: 30, jsRuntime: NODE }),
+    )
+    expect(searchArgs({ query, count: 30, jsRuntime: NODE }).at(-1)).toBe(`ytsearch30:${query}`)
+  })
+
+  it('searches SoundCloud with scsearch<N>:, the rest of the argv as for YouTube', () => {
+    expect(
+      searchArgs({ query: 'Moby Porcelain remix', count: 30, jsRuntime: NODE, site: 'soundcloud' }),
+    ).toEqual([
+      ...BASE,
+      '-J',
+      '--flat-playlist',
+      '--socket-timeout',
+      '20',
+      '--',
+      'scsearch30:Moby Porcelain remix',
+    ])
+  })
+
+  it('keeps a SoundCloud query that looks like an option inside the one search argument', () => {
+    const argv = searchArgs({ query: '--exec=x', count: 30, jsRuntime: NODE, site: 'soundcloud' })
+    expect(argv.slice(-2)).toEqual(['--', 'scsearch30:--exec=x'])
+    expect(argv.indexOf('--')).toBe(argv.length - 2)
+  })
+
+  it.each([0, -1, 1.5])('refuses the count %s for SoundCloud too', (count) => {
+    expect(() => searchArgs({ query, count, jsRuntime: NODE, site: 'soundcloud' })).toThrow(
+      RangeError,
+    )
+  })
+
   it('keeps a query that looks like an option inside the one search argument, after --', () => {
     const argv = searchArgs({ query: '--exec=touch /tmp/x', count: 3, jsRuntime: NODE })
     expect(argv.slice(-2)).toEqual(['--', 'ytsearch3:--exec=touch /tmp/x'])

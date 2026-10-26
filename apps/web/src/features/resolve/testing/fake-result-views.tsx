@@ -1,10 +1,10 @@
-// Test doubles for the result views other packages own (TrackCard, CollectionView). The resolve
+// Test doubles for the result views other packages own (TrackCard, CollectionView, RemixSection). The resolve
 // tests swap them in with vi.mock, so they check what the page hands those views (props, one mount
 // per paste) without depending on how the views render or what they fetch. The views have their
 // own tests; e2e covers them together.
 import type { Collection, Track } from '@dj-scraper/shared'
 import { useEffect, useRef } from 'react'
-import { type ViewMount, viewMounts } from './result-view-log.ts'
+import { remixMounts, type ViewMount, viewMounts } from './result-view-log.ts'
 
 /**
  * Logs `mount` once per mount of the calling component, and again when it changes. The ref
@@ -47,4 +47,15 @@ export function CollectionView({
       ))}
     </section>
   )
+}
+
+/** The remix suggestions under a single track: logs the track it searches for, once per mount. */
+export function RemixSection({ track }: { track: Track }) {
+  const logged = useRef(false)
+  useEffect(() => {
+    if (logged.current) return
+    logged.current = true
+    remixMounts.push(track.id)
+  })
+  return <section aria-label={`Remixes of ${track.title}`} />
 }

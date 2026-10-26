@@ -32,6 +32,19 @@ yt-dlp --ignore-config --no-update --color never --encoding utf-8 --js-runtimes 
 ```
 Exit 0, stderr empty, 1.4 s. `_type: playlist`, `extractor_key: YoutubeSearch`; `id`, `title` and `webpage_url` are the query, `original_url` the whole `ytsearch10:…`; `playlist_count: 10`. The 10 entries are flat `_type: url` rows with `id`, `url` (watch URL), `title`, `channel`/`uploader`, `duration` (whole seconds) and `live_status: null`. Row 1 is `dQw4w9WgXcQ` (Official Video (4K Remaster), 214 s, channel Rick Astley); the others are a lyrics re-upload, the animated video, other channels' uploads, the 2022 remaster, a BBC live take (234 s) and Glastonbury 2023 (560 s). `src/spotify/match.test.ts` reads it with `parseSearchResults` (it is no link, so `ytdlp-parse.test.ts` only checks its shape), and `fake-yt-dlp.json` answers the search with it.
 
+**Remix searches** (ADR-027), recorded **2026-10-25** with the same yt-dlp 2026.08.19 (deno 2.9.7, Node 24.12.0 through `--js-runtimes`) on macOS 26.5.1 (arm64), without a login. The argv is exactly what `searchArgs` builds for `src/remix/finder.ts` (`SEARCH_COUNTS.youtube` = 30), with the query `remixQuery(songOf(…))` gives; their SoundCloud twins are in `../soundcloud/README.md`:
+```
+yt-dlp --ignore-config --no-update --color never --encoding utf-8 --js-runtimes node:"$(command -v node)" \
+  -J --flat-playlist --socket-timeout 20 -- 'ytsearch30:<query>'
+```
+
+| File | Query (after `--`) | Song | Exit | Notes |
+|---|---|---|---|---|
+| `search-remixes-porcelain.json` | `ytsearch30:Moby Porcelain remix` | `{ title: 'Porcelain', artist: 'Moby' }` | 0 | 2.3 s, stderr empty. The unit-test corpus (`src/remix/suggest.test.ts`). 30 flat `_type: url` rows with `id`, `url`, `title`, `description` (YouTube's search snippet, cut with `...`), `duration` (190–1151 s), `channel`/`uploader`, `view_count`, `thumbnails` and `live_status: null`; no tags or genre. Arty's remix twice (Anjunabeats, Moby's channel), Lexer's three times, Luca Agnelli's three times, Pola & Bryson's twice; the official video (80 M views), soundtrack re-uploads ("The Beach • Porcelain • Moby", "(The beach soundtrack)"), a 1151 s "(Loop and Extended)", "(slowed+reverb)", "(Live) \| Montreux Jazz Festival 2026" and a "Reprise Version". |
+| `search-remixes-never-gonna.json` | `ytsearch30:Rick Astley Never Gonna Give You Up remix` | the mix's seed video (`mix-track.json`, `YOUTUBE_MIX` in the e2e URLs) and Spotify's track 4uLU6hMCjMI75M1A2tKUQC: both give this query | 0 | 2.7 s, stderr empty. Same row shape; 2 rows have no `description`. Krysiek's remix three times, the original `dQw4w9WgXcQ` (1.8 B views), TikTok and KillerCut mashups, lyric re-uploads, the animated video, a BBC live take and Hyde Park 2018. |
+
+`ytdlp-parse.test.ts` checks their shape (`RECORDED_URLS`: the search, not a link), `fake-yt-dlp.json` answers each search with its file, and `test/remixes.test.ts` runs them through `POST /api/remixes`.
+
 **Not recorded:**
 - `shorts.json`: `https://www.youtube.com/shorts/BGQWPY4IigY` has the same shape as `video.json`. Only `media_type: "short"` and `original_url` (`/shorts/…`) differ; `webpage_url` is the watch URL.
 - Large listings, measured only: `-I 1:5001` on `playlist?list=UU8l9frL61Yl5KFOl87nIm2w` (`playlist_count: 20000`) took 38.5 s and printed 6.7 MB of JSON; `@NASA/videos` took 56 s and printed 3.7 MB (`playlist_count: null`).

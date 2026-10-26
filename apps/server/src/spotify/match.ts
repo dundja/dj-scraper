@@ -1,5 +1,6 @@
 import * as z from 'zod'
 import { lenient } from '../util/fields.ts'
+import { containsRun, normalize, words } from '../util/words.ts'
 import type { SpotifyTrack } from './embed.ts'
 
 /**
@@ -303,34 +304,4 @@ function scoreCandidate(candidate: Candidate, rank: number, wanted: Wanted): num
     (channel.endsWith(TOPIC_SUFFIX) || text.includes('official audio') ? 10 : 0) -
     (titleSet.has('lyrics') || titleSet.has('lyric') ? 5 : 0)
   )
-}
-
-/** Lowercase, accents and punctuation gone, `&` as `and`: "ADÉLA" and "adela" are one name. */
-function normalize(text: string): string {
-  return text
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/['’]/g, '')
-    .replace(/[^\p{L}\p{N}-]+/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-/** The words of a text; ` - ` separators and lone dashes aren't words. */
-function words(text: string): string[] {
-  return normalize(text)
-    .split(' ')
-    .flatMap((word) => word.split(/-+/))
-    .filter((word) => word !== '')
-}
-
-/** Whether `haystack` holds `needle` as consecutive words. */
-function containsRun(haystack: readonly string[], needle: readonly string[]): boolean {
-  if (needle.length === 0) return false
-  for (let start = 0; start + needle.length <= haystack.length; start++) {
-    if (needle.every((word, i) => haystack[start + i] === word)) return true
-  }
-  return false
 }

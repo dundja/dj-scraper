@@ -94,7 +94,7 @@ const settings = await createSettingsStore({ dataDir: dataDirReal, defaultFolder
 
 const health = cachedHealthCheck(() => checkHealth(config.engine, new Date()))
 // Every event is checked against the contract in dev (tests turn it on in their own harnesses).
-const { resolver, enricher, queue, streams, locate } = createServices({
+const { resolver, enricher, remixes, queue, streams, locate } = createServices({
   engine: config.engine,
   dataDirReal,
   settings,
@@ -111,6 +111,7 @@ try {
       health,
       resolver,
       enricher,
+      remixes,
       queue,
       settings,
       onConcurrency: (concurrency) => queue.setConcurrency(concurrency),

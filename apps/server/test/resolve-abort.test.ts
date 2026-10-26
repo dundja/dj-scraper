@@ -8,7 +8,7 @@ import { entryArgs, resolveArgs } from '../src/engine/ytdlp-args.ts'
 import { createEnricher } from '../src/resolve/enricher.ts'
 import { createResolver } from '../src/resolve/resolver.ts'
 import { type RunningServer, startServer } from '../src/server.ts'
-import { UNUSED_DOWNLOAD_DEPS } from '../src/stubs.ts'
+import { UNUSED_DOWNLOAD_DEPS, UNUSED_REMIX_DEPS } from '../src/stubs.ts'
 import { makeTempDir, writeFakeTool } from './helpers.ts'
 
 // A browser that closes a resolve request (tab closed, new paste) must stop the yt-dlp working for
@@ -65,7 +65,14 @@ async function start(argv: readonly string[]) {
   const enricher = createEnricher({ engine, run: spy, log: quiet })
   const stubHealth = { current: async () => health, recheck: async () => health }
   server = await startServer(0, (port) =>
-    createApp({ port, health: stubHealth, resolver, enricher, ...UNUSED_DOWNLOAD_DEPS }),
+    createApp({
+      port,
+      health: stubHealth,
+      resolver,
+      enricher,
+      ...UNUSED_REMIX_DEPS,
+      ...UNUSED_DOWNLOAD_DEPS,
+    }),
   )
   return { port: server.port, runs, spawned }
 }

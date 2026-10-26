@@ -1,6 +1,7 @@
 import type { ResolveMode, ResolveResult, Track } from '@dj-scraper/shared'
 import { type ReactNode, useState } from 'react'
 import { CollectionView } from '@/features/collection/collection-view.tsx'
+import { RemixSection } from '@/features/remixes/remix-section.tsx'
 import { useSettings } from '@/features/settings/use-settings.ts'
 import { TrackCard } from '@/features/track/track-card.tsx'
 import { AmbiguousPrompt } from './ambiguous-prompt.tsx'
@@ -26,14 +27,14 @@ export function ResolvedResult({ result, onLoad, onTrackChosen }: ResolvedResult
     case 'track':
       return (
         <Padded>
-          <TrackResult track={result.track} />
+          <SingleTrack track={result.track} />
         </Padded>
       )
     case 'ambiguous':
       return (
         <Padded>
           {trackChosen ? (
-            <TrackResult track={result.track} />
+            <SingleTrack track={result.track} />
           ) : (
             <AmbiguousPrompt
               result={result}
@@ -61,6 +62,19 @@ export function ResolvedResult({ result, onLoad, onTrackChosen }: ResolvedResult
 
 function Padded({ children }: { children: ReactNode }) {
   return <div className="w-full max-w-3xl px-4 pb-6">{children}</div>
+}
+
+/**
+ * A single track: its card, then its song's remixes below it (ADR-027). The search starts with the
+ * card and runs beside its download; below the card, it never moves it.
+ */
+function SingleTrack({ track }: { track: Track }) {
+  return (
+    <div className="flex flex-col gap-6">
+      <TrackResult track={track} />
+      <RemixSection track={track} />
+    </div>
+  )
 }
 
 /**

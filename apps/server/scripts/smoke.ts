@@ -1,12 +1,14 @@
 // `pnpm smoke [--json] [--mode auto|track|collection] [--entries N] [url ...]`
 // `pnpm smoke --download [--format mp3|m4a|aiff|wav|flac|original]… [--keep] [--bare] [url ...]`
+// `pnpm smoke --remixes [--json] ['<title>' '<artist>' | url ...]`
 //
 // A live check of the engine against real YouTube and SoundCloud, with the real yt-dlp and the
-// same services the server uses: the resolver and enricher, or with --download the whole download
-// pipeline into a temp dir (scripts/smoke-download.ts). This is the only code path that touches
-// the network on purpose, so it is never part of `pnpm test`. Without URLs it runs the sample set
-// from .claude/skills/smoke-test/SKILL.md (its shortest tracks with --download). Exits 1 if any
-// URL (× format) failed.
+// same services the server uses: the resolver and enricher, with --download the whole download
+// pipeline into a temp dir (scripts/smoke-download.ts), or with --remixes the remix finder
+// (scripts/smoke-remixes.ts). This is the only code path that touches the network on purpose, so
+// it is never part of `pnpm test`. Without URLs it runs the sample set from
+// .claude/skills/smoke-test/SKILL.md (its shortest tracks with --download, two songs with
+// --remixes). Exits 1 if any URL (× format) or song failed.
 
 import { parseArgs } from 'node:util'
 import {
@@ -30,6 +32,7 @@ import { createEnricher, type Enricher } from '../src/resolve/enricher.ts'
 import { createResolver } from '../src/resolve/resolver.ts'
 import { createSpotifyClient } from '../src/spotify/client.ts'
 import { DOWNLOAD_SAMPLES, smokeDownloads } from './smoke-download.ts'
+import { REMIX_SAMPLES, remixTargets, smokeRemixes } from './smoke-remixes.ts'
 
 /** The smoke-test skill's sample set (public URLs from yt-dlp's own extractor tests). */
 const SAMPLES: readonly { label: string; url: string }[] = [
@@ -76,6 +79,7 @@ const SAMPLES: readonly { label: string; url: string }[] = [
 const USAGE = [
   'Usage: pnpm smoke [--json] [--mode auto|track|collection] [--entries N] [url ...]',
   '       pnpm smoke --download [--format mp3|m4a|aiff|wav|flac|original]… [--keep] [--bare] [url ...]',
+  "       pnpm smoke --remixes [--json] [--mode auto|track|collection] ['<title>' '<artist>' | url ...]",
 ].join('\n')
 /** How many entries of a collection the summary lists. */
 const SHOWN_ENTRIES = 3
@@ -96,6 +100,8 @@ type Options = {
   formats: DownloadFormat[]
   keep: boolean
   bare: boolean
+  /** --remixes: search remixes of songs (title, artist pairs) or of track links. */
+  remixes: boolean
 }
 
 function parseOptions(argv: readonly string[]): Options {
@@ -110,6 +116,7 @@ function parseOptions(argv: readonly string[]): Options {
       format: { type: 'string', multiple: true },
       keep: { type: 'boolean', default: false },
       bare: { type: 'boolean', default: false },
+      remixes: { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
   })
@@ -132,6 +139,9 @@ function parseOptions(argv: readonly string[]): Options {
   if (download && (values.json || values.entries !== '0')) {
     throw new Error('--json and --entries are for resolving, not --download')
   }
+  if (values.remixes && (download || values.entries !== '0')) {
+    throw new Error('--remixes goes without --download and --entries')
+  }
   return {
     json: values.json,
     mode: mode.data,
@@ -141,6 +151,7 @@ function parseOptions(argv: readonly string[]): Options {
     formats: [...new Set(formats)],
     keep: values.keep,
     bare: values.bare,
+    remixes: values.remixes,
   }
 }
 
@@ -181,7 +192,12 @@ if (!ytdlp.meetsMinimum) {
 say('')
 
 const given = options.urls.map((url) => ({ label: '', url }))
-process.exitCode = (options.download ? await smokeDownload() : await smokeResolve()) > 0 ? 1 : 0
+const failed = options.download
+  ? await smokeDownload()
+  : options.remixes
+    ? await smokeRemix()
+    : await smokeResolve()
+process.exitCode = failed > 0 ? 1 : 0
 
 /** --download: the download pipeline per URL × format; returns how many failed. */
 async function smokeDownload(): Promise<number> {
@@ -199,6 +215,21 @@ async function smokeDownload(): Promise<number> {
   const total = targets.length * options.formats.length
   say(`${total - failures}/${total} downloaded${failures > 0 ? ', see ❌ above' : ''}`)
   return failures
+}
+
+/** --remixes: the remix finder per song or track link; returns how many failed. */
+async function smokeRemix(): Promise<number> {
+  const targets = options.urls.length > 0 ? remixTargets(options.urls) : REMIX_SAMPLES
+  return smokeRemixes({
+    targets,
+    json,
+    mode,
+    engine: config.engine,
+    ...(config.spotifyOrigin === undefined ? {} : { spotifyOrigin: config.spotifyOrigin }),
+    say,
+    print: (text) => console.log(text),
+    log,
+  })
 }
 
 /** Resolves each URL (and enriches partial rows with --entries); returns how many failed. */

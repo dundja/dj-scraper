@@ -16,6 +16,7 @@ import {
   YOUTUBE_DOWNLOAD_BUDGET,
 } from './pacing/gates.ts'
 import { createTokenBucket, type TokenBucket } from './pacing/token-bucket.ts'
+import { createRemixFinder, type RemixFinder } from './remix/finder.ts'
 import {
   createEnricher,
   DEFAULT_PACING,
@@ -91,6 +92,8 @@ export type ServicesOptions = {
 export type AppServices = {
   resolver: Resolver
   enricher: Enricher
+  /** Remix searches (ADR-027), taking SoundCloud tokens from the lookups' shared bucket. */
+  remixes: RemixFinder
   gates: Gates
   bus: Bus
   queue: Queue
@@ -117,6 +120,13 @@ export function createServices({
   const spotify = createSpotifyClient(spotifyOrigin === undefined ? {} : { origin: spotifyOrigin })
   const resolver = createResolver({ engine, spotify, log })
   const enricher = createEnricher({ engine, log, pacing: pacing.lookups })
+  const remixes = createRemixFinder({
+    engine,
+    ...(pacing.lookups.soundcloud.budget === undefined
+      ? {}
+      : { soundcloudBudget: pacing.lookups.soundcloud.budget }),
+    log,
+  })
   const gates = createGates({
     buckets: pacing.downloads,
     downloadReserve: pacing.downloadReserve,
@@ -149,5 +159,5 @@ export function createServices({
     heartbeatMs: overrides.heartbeatMs,
     log,
   })
-  return { resolver, enricher, gates, bus, queue, streams, locate }
+  return { resolver, enricher, remixes, gates, bus, queue, streams, locate }
 }

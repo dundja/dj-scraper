@@ -7,6 +7,7 @@ import { expect } from 'vitest'
 import { createApp } from '../src/app.ts'
 import type { EngineEnv } from '../src/engine/binaries.ts'
 import { killActiveGroups } from '../src/engine/run.ts'
+import { createRemixFinder } from '../src/remix/finder.ts'
 import { createEnricher, type Pacing } from '../src/resolve/enricher.ts'
 import { createResolver } from '../src/resolve/resolver.ts'
 import { type RunningServer, startServer } from '../src/server.ts'
@@ -91,9 +92,17 @@ export async function startResolveApp(
       : { spotify: createSpotifyClient({ origin: options.spotifyOrigin }) }),
   })
   const enricher = createEnricher({ engine, log, pacing: options.pacing ?? SEQUENTIAL })
+  const remixes = createRemixFinder({ engine, log })
   const stubHealth = { current: async () => health, recheck: async () => health }
   const server = await startServer(0, (port) =>
-    createApp({ port, health: stubHealth, resolver, enricher, ...UNUSED_DOWNLOAD_DEPS }),
+    createApp({
+      port,
+      health: stubHealth,
+      resolver,
+      enricher,
+      remixes,
+      ...UNUSED_DOWNLOAD_DEPS,
+    }),
   )
   running.push(server)
 

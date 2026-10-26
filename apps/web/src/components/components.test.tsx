@@ -28,6 +28,13 @@ describe('PlatformBadge', () => {
     expect(container.querySelector('[aria-hidden]')).toBeNull()
   })
 
+  it('shows more after the name, behind a decorative separator', () => {
+    const { container } = render(<PlatformBadge platform="soundcloud">382K plays</PlatformBadge>)
+    expect(container.textContent).toBe('SoundCloud·382K plays')
+    const hidden = [...container.querySelectorAll('[aria-hidden]')].map((node) => node.textContent)
+    expect(hidden).toEqual(['', '·'])
+  })
+
   it('takes extra classes', () => {
     const { container } = render(<PlatformBadge platform="youtube" className="ml-2" />)
     expect(container.firstElementChild?.className).toContain('ml-2')

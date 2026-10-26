@@ -444,6 +444,14 @@ const NOT_SERVED: Record<string, string> = {
   'soundcloud/entry-metadata-only.json': 'needs --extractor-args soundcloud:formats=none',
   'youtube/search.json':
     "a YouTube search, not a link: a Spotify job's match step runs it (test/downloads.test.ts)",
+  'youtube/search-remixes-porcelain.json':
+    'a remix search, not a link: POST /api/remixes runs it (test/remixes.test.ts)',
+  'youtube/search-remixes-never-gonna.json':
+    'a remix search, not a link: POST /api/remixes runs it (test/remixes.test.ts)',
+  'soundcloud/search-remixes-porcelain.json':
+    'a remix search, not a link: POST /api/remixes runs it (test/remixes.test.ts)',
+  'soundcloud/search-remixes-never-gonna.json':
+    'a remix search, not a link: POST /api/remixes runs it (test/remixes.test.ts)',
 }
 
 describe('POST /api/resolve with recorded fixtures', () => {

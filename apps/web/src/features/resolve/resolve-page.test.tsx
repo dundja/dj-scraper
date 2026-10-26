@@ -10,13 +10,14 @@ import { fakeApi, json, jsonBody, noAnswer } from '@/test/fake-api.ts'
 import { renderWithQueryClient } from '@/test/render.tsx'
 import { scTrack, trackResult, urls } from '@/test/resolve.ts'
 import { ResolvePage } from './resolve-page.tsx'
-import { viewMounts } from './testing/result-view-log.ts'
+import { remixMounts, viewMounts } from './testing/result-view-log.ts'
 
 vi.mock('@/features/track/track-card.tsx', () => import('./testing/fake-result-views.tsx'))
 vi.mock(
   '@/features/collection/collection-view.tsx',
   () => import('./testing/fake-result-views.tsx'),
 )
+vi.mock('@/features/remixes/remix-section.tsx', () => import('./testing/fake-result-views.tsx'))
 
 let server: ReturnType<typeof fakeApi>
 
@@ -24,6 +25,7 @@ beforeEach(() => {
   server = fakeApi()
   server.on('GET /api/settings', () => json(settings))
   viewMounts.length = 0
+  remixMounts.length = 0
 })
 
 afterEach(() => {

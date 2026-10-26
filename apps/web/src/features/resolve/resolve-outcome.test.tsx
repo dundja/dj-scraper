@@ -19,7 +19,7 @@ import {
   userPageWithLists,
 } from '@/test/resolve.ts'
 import { ResolvePage } from './resolve-page.tsx'
-import { viewMounts } from './testing/result-view-log.ts'
+import { remixMounts, viewMounts } from './testing/result-view-log.ts'
 import { DRM_MESSAGE } from './url-verdict.ts'
 
 vi.mock('@/features/track/track-card.tsx', () => import('./testing/fake-result-views.tsx'))
@@ -27,6 +27,7 @@ vi.mock(
   '@/features/collection/collection-view.tsx',
   () => import('./testing/fake-result-views.tsx'),
 )
+vi.mock('@/features/remixes/remix-section.tsx', () => import('./testing/fake-result-views.tsx'))
 
 let server: ReturnType<typeof fakeApi>
 
@@ -34,6 +35,7 @@ beforeEach(() => {
   server = fakeApi()
   server.on('GET /api/settings', () => json(settings))
   viewMounts.length = 0
+  remixMounts.length = 0
 })
 
 afterEach(() => {
@@ -165,6 +167,43 @@ describe('a track', () => {
     expect(status().textContent).toBe('Track: The Chill Zone')
   })
 
+  it("shows the track's remix suggestions below its card, once per paste", async () => {
+    server.on('POST /api/resolve', () => json(trackResult()))
+    const user = userEvent.setup()
+    renderWithQueryClient(<ResolvePage />)
+
+    await load(user, urls.track)
+    const card = await screen.findByRole('article', { name: 'Track card: The Chill Zone' })
+    const remixes = screen.getByRole('region', { name: 'Remixes of The Chill Zone' })
+    expect(card.compareDocumentPosition(remixes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Go' }))
+    await waitFor(() => expect(remixMounts).toHaveLength(2))
+
+    expect(remixMounts).toEqual(['XNEnEBrHws8', 'XNEnEBrHws8'])
+  })
+
+  it('searches remixes of an unavailable track too', async () => {
+    server.on('POST /api/resolve', () => json(trackResult(previewTrack)))
+    const user = userEvent.setup()
+    renderWithQueryClient(<ResolvePage />)
+
+    await load(user, 'https://soundcloud.com/the-concept-band/world-on-fire-1')
+
+    expect(await screen.findByRole('region', { name: 'Remixes of World On Fire' })).toBeTruthy()
+  })
+
+  it('shows the remixes while the card waits for the settings', async () => {
+    server.on('GET /api/settings', noAnswer)
+    server.on('POST /api/resolve', () => json(trackResult()))
+    const user = userEvent.setup()
+    renderWithQueryClient(<ResolvePage />)
+
+    await load(user, urls.track)
+
+    expect(await screen.findByRole('region', { name: 'Remixes of The Chill Zone' })).toBeTruthy()
+    expect(skeleton('track')).not.toBeNull()
+  })
+
   it("doesn't auto-download when the setting is off", async () => {
     server.on('GET /api/settings', () => json({ ...settings, autoDownloadSingles: false }))
     server.on('POST /api/resolve', () => json(trackResult()))
@@ -256,6 +295,7 @@ describe('a collection', () => {
       await screen.findByRole('region', { name: 'Collection: Warm-up Selection' }),
     ).toBeTruthy()
     expect(status().textContent).toBe('Playlist: Warm-up Selection, 30 tracks')
+    expect(remixMounts).toEqual([])
   })
 
   it('opens a list the collection links to, showing its URL in the box', async () => {
@@ -334,12 +374,15 @@ describe('a track in a list', () => {
     renderWithQueryClient(<ResolvePage />)
     await load(user, urls.watchList)
 
-    await user.click(await screen.findByRole('button', { name: 'This track' }))
+    await screen.findByRole('button', { name: 'This track' })
+    expect(remixMounts).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'This track' }))
 
     const card = await screen.findByRole('article', {
       name: 'Track card: dlp test video title primary (en-GB)',
     })
     expect(card.dataset.autoStart).toBe('true')
+    expect(remixMounts).toEqual([ambiguous.playlist.track.id])
     expect(screen.queryByRole('region', { name: /^This track or/ })).toBeNull()
     expect(resolveCalls()).toHaveLength(1)
     expect(document.activeElement).toBe(urlBox())

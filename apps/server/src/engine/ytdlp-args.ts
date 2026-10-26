@@ -73,20 +73,27 @@ export function entryArgs({ url, jsRuntime }: { url: string; jsRuntime: string }
   ]
 }
 
+/** yt-dlp's search prefix per site: `ytsearch10:<query>`, `scsearch30:<query>`. */
+const SEARCH_PREFIXES = { youtube: 'ytsearch', soundcloud: 'scsearch' } as const
+
 /**
- * A YouTube search for a Spotify track's upload (ADR-026): `ytsearch<count>:<query>` lists the
- * first results flat (id, title, channel, duration), one page of YouTube's search. The query is
- * built from Spotify's page (`searchQuery` in spotify/match.ts) and, like a URL, comes after `--`.
+ * A search, listed flat: `ytsearch<count>:<query>` (id, title, channel, duration, views) for a
+ * Spotify track's upload (ADR-026) and a song's remixes, `scsearch<count>:<query>` (also plays,
+ * genre and tags) for remixes (ADR-027). The query is built from names (`searchQuery` in
+ * spotify/match.ts, `remixQuery` in remix/suggest.ts) and, like a URL, comes after `--`.
  */
 export function searchArgs({
   query,
   count,
   jsRuntime,
+  site = 'youtube',
   jobDir,
 }: {
   query: string
   count: number
   jsRuntime: string
+  /** Default YouTube. */
+  site?: keyof typeof SEARCH_PREFIXES
   /**
    * The attempt's job dir. `-J` writes nothing, but the argv must name the dir, so the startup
    * sweep finds a search a crashed server left.
@@ -108,7 +115,7 @@ export function searchArgs({
     String(SOCKET_TIMEOUT_SEC),
     ...(jobDir === undefined ? [] : ['-P', jobDir]),
     '--',
-    `ytsearch${count}:${query}`,
+    `${SEARCH_PREFIXES[site]}${count}:${query}`,
   ]
 }
 

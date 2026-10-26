@@ -380,7 +380,7 @@ export async function startDownloadsApp(
   const violations: string[] = []
   const events: ServerEvent[] = []
   // The server's services, with no download pacing, sequential lookups and short cooldowns.
-  const { resolver, enricher, bus, queue, streams, locate } = createServices({
+  const { resolver, enricher, remixes, bus, queue, streams, locate } = createServices({
     engine: engineEnv,
     dataDirReal: dataDir,
     settings,
@@ -414,6 +414,7 @@ export async function startDownloadsApp(
       health: { current: async () => health, recheck: async () => health },
       resolver,
       enricher,
+      remixes,
       queue,
       settings,
       onConcurrency: (n) => queue.setConcurrency(n),

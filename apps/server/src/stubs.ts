@@ -3,6 +3,7 @@ import type { Queue } from './jobs/queue.ts'
 import type { DownloadsDeps } from './routes/downloads.ts'
 import type { EventsDeps } from './routes/events.ts'
 import type { FolderDeps } from './routes/folders.ts'
+import type { RemixDeps } from './routes/remixes.ts'
 import type { ResolveDeps } from './routes/resolve.ts'
 import type { SettingsDeps } from './routes/settings.ts'
 import type { SettingsStore } from './settings/store.ts'
@@ -21,6 +22,8 @@ export const UNUSED_RESOLVE_DEPS: ResolveDeps = {
   // A cache that knows nothing is a correct answer, not a request reaching the enricher.
   enricher: { enrich: unused('enricher.enrich'), peek: () => undefined },
 }
+
+export const UNUSED_REMIX_DEPS: RemixDeps = { remixes: { find: unused('remixes.find') } }
 
 const UNUSED_QUEUE: Queue = {
   add: fails('queue.add'),
@@ -64,4 +67,4 @@ export const UNUSED_DOWNLOAD_DEPS: Omit<DownloadsDeps, 'enricher'> &
 }
 
 /** Every service but health. */
-export const UNUSED_DEPS = { ...UNUSED_RESOLVE_DEPS, ...UNUSED_DOWNLOAD_DEPS }
+export const UNUSED_DEPS = { ...UNUSED_RESOLVE_DEPS, ...UNUSED_REMIX_DEPS, ...UNUSED_DOWNLOAD_DEPS }

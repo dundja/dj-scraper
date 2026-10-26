@@ -15,6 +15,9 @@ import {
   HealthSchema,
   type Job,
   JobSchema,
+  type RemixRequest,
+  type RemixSuggestions,
+  RemixSuggestionsSchema,
   type ResolveEntriesRequestSchema,
   type ResolveEntriesResponse,
   ResolveEntriesResponseSchema,
@@ -172,6 +175,13 @@ export const api = {
     signal?: AbortSignal,
   ): Promise<ResolveEntriesResponse> =>
     request('/resolve/entries', ResolveEntriesResponseSchema, { method: 'POST', body, signal }),
+
+  /**
+   * Remix suggestions for a track's song on YouTube and SoundCloud (ADR-027). A read-only search
+   * the server caches for 30 minutes; each platform's search succeeds or fails on its own.
+   */
+  remixes: (body: RemixRequest, signal?: AbortSignal): Promise<RemixSuggestions> =>
+    request('/remixes', RemixSuggestionsSchema, { method: 'POST', body, signal }),
 
   /**
    * Queues one job per distinct track; `jobIds` maps each item to its job. The server also adds

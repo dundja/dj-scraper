@@ -76,6 +76,26 @@
       "note": "The YouTube search a Spotify job runs for Spotify's track 4uLU6hMCjMI75M1A2tKUQC (searchArgs)."
     },
     {
+      "url": "ytsearch30:Moby Porcelain remix",
+      "stdout": "youtube/search-remixes-porcelain.json",
+      "note": "POST /api/remixes for Porcelain by Moby: the YouTube search (remix/finder.ts, ADR-027)."
+    },
+    {
+      "url": "scsearch30:Moby Porcelain remix",
+      "stdout": "soundcloud/search-remixes-porcelain.json",
+      "note": "POST /api/remixes for Porcelain by Moby: the SoundCloud search (remix/finder.ts, ADR-027)."
+    },
+    {
+      "url": "ytsearch30:Rick Astley Never Gonna Give You Up remix",
+      "stdout": "youtube/search-remixes-never-gonna.json",
+      "note": "POST /api/remixes for the mix's seed video dQw4w9WgXcQ and Spotify's track 4uLU6hMCjMI75M1A2tKUQC (both give this query)."
+    },
+    {
+      "url": "scsearch30:Rick Astley Never Gonna Give You Up remix",
+      "stdout": "soundcloud/search-remixes-never-gonna.json",
+      "note": "POST /api/remixes for the mix's seed video dQw4w9WgXcQ and Spotify's track 4uLU6hMCjMI75M1A2tKUQC (both give this query)."
+    },
+    {
       "url": "https://soundcloud.com/ethmusic/lostin-powers-she-so-heavy",
       "stdout": "soundcloud/track.json"
     },

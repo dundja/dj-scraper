@@ -6,6 +6,8 @@ import {
   DownloadRequestSchema,
   type EntryResult,
   FolderPickRequestSchema,
+  type RemixRequest,
+  RemixRequestSchema,
   type ResolveEntriesRequest,
   ResolveEntriesRequestSchema,
   type ResolveEntriesResponse,
@@ -20,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { doneJob, failedJob, jobWith, queuedJob, settings } from '@/test/downloads.ts'
 import { fakeApi, json, jsonBody, networkError, noAnswer, text } from '@/test/fake-api.ts'
 import { healthWith, healthy } from '@/test/health.ts'
+import { remixes } from '@/test/remixes.ts'
 import { spotifyBigPlaylist, spotifyTrack } from '@/test/resolve.ts'
 import { ApiError, api } from './api.ts'
 
@@ -457,6 +460,56 @@ describe('api.resolveEntries', () => {
 
     expect(error).not.toBeInstanceOf(ApiError)
     expect(error).toBe(reason)
+  })
+})
+
+describe('api.remixes', () => {
+  const remixRequest: RemixRequest = {
+    title: 'Porcelain (Official Video)',
+    artist: 'Moby',
+    exclude: { platform: 'youtube', id: '13EifDb4GYs' },
+    platforms: ['youtube'],
+  }
+
+  it('posts the request as its exact JSON body to /api/remixes, which the server reads back as the same request', async () => {
+    server.on('POST /api/remixes', () => json(remixes))
+
+    await expect(api.remixes(remixRequest)).resolves.toEqual(remixes)
+
+    const [call] = server.callsTo('POST /api/remixes')
+    expect(call?.headers.get('Content-Type')).toBe('application/json')
+    expect(call?.body).toBe(JSON.stringify(remixRequest))
+    expect(RemixRequestSchema.parse(jsonBody(call))).toEqual(remixRequest)
+  })
+
+  it('reports an answer that breaks the contract as an invalid response', async () => {
+    server.on('POST /api/remixes', () => json({ ...remixes, suggestions: undefined }))
+
+    const error = await rejection(api.remixes(remixRequest))
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).kind).toBe('invalid_response')
+  })
+
+  it("reports the server's refusal of the whole search as an api error", async () => {
+    server.on('POST /api/remixes', () =>
+      json({ error: { code: 'engine_missing', message: 'yt-dlp is not installed.' } }, 503),
+    )
+
+    const error = await rejection(api.remixes(remixRequest))
+
+    expect(error).toMatchObject({ kind: 'api', status: 503, code: 'engine_missing' })
+  })
+
+  it("rejects with the signal's reason, not an ApiError, when the search is aborted", async () => {
+    server.on('POST /api/remixes', noAnswer)
+    const controller = new AbortController()
+    const reason = new DOMException('The next link was pasted', 'AbortError')
+
+    const request = api.remixes(remixRequest, controller.signal)
+    controller.abort(reason)
+
+    expect(await rejection(request)).toBe(reason)
   })
 })
 

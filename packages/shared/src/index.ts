@@ -133,6 +133,28 @@ export { type HealthProblem, healthProblems } from './health-problems.ts'
 export { type Platform, PlatformSchema, pacingPlatform } from './platform.ts'
 export { loopbackHosts, PortSchema, SERVER_PORT, WEB_DEV_PORT } from './ports.ts'
 export {
+  type GenreSource,
+  GenreSourceSchema,
+  MAX_GENRE_LENGTH,
+  MAX_REMIX_SUGGESTIONS,
+  MAX_REMIX_UPLOADS,
+  REMIX_PLATFORMS,
+  type RemixKind,
+  RemixKindSchema,
+  type RemixPlatform,
+  RemixPlatformSchema,
+  type RemixRequest,
+  RemixRequestSchema,
+  type RemixSearchStatus,
+  RemixSearchStatusSchema,
+  type RemixSuggestion,
+  RemixSuggestionSchema,
+  type RemixSuggestions,
+  RemixSuggestionsSchema,
+  type RemixUpload,
+  RemixUploadSchema,
+} from './remix.ts'
+export {
   type AmbiguousListKind,
   AmbiguousListKindSchema,
   type EntryRef,

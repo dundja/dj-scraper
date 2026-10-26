@@ -45,8 +45,11 @@ const RECORDED_URLS: Record<string, string> = {
     'https://www.youtube.com/playlist?list=PLYwq8WOe86_xGmR7FrcJq8Sb7VW8K3Tt2',
   'youtube/playlist.json':
     'https://www.youtube.com/playlist?list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0',
-  // A search, not a URL: what spotify/matcher.ts runs for a Spotify track (searchArgs).
+  // Searches, not URLs: what spotify/matcher.ts runs for a Spotify track, and remix/finder.ts for
+  // a song's remixes (searchArgs).
   'youtube/search.json': 'ytsearch10:Rick Astley - Never Gonna Give You Up',
+  'youtube/search-remixes-never-gonna.json': 'ytsearch30:Rick Astley Never Gonna Give You Up remix',
+  'youtube/search-remixes-porcelain.json': 'ytsearch30:Moby Porcelain remix',
   'youtube/video.json': 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
   'youtube/watch-list-playlist.json':
     'https://www.youtube.com/watch?v=gHKT4uU8Zng&list=PLt5yu3-wZAlQAaPZ5Z-rJoTdbT-45Q7c0',
@@ -55,6 +58,9 @@ const RECORDED_URLS: Record<string, string> = {
   'soundcloud/album-set.json': 'https://soundcloud.com/leviryan/sets/out-of-spite',
   'soundcloud/entry-metadata-only.json': 'https://api-v2.soundcloud.com/tracks/47127631',
   'soundcloud/entry.json': 'https://api-v2.soundcloud.com/tracks/47127631',
+  'soundcloud/search-remixes-never-gonna.json':
+    'scsearch30:Rick Astley Never Gonna Give You Up remix',
+  'soundcloud/search-remixes-porcelain.json': 'scsearch30:Moby Porcelain remix',
   'soundcloud/set-capped.json': 'https://soundcloud.com/the-concept-band/sets/the-royal-concept-ep',
   'soundcloud/set.json': 'https://soundcloud.com/the-concept-band/sets/the-royal-concept-ep',
   'soundcloud/track-preview.json': 'https://soundcloud.com/the-concept-band/world-on-fire-1',
@@ -125,18 +131,26 @@ describe('recorded fixtures', () => {
       .map((file) => `${dir}/${file}`),
   )
 
-  /** YouTube searches: spotify/match.test.ts reads them with parseSearchResults, never normalizeInfo. */
-  const searches = recorded.filter((name) => RECORDED_URLS[name]?.startsWith('ytsearch'))
+  /**
+   * Searches: spotify/match.test.ts and remix/suggest.test.ts read them with their own
+   * parseSearchResults, never normalizeInfo.
+   */
+  const searches = recorded.filter((name) => /^(?:yt|sc)search/.test(RECORDED_URLS[name] ?? ''))
+  const SEARCH_EXTRACTORS: Record<string, string> = {
+    ytsearch: 'YoutubeSearch',
+    scsearch: 'SoundcloudSearch',
+  }
 
   it('knows the recorded URL of every success fixture', () => {
     expect(recorded.toSorted()).toEqual(Object.keys(RECORDED_URLS).toSorted())
   })
 
-  it.each(searches)('keeps %s as the flat list of videos a search returns', (name) => {
+  it.each(searches)('keeps %s as the flat list of results a search returns', (name) => {
+    const search = RECORDED_URLS[name] ?? ''
     expect(fixture(name)).toMatchObject({
       _type: 'playlist',
-      extractor_key: 'YoutubeSearch',
-      original_url: RECORDED_URLS[name],
+      extractor_key: SEARCH_EXTRACTORS[search.slice(0, 'ytsearch'.length)],
+      original_url: search,
     })
     expect(classifyUrl(RECORDED_URLS[name] ?? '').ok).toBe(false)
   })

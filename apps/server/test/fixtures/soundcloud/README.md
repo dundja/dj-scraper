@@ -25,6 +25,19 @@ yt-dlp --ignore-config --no-update --color never --encoding utf-8 --js-runtimes 
 | `entry.json` | `https://api-v2.soundcloud.com/tracks/47127631` | `-J --no-playlist` | 0 | The enrichment lookup on row 6 of `set.json`, URL exactly as listed. Full track: `webpage_url` is the page URL, `original_url` the API URL. Formats `hls_mp3_0_0`, `hls_aac_96k`, `hls_aac_160k`; picks `hls_aac_160k`. No `album` (the set context isn't passed on). |
 | `entry-metadata-only.json` | same | `-J --no-playlist --extractor-args soundcloud:formats=none --ignore-no-formats-error` | 0 | 1 API request instead of 4. Exits 0 with stderr `WARNING: No video formats found!` and `WARNING: Requested format is not available` (`../errors/soundcloud-metadata-only.log`). `formats: []`, no `acodec`/`abr`, so a preview can't be detected. |
 
+**Remix searches** (ADR-027), recorded **2026-10-25** with the same yt-dlp 2026.08.19 (deno 2.9.7, Node 24.12.0 through `--js-runtimes`) on macOS 26.5.1 (arm64), without a login. The argv is exactly what `searchArgs` builds for `src/remix/finder.ts` with `site: 'soundcloud'` (`SEARCH_COUNTS.soundcloud` = 30); their YouTube twins are in `../youtube/README.md`:
+```
+yt-dlp --ignore-config --no-update --color never --encoding utf-8 --js-runtimes node:"$(command -v node)" \
+  -J --flat-playlist --socket-timeout 20 -- 'scsearch30:<query>'
+```
+
+| File | Query (after `--`) | Exit | Notes |
+|---|---|---|---|
+| `search-remixes-porcelain.json` | `scsearch30:Moby Porcelain remix` | 0 | 4.4 s, stderr empty. `_type: playlist`, `extractor_key: SoundcloudSearch`, `playlist_count: 30`; the top level's `id`/`title` are the query. 30 `_type: url` rows, `ie_key: Soundcloud`, each a whole track's metadata without formats (`formats: null`): `url` is the API's (`https://api.soundcloud.com/tracks/soundcloud%3Atracks%3A<id>`, which `classifyUrl` reads as `other`) and `webpage_url` the page. They carry `view_count` (plays), likes, comments, reposts, `genres` (a one-entry list on 28 rows; no `genre` key), `tags` (22), `artists` (13), `description` (26, cut to 200 characters by `trim.mjs`), `duration` in fractional seconds (30–480 s) and `thumbnails` ending with the `original` artwork. Arty's remix twice (Moby, Anjunabeats; genres "Dance", "Dance & EDM"), Above & Beyond's twice (tags "Trance"), Pola & Bryson (Drum & Bass), Luca Agnelli (Techno), Nico Szabo (Melodic House), adamine (Jungle), CLOVIS (INDIE DANCE); the original (3.4 M plays), a 30 s Go+ preview of it, and a 145 s "… Remix) PREVIEW". |
+| `search-remixes-never-gonna.json` | `scsearch30:Rick Astley Never Gonna Give You Up remix` | 0 | 9.7 s, stderr empty. Same row shape. Timmo Hendriks' remix twice, a 63 s "Airhorn Remix", a 51 s "LES BISOUS REMIX SAMPLE", two 30 s Go+ previews of the original, a "Synthwave Remix Instrumental", and genres such as "Jersey Club", "Electro House", "Disco", "Video Game" and "Meme". |
+
+Descriptions hold promo links and public artist handles; the full descriptions also held contact e-mail addresses, which the 200-character cut removed (checked before checking in: no e-mail address or phone number remains). `ytdlp-parse.test.ts` checks their shape (`RECORDED_URLS`), `fake-yt-dlp.json` answers each search with its file, and `src/remix/suggest.test.ts` reads them with `parseSearchResults`.
+
 Not recorded: a Go+ track geo-blocked here (`https://soundcloud.com/caravan-palace-official/mad`, `https://on.soundcloud.com/zm7BCOajdkkgYf1XVZ`) → `../errors/soundcloud-geo-blocked.log`.
 
 ## Entry lookup cost (measured 2026-10-02)

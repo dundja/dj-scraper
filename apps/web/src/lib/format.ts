@@ -97,3 +97,11 @@ export function clipText(text: string, maxLength: number): string {
   if (last >= 0xd800 && last <= 0xdbff) end--
   return `${text.slice(0, end).trimEnd()}…`
 }
+
+const COMPACT = new Intl.NumberFormat('en', { notation: 'compact' })
+
+/** A count the way platforms show one: "12", "908K", "1.2M". Empty for a negative or NaN count. */
+export function formatCount(count: number): string {
+  if (!Number.isFinite(count) || count < 0) return ''
+  return COMPACT.format(count)
+}

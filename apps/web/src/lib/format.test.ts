@@ -4,6 +4,7 @@ import {
   folderName,
   formatBytes,
   formatClock,
+  formatCount,
   formatEta,
   formatSpeed,
   formatTotalDuration,
@@ -170,5 +171,27 @@ describe('clipText', () => {
     expect(clipped).toBe('ab…')
     expect(clipped.isWellFormed()).toBe(true)
     expect(clipText('ab🎧cd', 5)).toBe('ab🎧…')
+  })
+})
+
+describe('formatCount', () => {
+  it('shows small counts whole', () => {
+    expect(formatCount(0)).toBe('0')
+    expect(formatCount(12)).toBe('12')
+    expect(formatCount(999)).toBe('999')
+  })
+
+  it('shortens thousands, millions and billions the way platforms do', () => {
+    expect(formatCount(1234)).toBe('1.2K')
+    expect(formatCount(381_927)).toBe('382K')
+    expect(formatCount(908_123)).toBe('908K')
+    expect(formatCount(1_234_567)).toBe('1.2M')
+    expect(formatCount(15_000_000)).toBe('15M')
+    expect(formatCount(2_500_000_000)).toBe('2.5B')
+  })
+
+  it('is empty for a count that is not one', () => {
+    expect(formatCount(-1)).toBe('')
+    expect(formatCount(Number.NaN)).toBe('')
   })
 })

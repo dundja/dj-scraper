@@ -9,3 +9,6 @@ export type ViewMount =
  * doesn't count. Tests clear it in beforeEach.
  */
 export const viewMounts: ViewMount[] = []
+
+/** The track id of each mount of the RemixSection double, in order. Tests clear it in beforeEach. */
+export const remixMounts: string[] = []

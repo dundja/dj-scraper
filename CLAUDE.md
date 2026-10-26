@@ -8,7 +8,7 @@ A local web app for DJs. Paste a YouTube, SoundCloud or Spotify link (track or p
 - Phase 2 (download pipeline): the paced download queue, finalize (one ffmpeg pass plus our ID3 writer, every file read back), publishing that never overwrites, the data-dir lock and startup sweep, settings, the folder picker, reveal and `GET /api/events`, with typed web client calls and one event stream feeding `['downloads']`.
 - Phase 3 (UI): paste, drop or type a link (instant badge, a cancelable resolve per paste); the track card auto-downloads; the collection view (virtualized table, selection, filter, SoundCloud rows filled in as they scroll into view, `Collection.lists` to open) with its download bar; the downloads panel beside the page; the header's folder picker (folders checked and read when chosen) and the format select; the engine banner; Playwright e2e of both flows on the fake engine (ADR-020 to ADR-025).
 
-Phase 4 (DJ polish) is under way: Spotify links as track lists, matched on YouTube, are in (ADR-026). Phase 3's follow-ups are at its end. The current phase and next items are in `docs/roadmap.md`.
+Phase 4 (DJ polish) is under way: Spotify links as track lists, matched on YouTube, are in (ADR-026), and so are remix suggestions under a pasted track, searched on YouTube and SoundCloud (ADR-027). Phase 3's follow-ups are at its end. The current phase and next items are in `docs/roadmap.md`.
 
 ## Where things are explained
 | Need | Read |
@@ -42,6 +42,7 @@ pnpm test:e2e     # build the UI + Playwright (Chromium, WebKit) against the fak
 pnpm test:e2e:install # download the Playwright browsers once (network)
 pnpm smoke ['<url>' …] # live resolve against real YouTube/SoundCloud (network); no URL = sample set, --entries N, --mode, --json
 pnpm smoke --download [--format f]… [--keep] [--bare] ['<url>' …] # live download through the real pipeline into a temp dir, files read back
+pnpm smoke --remixes [--json] ['<title>' '<artist>' | '<track url>' …] # live remix suggestions (ADR-027); no argument = Moby – Porcelain, RÜFÜS DU SOL – Innerbloom
 ```
 To scope a script to one package: `pnpm --filter @dj-scraper/<web|server|shared> <script>`. Biome is scoped by path instead: `pnpm check apps/web`.
 
@@ -49,7 +50,7 @@ To scope a script to one package: `pnpm --filter @dj-scraper/<web|server|shared>
 ```
 ./                 package.json, pnpm-workspace.yaml, tsconfig.base.json, biome.json
 apps/web/          React SPA
-apps/server/       Hono API, resolve, download queue and pacing, yt-dlp/ffmpeg engine, finalize, settings, Spotify reader + YouTube matching
+apps/server/       Hono API, resolve, download queue and pacing, yt-dlp/ffmpeg engine, finalize, settings, Spotify reader + YouTube matching, remix suggestions
 packages/shared/   Zod schemas + pure helpers used by both
 docs/              product, architecture, decisions, roadmap
 .claude/           agents, skills, hooks, settings
@@ -92,4 +93,5 @@ The full playbook is in the `ytdlp` skill.
 - `watch?v=…&list=…` defaults to the whole playlist, so we ask. `list=RD…` mixes never end, so we cap them.
 - SoundCloud originals need the uploader's permission and a login. Go+ tracks without a subscription are 30-second previews (`preview_only`): `--break-match-filters "format_id!*=preview"` makes yt-dlp exit 101 silently.
 - No DJ app plays Opus. YouTube's AAC stream (format 140) is copied as M4A, and an MP3 source stays at its own bitrate.
+- Remix suggestions (ADR-027) come from flat `ytsearch30:` and `scsearch30:` searches. Only SoundCloud's results carry a genre (the uploader's field) and tags, and YouTube's only a description snippet. SoundCloud's search took 3–14 s live (50 results took 13 s), so the web asks for YouTube alone first. A flat SoundCloud result has no formats, so it can't be checked for a Go+ preview, but in the recordings Go+ tracks came back with `duration: 30` (the preview's length), which the 90 s minimum drops.
 - Spotify (ADR-026): the embed page (`open.spotify.com/embed/<type>/<id>`) needs no login and lists at most 100 rows, with no album or ISRC. Read only `state.data.entity`: the page also holds an anonymous token, which must never be used, logged or committed. A track's match is `ytsearch10:<artists> - <title>` filtered by `pickMatch`. Flat YouTube Music search results carry no duration, so they can't be checked.

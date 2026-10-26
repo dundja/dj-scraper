@@ -572,3 +572,33 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 - Matching can pick the wrong upload: a lyric re-upload, or a different master within 5 s. The job always shows its match. Without an ISRC (the embed page has none), versions are told apart by duration and words only, and extended mixes and obscure tracks are the weak spots (a live check of 35 tracks from two playlists: all matched, after one "Piano Version" taught the version words).
 - Lists over 100 tracks show their first 100 and say so.
 - Follow-ups: a review step for doubtful matches, SoundCloud as a second match source, and choosing another match by hand.
+
+## ADR-027 — Remix suggestions: YouTube and SoundCloud searches, filtered and grouped by rule, genres only from the platforms' words
+*2026-10-25 · accepted*
+
+**Context.** The user wants a pasted song to come with suggestions of its remixes, up to 20 from YouTube and SoundCloud, most popular first, each saying where it was found, tagged with its genre when possible (afro house, techno, …), and downloadable one by one. The track card, its auto-download and the playlist flow stay as they are. Live searches for "Moby Porcelain remix" (2026-10-25) showed what the platforms give: YouTube's flat search has views, duration, channel and a description snippet, but no genre; SoundCloud's has plays, likes, the uploader's genre field ("Techno", "Drum & Bass", "Melodic House", often a generic "Dance & EDM"), tags and artists. Both mix the original, soundtrack re-uploads, hour-long loops and the same remix uploaded by several channels into the results. YouTube answered in 2–3 s; SoundCloud took 3–14 s for 30 results, and 50 took 13 s.
+
+**Decision.**
+- **`POST /api/remixes`** takes the pasted track's names (`title`, `artist`, `uploader`), the track itself to leave out, and optionally the platforms to search. `songOf` takes the song out of the names: featured artists and version notes go, so a pasted remix finds the song's other remixes. The query is `<artist> <title> remix`, one argv entry after `--` (`ytsearch30:`, `scsearch30:`).
+- **Which results are remixes is decided by rule** (`remix/suggest.ts`, pure): 90 s to 15 min long; every word of the song's title outside the notes; an artist credited; no cover/live/sped-up/karaoke/mashup/loop words the song lacks; and a note naming a version. The user chose what counts: remixes, reworks, flips, VIPs and dubs (`remix`); bootlegs and someone's edits (`bootleg`); the original artist's extended or club mix (`extended`). Mashups don't. "Radio Edit" and "Original Mix" are the song.
+- **One suggestion per version** (the user's choice): uploads of the same kind and remixer are grouped across platforms and channels, a VIP and an extended mix apart from the remix. Its uploads are sorted by plays, the first being the default download; the web offers the others in a menu. Suggestions are sorted by their most-played upload, YouTube views and SoundCloud plays compared as reported (they were of the same order live), at most 20.
+- **Genres come only from the platforms' own words** (the user's choice of local heuristics): SoundCloud's genre field when it names a genre on our list (`platform`), else a genre named in the title, the tags or the description (`text`), the most specific phrase winning ("melodic techno" over "techno"). A description must name the ambiguous single words ("house", "minimal", "garage") in more words. A version takes a `platform` genre from any of its uploads first, so a YouTube upload gets its SoundCloud twin's genre. No genre is guessed beyond the words; many YouTube-only remixes have none.
+- **Two requests, shared searches.** SoundCloud is several times slower than YouTube, so the web asks for YouTube alone and for both at once. The server shares each platform's search between the requests waiting for it (stopped when none is left) and caches a successful one for 30 minutes, so YouTube is searched once and its rows show within seconds.
+- **Pacing.** One search at a time per platform. A SoundCloud search takes a token from the bucket that enrichment lookups and SoundCloud downloads share (ADR-017): about one API request per search. A failed search (rate limit, network) is reported for its platform in `searches` and never fails the request; it starts no cooldown.
+- **Downloads are ordinary.** An upload is a `TrackRef` for `POST /api/downloads`, classified, paced and tagged like any YouTube or SoundCloud track. No contract change for jobs.
+
+**Rejected.**
+- *A full lookup per result for YouTube's tags and category*: up to 20 more requests against YouTube's budget and several seconds per answer, for genres that YouTube's tags rarely name well (the user chose local heuristics).
+- *Asking an LLM to classify genres*: it would send data off the machine and need an API key, against ADR-001.
+- *Mashups as suggestions*: not remixes of the song (the user's choice).
+- *One upload per row*: the same remix showed up to 4 times (2 channels on each platform), using up the 20 slots.
+- *Adding YouTube views and SoundCloud plays*: re-uploads of one remix would inflate it; the most-played upload stands for the version.
+- *Waiting for both platforms in one request*: SoundCloud's 3–14 s would hold YouTube's results back.
+- *Suggestions for playlist rows*: a search per row; single tracks only for now (the user's choice), a per-row action is a follow-up.
+
+**Consequences.**
+- The rules are word lists: a remix whose title names no version ("Song 2024 Rework" in a language we don't list) is missed, and an oddly titled upload can slip through. Remixer names keep their upload's spelling, and a remix with no remixer in its title gets its own row.
+- Popularity is the platforms' counts at search time: an older upload outranks a newer, better remix.
+- A SoundCloud suggestion may turn out a Go+ preview: the flat search has no formats to tell. In the recordings, Go+ tracks came back with `duration: 30` (the preview's length), which the 90 s minimum drops; one that slips through fails its download with `preview_only` as any other would.
+- Searches spend SoundCloud's shared budget: one token per pasted song, at most once per 30 minutes per song while its search succeeds. A failed search isn't cached, so each new request for it spends another.
+- Follow-ups: remix suggestions for a playlist row; a second query for bootlegs and extended mixes, which "remix" searches find only partly; sharing a rate limit's cooldown with lookups and downloads.

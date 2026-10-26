@@ -102,6 +102,12 @@ Done when the full flow works in the browser: paste → (track: auto-download | 
 - [ ] Spotify matching: a review step for doubtful matches (a lyric re-upload, a second upload within 5 s), choosing another match by hand, and SoundCloud as a second match source. Today the job only shows the match it took
 - [ ] Spotify lists over 100 tracks show their first 100 (the embed page's limit). Revisit only if it matters in practice (ADR-026 rejects the web-player token)
 
+- [x] Remix suggestions under a single track's card: up to 20 versions of the song from YouTube and SoundCloud (remixes, reworks, flips, VIPs, bootlegs, edits, the artist's extended mix), one row per version with its uploads grouped across platforms, most played first, a genre from SoundCloud's field or the words of the upload, and Download per row (ADR-027). `remix/` on the server (`suggest.ts`, `genre.ts`, `finder.ts`: shared, cached searches; SoundCloud's take a token from the shared bucket), `POST /api/remixes` and `remix.ts` in the contract, `features/remixes/` in the web (a YouTube-only request and a full one at once), `pnpm smoke --remixes`
+- [ ] Remix suggestions for a playlist row ("Find remixes" in the track table), and for a pasted list's selected tracks
+- [ ] Remix searches find bootlegs and extended mixes only when their titles also match "remix": consider a second query per platform (`<song> bootleg`, `<song> extended mix`) if they are missed in practice
+- [ ] Remix heuristics, seen in the recordings and live: a mashup with a remix note passes ("[remix] (Clubbed to death)"); a remix of a remix is grouped under the first remixer ("(Lexer Remix) Moratto' Edit"); words after a name stay in it ("ElvisK - Hard Remix" → "ElvisK Hard"); a more specific genre in the title ("Liquid DnB Remix") loses to SoundCloud's broader field ("Drum & Bass"), and SoundCloud's "Disco" reads as Nu Disco
+- [ ] A rate limit on a remix search starts no cooldown; share it with the enricher's and the download gates' (see the item on shared cooldowns)
+
 ## Phase 5 — Distribution (optional)
 - [ ] App-managed yt-dlp (pinned, unpacked `yt-dlp_macos.zip` build; the app downloads stable/nightly updates itself, since that build can't use `-U`) and ffmpeg/ffprobe
 - [ ] Desktop wrapper (Tauri or Electron) and Windows support

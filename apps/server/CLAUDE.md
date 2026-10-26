@@ -7,8 +7,9 @@ A Node + Hono server bound to `127.0.0.1`. It owns everything that touches the O
 src/
   index.ts          boot: config → data dir, lock, sweep → settings, services → listen; engine check; signals
   shutdown.ts       the graceful shutdown order, shared by index.ts and test/downloads-app.ts
-  services.ts       createServices: the resolver, enricher and download pipeline wired once (one SoundCloud bucket
-                    for lookups and downloads), for index.ts, scripts/smoke-download.ts and test/downloads-app.ts
+  services.ts       createServices: the resolver, enricher, remix finder and download pipeline wired once (one
+                    SoundCloud bucket for lookups, remix searches and downloads), for index.ts,
+                    scripts/smoke-download.ts and test/downloads-app.ts
   config.ts         env + --dev/--open → Config (Zod); DJS_WEB_DIST, DJS_DATA_DIR, homeDir; default folders
   data-dir.ts       prepareDataDir (0700, ours), lockDataDir (server.lock, O_EXLOCK|O_NOFOLLOW), sweepLeftovers (ps → kill
                     leftover groups, part files, jobs/ entries) with pure parsePs/leftoverGroups (ADR-018)
@@ -19,7 +20,8 @@ src/
   http/             guard.ts (Host/Origin/Fetch-Metadata, JSON-only; --dev trusts the Vite port), errors.ts (ApiError
                     with an optional status override, status map), security-headers.ts (anti-framing, nosniff,
                     no-referrer on every response), json.ts (readJson(c, Schema), jsonBodyLimit, jsonBodyLimitOf)
-  routes/           system.ts (health, recheck), resolve.ts (resolve, entries), downloads.ts (create, list, cancel,
+  routes/           system.ts (health, recheck), resolve.ts (resolve, entries), remixes.ts (POST /api/remixes,
+                    ADR-027), downloads.ts (create, list, cancel,
                     retry, reveal, bulk cancel/retry/clear), events.ts (SSE: createEventStreams), settings.ts
                     (a changed folder is checked like a picked one; PUTs apply one at a time, in arrival
                     order), folders.ts (folder picker, then
@@ -49,15 +51,23 @@ src/
                     attempt.ts (one attempt: job dir, yt-dlp, finalize, publish, cleanup), queue.ts (state
                     machine, run order, concurrency, cancel/retry/clear, eviction: ADR-025), bus.ts (typed events)
   pacing/           token-bucket.ts (GCRA, shareable, with a reserve), gates.ts (per-platform admission, ADR-017)
+  remix/            ADR-027: genre.ts (pure: a fixed genre vocabulary; genreIn/genrePhrase, longest phrase wins;
+                    uploadGenre: SoundCloud's genre field, then title, tags, description as prose),
+                    suggest.ts (pure: songOf, remixQuery, parseSearchResults, versionOf, suggestRemixes),
+                    finder.ts (createRemixFinder: one yt-dlp search per platform through a per-platform
+                    limiter, SoundCloud's from the shared bucket; searches shared while in flight and
+                    cached 30 min on success)
   spotify/          ADR-026: embed.ts (pure: the embed page's entity → Track/Collection), client.ts (the only code
                     that talks to Spotify: embed pages and covers over HTTPS), match.ts (pure: search query,
                     results, pickMatch), matcher.ts (a Spotify job's match step: embed → ytsearch → pickMatch)
   settings/         store.ts (settings.json: field-wise repair, settings.json.bad, atomic coalesced writes)
   util/             errno.ts (errnoCode, failureName: what a log may say about an error), fields.ts (lenient,
-                    omitUndefined for tool JSON and optional contract fields)
+                    omitUndefined for tool JSON and optional contract fields), words.ts (normalize, words,
+                    containsRun: name matching for the Spotify matcher and remix suggestions)
 src/**/*.test.ts    unit tests, next to the source
-scripts/smoke.ts    `pnpm smoke`: the real resolver against live platforms (the only network path), and with
-                    --download the real download pipeline (scripts/smoke-download.ts) into a temp dir
+scripts/smoke.ts    `pnpm smoke`: the real resolver against live platforms (the only network path), with
+                    --download the real download pipeline (scripts/smoke-download.ts) into a temp dir, and
+                    with --remixes the real remix finder (scripts/smoke-remixes.ts: songs or track links)
 test/
   *.test.ts         tests that spawn processes or open sockets (afterEach killActiveGroups)
   helpers.ts        test helpers (fake tools incl. writeFakeYtdlp, writeFakeFfmpeg, writeFakeEngine; serverEnv;
@@ -69,7 +79,8 @@ test/
                     downloads, set row 6 by its API URL, a slow list, a hanging download, a private track in a
                     playlist. apps/web/e2e/fake-urls.ts lists the URLs; e2e-server.test.ts checks them
   entry.ts          bootEntry: the real entry (node src/index.ts) as a child, with its lines; lockHolder
-  resolve-app.ts    harness for the resolve/entries integration tests (real server + fake yt-dlp)
+  resolve-app.ts    harness for the resolve/entries and remixes integration tests (real server + fake yt-dlp)
+  remixes.test.ts   POST /api/remixes end to end on the recorded searches (the e2e mix track and Spotify's too)
   downloads-app.ts  harness for the downloads integration tests (real server + createServices + fake engine, SSE reader)
   spotify-fixtures.test.ts  the embed-page scrubber and the Spotify fixture server
   services.test.ts  createServices as the server builds it: SoundCloud lookups and downloads share one budget (D8)
@@ -77,11 +88,13 @@ test/
   id3-reader.ts     an ID3v2 reader written apart from the writer, for MP3/AIFF readback in tests and smoke
   finalize-real-ffmpeg.test.ts, move-exfat.test.ts   opt-in (DJS_TEST_REAL_FFMPEG=1, DJS_TEST_EXFAT=1)
   smoke-download.test.ts   the smoke script's download path, offline against the fake engine
+  smoke-remixes.test.ts    the smoke script's --remixes path, offline against the fake yt-dlp
   fake-tool.sh      one checked-in fake binary that tests symlink as yt-dlp/ffmpeg/ffprobe/deno; keep its exec bit
   fake-yt-dlp.mjs   replays fixtures, -J and downloads (exec bit kept); symlink it via writeFakeYtdlp
   fake-ffmpeg.mjs   fake ffmpeg and ffprobe in one script (exec bit kept); symlink it via writeFakeFfmpeg
   fake-media.mjs    the fake media format both fakes share (FAKEAUDIO, fake images); imported, never run
-  fixtures/         recorded output: engine/ (version probes), youtube/ + soundcloud/ (-J JSON), errors/ (stderr .log),
+  fixtures/         recorded output: engine/ (version probes), youtube/ + soundcloud/ (-J JSON, incl. searches:
+                    youtube/search.json, {youtube,soundcloud}/search-remixes-*.json), errors/ (stderr .log),
                     downloads/ (stdout + stderr per download run), ffprobe/ (ffprobe JSON of sources and outputs),
                     each with a README.md (version, date, synthetic or not); trim.mjs scrubs new -J recordings;
                     fake-yt-dlp.json maps URL + flags → fixture for the fake engine
@@ -113,7 +126,7 @@ test/
   - A download case (`downloads/<case>.stdout.log` + `.stderr.log`, the job dir as `{JOBDIR}`) gets a `DOWNLOAD_FIXTURES` row in `ytdlp-progress.test.ts` and a `DOWNLOAD_FAILURES` or `DOWNLOAD_SUCCESSES` entry in `ytdlp-errors.test.ts`.
   - An ffprobe JSON (`ffprobe/<name>.json`, recorded with finalize's `-show_entries`) gets a `PROBES` entry in `finalize-plan.test.ts`.
   - A Spotify embed page goes through `test/fixtures/spotify/trim-embed.mjs` (only `state.data`; it refuses tokens, client or correlation ids, Sentry data and sessions) and gets a `RECORDED_PAGES` entry in `spotify/embed.test.ts`. `startSpotifyFixtures` in `test/helpers.ts` serves them on 127.0.0.1 with their covers rewritten to itself, so no test reaches Spotify's CDN.
-  - A YouTube search recording (`youtube/search.json`, the exact `searchArgs` argv) gets a `RECORDED_URLS` entry (its `ytsearch10:…`) and a `fake-yt-dlp.json` rule.
+  - A search recording (`youtube/search.json`, `{youtube,soundcloud}/search-remixes-*.json`: the exact `searchArgs` argv) gets a `RECORDED_URLS` entry (its `ytsearch<N>:…` or `scsearch<N>:…`) and a `fake-yt-dlp.json` rule. The fake answers `ytsearch` and `scsearch` only with a rule, and exits 2 on search argv `searchArgs` never builds.
   - Recordings get a `fake-yt-dlp.json` rule (`download: '<case>'` for download cases), or a `WITHOUT_RULES` reason in `test/fake-yt-dlp.test.ts`.
 - **Fake binaries.** `fake-yt-dlp.mjs`, `fake-ffmpeg.mjs` and `fake-tool.sh` are checked in with their exec bit (git mode 100755) and symlinked per test: endpoint security scans every newly written executable on its first run. The fakes exit 2 on argv our builders never produce, so drift fails loudly.
 - **Security middleware.** The Host/Origin guard and JSON-only mutations apply to every route. Never add CORS headers.

@@ -37,6 +37,15 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud, and from
 - The quality is YouTube's (see Quality), never dressed up: the source line shows the YouTube stream.
 - When no upload matches, the track fails with "No YouTube upload matches", and pasting a YouTube or SoundCloud link of the track instead is the way out.
 
+### 2c. Remix suggestions
+- Under a single track's card (YouTube, SoundCloud or Spotify), a **Remixes** section lists up to 20 remixes of the song found on YouTube and SoundCloud, most played first. The card and its auto-download work as before; the section never holds them up.
+- What counts: another producer's remix, rework, flip, VIP or dub; bootlegs and someone else's edits; the original artist's extended or club mix. Covers, live takes, sped-up or slowed re-uploads, karaoke, mashups and hour-long loops don't. A pasted remix finds the song's other remixes.
+- One row per version, even when it is uploaded on both platforms or by several channels: its title, who made it ("Remix by Arty", "Bootleg by X", "Extended mix"), a genre tag when one is known, a chip per platform with its views or plays, and the length.
+- The genre comes from SoundCloud's genre field when the uploader set one, or from a genre the title, tags or description name ("afro house remix"); a named genre is shown as such, and none is guessed beyond the words. Chips above the list filter by genre.
+- **Download** takes the version's most-played upload into the current folder and format, like any track; a menu picks another upload. The row then follows the job.
+- YouTube's results show within a few seconds; SoundCloud's search can take ten, and its rows join the list when they arrive. A failed search on one platform leaves the other's rows and says why.
+- SoundCloud's search spends a request from the same budget as SoundCloud lookups and downloads. Results are kept for 30 minutes, so pasting the song again searches nothing.
+
 ### 3. Playlist → pick → download
 - Header: artwork, title, owner, track count ("50 of 214" when the list is cut), total duration ("≈" when some are unknown).
 - A page that lists sets or playlists instead of tracks (a SoundCloud user's Sets or Albums tab, a YouTube channel's Playlists tab) shows them as links; opening one loads it.

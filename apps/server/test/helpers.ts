@@ -109,6 +109,8 @@ export type FakeYtdlpRule = {
   hang?: boolean
   /** A case of test/fixtures/downloads, or the absolute prefix of a test's own `.stdout.log`/`.stderr.log`. */
   download?: string
+  /** A preview run (ADR-029): the extension of the fake stream it writes (m4a, mp3 or webm). */
+  preview?: string
   /** The ffprobe JSON the downloaded file probes as (relative to test/fixtures, or absolute). */
   probe?: string
   /** Sleeps this long before every replayed line after the first. */

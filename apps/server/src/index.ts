@@ -94,7 +94,7 @@ const settings = await createSettingsStore({ dataDir: dataDirReal, defaultFolder
 
 const health = cachedHealthCheck(() => checkHealth(config.engine, new Date()))
 // Every event is checked against the contract in dev (tests turn it on in their own harnesses).
-const { resolver, enricher, remixes, queue, streams, locate } = createServices({
+const { resolver, enricher, remixes, previews, queue, streams, locate } = createServices({
   engine: config.engine,
   dataDirReal,
   settings,
@@ -112,6 +112,7 @@ try {
       resolver,
       enricher,
       remixes,
+      previews,
       queue,
       settings,
       onConcurrency: (concurrency) => queue.setConcurrency(concurrency),
@@ -130,7 +131,7 @@ try {
   }
   throw error
 }
-services = { lock, settings, queue, streams, running }
+services = { lock, settings, queue, previews, streams, running }
 // A signal that came while starting found nothing to stop and has exited already.
 lock.setPort(running.port)
 console.log(

@@ -35,6 +35,7 @@ import { type RunningServer, startServer } from '../src/server.ts'
 import { createServices } from '../src/services.ts'
 import { createSettingsStore, type SettingsStore } from '../src/settings/store.ts'
 import { shutDown } from '../src/shutdown.ts'
+import { UNUSED_PREVIEW_DEPS } from '../src/stubs.ts'
 import { errnoCode } from '../src/util/errno.ts'
 import {
   type FakeEngine,
@@ -415,6 +416,7 @@ export async function startDownloadsApp(
       resolver,
       enricher,
       remixes,
+      ...UNUSED_PREVIEW_DEPS,
       queue,
       settings,
       onConcurrency: (n) => queue.setConcurrency(n),

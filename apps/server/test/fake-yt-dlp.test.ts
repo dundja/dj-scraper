@@ -5,7 +5,7 @@ import { classifyUrl } from '@dj-scraper/shared'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { canHoldCover } from '../src/engine/finalize-plan.ts'
 import { killActiveGroups, type RunResult, run } from '../src/engine/run.ts'
-import { downloadArgs, resolveArgs, searchArgs } from '../src/engine/ytdlp-args.ts'
+import { downloadArgs, previewArgs, resolveArgs, searchArgs } from '../src/engine/ytdlp-args.ts'
 import { remixQuery, SEARCH_COUNTS, songOf } from '../src/remix/suggest.ts'
 import { SEARCH_RESULTS, searchQuery } from '../src/spotify/match.ts'
 import {
@@ -72,7 +72,13 @@ const ids = (info: Info): (string | undefined)[] => (info.entries ?? []).map((en
 const MANIFEST_RULES = (JSON.parse(fixtureText('fake-yt-dlp.json')) as { rules: FakeYtdlpRule[] })
   .rules
 /** The rules for -J calls, and those that replay a recorded download (fixtures/downloads). */
-const INFO_RULES = MANIFEST_RULES.filter((rule) => rule.download === undefined)
+const INFO_RULES = MANIFEST_RULES.filter(
+  (rule) => rule.download === undefined && rule.preview === undefined,
+)
+/** The rules for preview runs (ADR-029): a fake stream of the rule's extension. */
+const PREVIEW_RULES = MANIFEST_RULES.filter(
+  (rule): rule is FakeYtdlpRule & { preview: string } => rule.preview !== undefined,
+)
 const DOWNLOAD_RULES = MANIFEST_RULES.filter(
   (rule): rule is FakeDownloadRule => rule.download !== undefined,
 )
@@ -1012,6 +1018,114 @@ describe('fake yt-dlp: downloads', () => {
     const { result } = await runDownload(ytdlp, downloadArgv(url, await newJobDir()))
     expect(result.exitCode).toBe(2)
     expect(result.stderr).toContain('hangAfter 4, but the case has 3 lines')
+  })
+})
+
+describe('fake yt-dlp: previews', () => {
+  const argvFor = (url: string, platform: 'youtube' | 'soundcloud', dir: string) =>
+    previewArgs({ url, platform, tempDir: dir, jsRuntime: process.execPath })
+
+  async function runPreview(argv: string[], knobs: FakeYtdlpKnobs = {}) {
+    const ytdlp = await writeFakeYtdlp(path.join(root, `preview-fake-${++previewRuns}`), {
+      env: knobs,
+    })
+    return run(ytdlp.path, argv)
+  }
+  let previewRuns = 0
+
+  it.each(PREVIEW_RULES.map((rule) => [`${rule.preview} (${rule.url})`, rule] as const))(
+    'writes the stream of rule %s and prints its path',
+    async (_name, rule) => {
+      const platform = rule.url.includes('soundcloud.com') ? 'soundcloud' : 'youtube'
+      const dir = await newJobDir()
+      const result = await runPreview(argvFor(rule.url, platform, dir))
+      expect(result.exitCode, result.stderr).toBe(0)
+      const printed = JSON.parse(result.stdout.replace(/^PREVIEW /, '').trim()) as {
+        filepath: string
+      }
+      expect(path.dirname(printed.filepath)).toBe(dir)
+      expect(path.extname(printed.filepath)).toBe(`.${rule.preview}`)
+      const bytes = await readFile(printed.filepath)
+      // The FAKEAUDIO header, then 6000 bytes where byte i is i % 251.
+      expect(bytes.subarray(0, 10).toString()).toBe('FAKEAUDIO ')
+      expect(bytes.subarray(-6000).every((byte, i) => byte === i % 251)).toBe(true)
+      expect(result.stderr).toBe('')
+      expect(await readdir(dir)).toEqual([path.basename(printed.filepath)])
+    },
+  )
+
+  it("names the file by the watch URL's v, or the last path segment", async () => {
+    const dir = await newJobDir()
+    const result = await runPreview(argvFor(URLS.video, 'youtube', dir))
+    expect(result.stdout).toContain('/jNQXAC9IVRw.m4a')
+    const soundcloud = await runPreview(
+      argvFor('https://soundcloud.com/dj-scraper-fake/hls-mp3', 'soundcloud', dir),
+    )
+    expect(soundcloud.stdout).toContain('/hls-mp3.mp3')
+  })
+
+  it('answers extraction errors like yt-dlp does, and the Go+ break with a silent 101', async () => {
+    const dir = await newJobDir()
+    const geo = await runPreview(
+      argvFor('https://www.youtube.com/watch?v=GEOBLOCKED1', 'youtube', dir),
+    )
+    expect(geo.exitCode).toBe(1)
+    expect(geo.stderr).toBe(fixtureText('errors/youtube-geo-blocked.log'))
+    expect(geo.stdout).toBe('')
+    const goPlus = await runPreview(
+      argvFor('https://soundcloud.com/dj-scraper-fake/go-plus-preview', 'soundcloud', dir),
+    )
+    expect(goPlus).toMatchObject({ exitCode: 101, stdout: '', stderr: '' })
+    expect(await readdir(dir)).toEqual([])
+  })
+
+  it('does not answer a preview with an info or download rule, or the other way round', async () => {
+    const dir = await newJobDir()
+    // jNQXAC9IVRw has an info rule and a preview rule: -J gets the document, never the stream.
+    const info = await runPreview([...BASE, '-J', '--flat-playlist', '--', URLS.video])
+    expect(JSON.parse(info.stdout)).toMatchObject({ id: 'jNQXAC9IVRw' })
+    // A URL with no preview rule is an unsupported URL, as for any unknown link.
+    const unknown = await runPreview(
+      argvFor('https://www.youtube.com/watch?v=NOPREVIEW00', 'youtube', dir),
+    )
+    expect(unknown.exitCode).toBe(1)
+    expect(unknown.stderr).toContain('Unsupported URL')
+  })
+
+  it.each([
+    ['-x', ['-x']],
+    ['--write-thumbnail', ['--write-thumbnail']],
+  ])('exits 2 when a preview asks for %s (it is the stream as it is)', async (_name, extra) => {
+    const dir = await newJobDir()
+    const argv = argvFor(URLS.video, 'youtube', dir)
+    argv.splice(argv.indexOf('--no-playlist'), 0, ...extra)
+    const result = await runPreview(argv)
+    expect(result.exitCode).toBe(2)
+    expect(result.stderr).toContain('fake-yt-dlp:')
+  })
+
+  it.each([
+    ['--no-playlist', 1],
+    ['--abort-on-unavailable-fragments', 1],
+    ['--max-filesize', 2],
+    ['--no-mtime', 1],
+  ] as const)('exits 2 when a preview lacks %s', async (flag, width) => {
+    const dir = await newJobDir()
+    const argv = argvFor(URLS.video, 'youtube', dir)
+    argv.splice(argv.indexOf(flag), width)
+    const result = await runPreview(argv)
+    expect(result.exitCode).toBe(2)
+    expect(result.stderr).toContain('fake-yt-dlp:')
+  })
+
+  it('exits 2 for a relative -P, and without -- before the URL', async () => {
+    const relative = argvFor(URLS.video, 'youtube', '/x')
+    relative[relative.indexOf('-P') + 1] = 'relative'
+    expect((await runPreview(relative)).exitCode).toBe(2)
+    const dir = await newJobDir()
+    const noSeparator = argvFor(URLS.video, 'youtube', dir)
+    noSeparator.splice(noSeparator.indexOf('--'), 1)
+    expect((await runPreview(noSeparator)).exitCode).toBe(2)
   })
 })
 

@@ -15,6 +15,9 @@ import {
   HealthSchema,
   type Job,
   JobSchema,
+  type PreviewReady,
+  PreviewReadySchema,
+  type PreviewRequest,
   type RemixRequest,
   type RemixSuggestions,
   RemixSuggestionsSchema,
@@ -190,6 +193,13 @@ export const api = {
    */
   remixes: (body: RemixRequest, signal?: AbortSignal): Promise<RemixSuggestions> =>
     request('/remixes', RemixSuggestionsSchema, { method: 'POST', body, signal }),
+
+  /**
+   * Fetches an upload's audio stream as it is into the server's preview cache (ADR-029), which can
+   * take several seconds, and answers with the same-origin `src` for an `<audio>` element.
+   */
+  createPreview: (body: PreviewRequest, signal?: AbortSignal): Promise<PreviewReady> =>
+    request('/previews', PreviewReadySchema, { method: 'POST', body, signal }),
 
   /**
    * Queues one job per distinct track; `jobIds` maps each item to its job. The server also adds

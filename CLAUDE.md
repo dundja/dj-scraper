@@ -8,7 +8,7 @@ A local web app for DJs. Paste a YouTube, SoundCloud or Spotify link (track or p
 - Phase 2 (download pipeline): the paced download queue, finalize (one ffmpeg pass plus our ID3 writer, every file read back), publishing that never overwrites, the data-dir lock and startup sweep, settings, the folder picker, reveal and `GET /api/events`, with typed web client calls and one event stream feeding `['downloads']`.
 - Phase 3 (UI): paste, drop or type a link (instant badge, a cancelable resolve per paste); the track card auto-downloads; the collection view (virtualized table, selection, filter, SoundCloud rows filled in as they scroll into view, `Collection.lists` to open) with its download bar; the downloads panel beside the page; the header's folder picker (folders checked and read when chosen) and the format select; the engine banner; Playwright e2e of both flows on the fake engine (ADR-020 to ADR-025).
 
-Phase 4 (DJ polish) is under way: Spotify links as track lists, matched on YouTube, are in (ADR-026), and so are remix suggestions under a pasted track, searched on YouTube and SoundCloud (ADR-027), pasted Spotify track links as one list past the embed page's 100 rows (ADR-028), and "Hide downloaded" in the track table. Phase 3's follow-ups are at its end. The current phase and next items are in `docs/roadmap.md`.
+Phase 4 (DJ polish) is under way: remix rows can be played in the app with a speed grid (ADR-029); Spotify links as track lists, matched on YouTube, are in (ADR-026), and so are remix suggestions under a pasted track, searched on YouTube and SoundCloud (ADR-027), pasted Spotify track links as one list past the embed page's 100 rows (ADR-028), and "Hide downloaded" in the track table. Phase 3's follow-ups are at its end. The current phase and next items are in `docs/roadmap.md`.
 
 ## Where things are explained
 | Need | Read |
@@ -58,7 +58,7 @@ docs/              product, architecture, decisions, roadmap
 
 ## Non-negotiables
 1. **No shell for user input.** yt-dlp and ffmpeg run only through `apps/server/src/engine/run.ts`: argv array, `shell: false`, `--ignore-config`, URL after `--`.
-2. **Files go only where the user said.** Resolve every output path and assert it is inside the chosen folder. Sanitize filenames. Never overwrite silently.
+2. **Files go only where the user said.** Resolve every output path and assert it is inside the chosen folder. Sanitize filenames. Never overwrite silently. The one exception is the server's own preview cache in its data dir (ADR-029): streams fetched to be played, never published.
 3. **The local server is not public.** Bind `127.0.0.1`. Keep the Host/Origin guard and JSON-only mutations on every route. No CORS headers.
 4. **One contract.** Every API and SSE shape is a Zod schema in `packages/shared`, and both sides change together. No `any`.
 5. **Tests stay offline.** Unit, integration and e2e tests use recorded fixtures and the fake engine. Only `pnpm smoke` goes live.

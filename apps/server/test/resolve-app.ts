@@ -12,7 +12,7 @@ import { createEnricher, type Pacing } from '../src/resolve/enricher.ts'
 import { createResolver } from '../src/resolve/resolver.ts'
 import { type RunningServer, startServer } from '../src/server.ts'
 import { createSpotifyClient } from '../src/spotify/client.ts'
-import { UNUSED_DOWNLOAD_DEPS } from '../src/stubs.ts'
+import { UNUSED_DOWNLOAD_DEPS, UNUSED_PREVIEW_DEPS } from '../src/stubs.ts'
 import {
   type FakeYtdlp,
   type FakeYtdlpCall,
@@ -105,6 +105,7 @@ export async function startResolveApp(
       resolver,
       enricher,
       remixes,
+      ...UNUSED_PREVIEW_DEPS,
       ...UNUSED_DOWNLOAD_DEPS,
     }),
   )

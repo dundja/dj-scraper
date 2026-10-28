@@ -18,7 +18,7 @@ import { createApp } from '../app.ts'
 import { ApiError, ERROR_STATUS } from '../http/errors.ts'
 import type { Enricher } from '../resolve/enricher.ts'
 import type { Resolver } from '../resolve/resolver.ts'
-import { UNUSED_DOWNLOAD_DEPS, UNUSED_REMIX_DEPS } from '../stubs.ts'
+import { UNUSED_DOWNLOAD_DEPS, UNUSED_PREVIEW_DEPS, UNUSED_REMIX_DEPS } from '../stubs.ts'
 import { LINKS_BODY_LIMIT_BYTES } from './resolve.ts'
 
 const PORT = 4747
@@ -111,6 +111,7 @@ function setup({
     enricher,
     webRoot,
     ...UNUSED_REMIX_DEPS,
+    ...UNUSED_PREVIEW_DEPS,
     ...UNUSED_DOWNLOAD_DEPS,
   })
   return { app, resolver, enricher }

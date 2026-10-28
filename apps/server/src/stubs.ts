@@ -3,6 +3,7 @@ import type { Queue } from './jobs/queue.ts'
 import type { DownloadsDeps } from './routes/downloads.ts'
 import type { EventsDeps } from './routes/events.ts'
 import type { FolderDeps } from './routes/folders.ts'
+import type { PreviewDeps } from './routes/previews.ts'
 import type { RemixDeps } from './routes/remixes.ts'
 import type { ResolveDeps } from './routes/resolve.ts'
 import type { SettingsDeps } from './routes/settings.ts'
@@ -24,6 +25,14 @@ export const UNUSED_RESOLVE_DEPS: ResolveDeps = {
 }
 
 export const UNUSED_REMIX_DEPS: RemixDeps = { remixes: { find: unused('remixes.find') } }
+
+export const UNUSED_PREVIEW_DEPS: PreviewDeps = {
+  previews: {
+    prepare: unused('previews.prepare'),
+    open: unused('previews.open'),
+    close: unused('previews.close'),
+  },
+}
 
 const UNUSED_QUEUE: Queue = {
   add: fails('queue.add'),
@@ -67,4 +76,9 @@ export const UNUSED_DOWNLOAD_DEPS: Omit<DownloadsDeps, 'enricher'> &
 }
 
 /** Every service but health. */
-export const UNUSED_DEPS = { ...UNUSED_RESOLVE_DEPS, ...UNUSED_REMIX_DEPS, ...UNUSED_DOWNLOAD_DEPS }
+export const UNUSED_DEPS = {
+  ...UNUSED_RESOLVE_DEPS,
+  ...UNUSED_REMIX_DEPS,
+  ...UNUSED_PREVIEW_DEPS,
+  ...UNUSED_DOWNLOAD_DEPS,
+}

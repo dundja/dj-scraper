@@ -424,6 +424,26 @@
       "download": "local-progressive-429",
       "exit": 1,
       "note": "Recorded offline against a local server; nothing is contacted. The download request answered 429."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+      "preview": "m4a",
+      "note": "Preview (ADR-029): the AAC stream (format 140) as it is. Synthetic bytes; the argv is previews/youtube-m4a.argv.json's."
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=PREVIEWWEBM",
+      "preview": "webm",
+      "note": "Preview: a YouTube upload with no AAC stream, so the Opus WebM (format 251). Made-up URL."
+    },
+    {
+      "url": "https://soundcloud.com/dj-scraper-fake/hls-mp3",
+      "preview": "mp3",
+      "note": "Preview: a SoundCloud MP3 stream. Made-up URL (the same track as its download rule)."
+    },
+    {
+      "url": "https://soundcloud.com/dj-scraper-fake/go-plus-preview",
+      "exit": 101,
+      "note": "Preview: a Go+ track without a subscription. The break filter ends the run silently with exit 101 (downloads/soundcloud-preview-break). Made-up URL."
     }
   ]
 }

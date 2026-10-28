@@ -135,6 +135,23 @@ describe('prepareDataDir', () => {
     expect(await mode(path.join(given, 'jobs'))).toBe(0o700)
   })
 
+  it('creates the preview cache folder (ADR-029) as 0700, and tightens one that is ours', async () => {
+    const given = path.join(root, 'cache-data')
+    await prepareDataDir(given)
+    expect(await mode(path.join(given, 'previews'))).toBe(0o700)
+    await chmod(path.join(given, 'previews'), 0o755)
+    await writeFile(path.join(given, 'server.lock'), '{}')
+    await prepareDataDir(given)
+    expect(await mode(path.join(given, 'previews'))).toBe(0o700)
+  })
+
+  it('refuses a previews folder that is a symlink', async () => {
+    const dir = path.join(root, 'linked')
+    await mkdir(path.join(dir, 'jobs'), { recursive: true })
+    await symlink(root, path.join(dir, 'previews'))
+    await expect(prepareDataDir(dir)).rejects.toThrow(/previews folder is a symbolic link/)
+  })
+
   it('returns the real path through a symlinked parent', async () => {
     await mkdir(path.join(root, 'real'))
     await symlink(path.join(root, 'real'), path.join(root, 'link'))
@@ -402,6 +419,49 @@ describe('sweepLeftovers', () => {
     ])
     expect(os.sleeps).toEqual([])
     expect(await readdir(jobs())).toEqual([])
+  })
+
+  it('kills the group of a leftover preview fetch and empties previews/ (ADR-029)', async () => {
+    const previews = path.join(root, 'previews')
+    await mkdir(path.join(previews, testUuid(2)), { recursive: true })
+    await writeFile(path.join(previews, testUuid(2), 'x.m4a.part'), 'half')
+    await writeFile(path.join(previews, `${'ab'.repeat(16)}.m4a`), 'cached')
+    await symlink(root, path.join(previews, 'link'))
+    const os = fakeOs([
+      `500 500 python yt-dlp -P ${previews}/${testUuid(2)} -o %(id)s.%(ext)s`,
+      `600 600 /usr/bin/other ${previews}`,
+    ])
+    const result = await sweepLeftovers(root, {
+      run: os.runFn,
+      kill: os.kill,
+      sleep: os.sleep,
+      pid: ME,
+      log: log(),
+    })
+    expect(result.killed).toBe(1)
+    expect(os.signals.map(([pid]) => pid)).toEqual([-500, -500])
+    expect(await readdir(previews)).toEqual([])
+    // The symlink was removed, not followed.
+    expect((await readdir(root)).includes('x.m4a.part')).toBe(false)
+  })
+
+  it('does not count previews in what it removed, and copes with no previews folder', async () => {
+    await mkdir(path.join(root, 'previews'))
+    await writeFile(path.join(root, 'previews', `${'cd'.repeat(16)}.mp3`), 'x')
+    const os = fakeOs([])
+    const result = await sweepLeftovers(root, {
+      run: os.runFn,
+      kill: os.kill,
+      sleep: os.sleep,
+      pid: ME,
+      log: log(),
+    })
+    expect(result).toEqual({ killed: 0, removed: 0, parts: 0 })
+    expect(await readdir(path.join(root, 'previews'))).toEqual([])
+    await rm(path.join(root, 'previews'), { recursive: true })
+    await expect(
+      sweepLeftovers(root, { run: os.runFn, kill: os.kill, sleep: os.sleep, pid: ME, log: log() }),
+    ).resolves.toEqual({ killed: 0, removed: 0, parts: 0 })
   })
 
   it('waits up to 2 s for the killed groups to be gone', async () => {

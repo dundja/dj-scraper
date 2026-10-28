@@ -2,7 +2,7 @@ import { HttpUrlSchema, type JobProgress, MAX_URL_LENGTH } from '@dj-scraper/sha
 import * as z from 'zod'
 import type { DoneInfo, StartInfo } from '../jobs/types.ts'
 import { lenient, omitUndefined } from '../util/fields.ts'
-import { LINE_PREFIX } from './ytdlp-args.ts'
+import { LINE_PREFIX, PREVIEW_LINE_PREFIX } from './ytdlp-args.ts'
 
 /**
  * Pure: one line of a download run (see `downloadArgs`) → what it says, or undefined.
@@ -226,3 +226,17 @@ function doneLine(json: object | undefined): DownloadLine | undefined {
     },
   }
 }
+
+/**
+ * Pure: a preview run's `PREVIEW {"filepath": "…"}` line (see `previewArgs`) → the file's path, or
+ * undefined for anything else. The caller still checks that the path is a regular file inside the
+ * run's temp dir. Never throws.
+ */
+export function parsePreviewLine(line: string): string | undefined {
+  const text = line.trimEnd()
+  if (!text.startsWith(PREVIEW_LINE_PREFIX)) return undefined
+  const parsed = PreviewSchema.safeParse(jsonAfter(text, PREVIEW_LINE_PREFIX))
+  return parsed.success ? parsed.data.filepath : undefined
+}
+
+const PreviewSchema = z.looseObject({ filepath: lenient(z.string().min(1).max(4096)) })

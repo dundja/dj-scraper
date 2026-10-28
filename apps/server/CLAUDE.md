@@ -21,7 +21,7 @@ src/
                     with an optional status override, status map), security-headers.ts (anti-framing, nosniff,
                     no-referrer on every response), json.ts (readJson(c, Schema), jsonBodyLimit, jsonBodyLimitOf)
   routes/           system.ts (health, recheck), resolve.ts (resolve, links, entries), remixes.ts (POST /api/remixes,
-                    ADR-027), downloads.ts (create, list, cancel,
+                    ADR-027), previews.ts (POST /api/previews, GET /api/previews/:id with ranges, ADR-029), downloads.ts (create, list, cancel,
                     retry, reveal, bulk cancel/retry/clear), events.ts (SSE: createEventStreams), settings.ts
                     (a changed folder is checked like a picked one; PUTs apply one at a time, in arrival
                     order), folders.ts (folder picker, then
@@ -59,6 +59,9 @@ src/
                     finder.ts (createRemixFinder: one yt-dlp search per platform through a per-platform
                     limiter, SoundCloud's from the shared bucket; searches shared while in flight and
                     cached 30 min on success)
+  preview/          ADR-029: plan.ts (pure: previewId, mime table, parseRange, planEviction), store.ts
+                    (createPreviewStore: checkUrl, cache in <dataDir>/previews, single flight per id, 2 fetches
+                    at once, SoundCloud token from the shared bucket, LRU 20 files / 400 MB)
   spotify/          ADR-026: embed.ts (pure: the embed page's entity → Track/Collection), client.ts (the only code
                     that talks to Spotify: embed pages and covers over HTTPS), match.ts (pure: search query,
                     results, pickMatch), matcher.ts (a Spotify job's match step: embed → ytsearch → pickMatch)

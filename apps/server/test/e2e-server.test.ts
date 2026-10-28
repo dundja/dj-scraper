@@ -13,6 +13,7 @@ import {
   DownloadsSnapshotSchema,
   HealthSchema,
   JobSchema,
+  PreviewReadySchema,
   ResolveEntriesResponseSchema,
   ResolveResultSchema,
   type Settings,
@@ -23,6 +24,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 // The URLs the e2e specs use; the e2e-only rules below must answer them as that file says.
 import {
+  REMIX_PREVIEW_GEO_URL,
+  REMIX_PREVIEW_GO_PLUS_URL,
   SPOTIFY_ALBUM,
   SPOTIFY_ARTIST,
   SPOTIFY_MISSING_TRACK,
@@ -334,6 +337,65 @@ describe('e2e-server', () => {
     controller.abort()
     expect(await slow).toBeInstanceOf(Error)
     await expect.poll(() => alive(pid)).toBe(false)
+
+    child.kill('SIGTERM')
+    expect(await exited).toEqual([0, null])
+  })
+
+  it('plays the remix uploads (ADR-029): a preview prepares and serves with ranges, two fail', {
+    timeout: 20_000,
+  }, async () => {
+    const port = await freePort()
+    const { child, output, exited } = start({ PORT: String(port), DJS_WEB_DIST: webDist })
+    await ready(port, output)
+
+    const upload = { platform: 'youtube', id: 's5wTiLJ9NVs' } as const
+    const ok = await api(port, '/previews', PreviewReadySchema, {
+      ...upload,
+      url: `https://www.youtube.com/watch?v=${upload.id}`,
+    })
+    expect(ok).toMatchObject({ mime: 'audio/mp4', src: `/api/previews/${ok.id}` })
+    const whole = await fetch(`http://127.0.0.1:${port}${ok.src}`)
+    expect(whole.status).toBe(200)
+    expect((await whole.arrayBuffer()).byteLength).toBe(ok.sizeBytes)
+    const part = await fetch(`http://127.0.0.1:${port}${ok.src}`, {
+      headers: { range: 'bytes=0-9' },
+    })
+    expect(part.status).toBe(206)
+    expect(part.headers.get('content-range')).toBe(`bytes 0-9/${ok.sizeBytes}`)
+
+    // The Kryptonik remix, the one SoundCloud upload that also downloads.
+    const search = z
+      .object({ entries: z.array(z.object({ id: z.string(), webpage_url: z.string() })) })
+      .parse(
+        JSON.parse(
+          await readFile(
+            path.join(import.meta.dirname, 'fixtures/soundcloud/search-remixes-never-gonna.json'),
+            'utf8',
+          ),
+        ),
+      )
+    const kryptonik = search.entries.find((entry) => entry.id === '83083711')
+    if (kryptonik === undefined) throw new Error('the Kryptonik upload is not in the recording')
+    const soundcloud = await api(port, '/previews', PreviewReadySchema, {
+      platform: 'soundcloud',
+      id: kryptonik.id,
+      url: kryptonik.webpage_url,
+    })
+    expect(soundcloud.mime).toBe('audio/mp4')
+
+    const failed = async (platform: 'youtube' | 'soundcloud', id: string, url: string) => {
+      const res = await post(port, '/previews', { platform, id, url })
+      return { status: res.status, code: ApiErrorBodySchema.parse(await res.json()).error.code }
+    }
+    expect(await failed('soundcloud', '293956543', REMIX_PREVIEW_GO_PLUS_URL)).toEqual({
+      status: 422,
+      code: 'preview_only',
+    })
+    expect(await failed('youtube', 'k5zzJ_yWT_k', REMIX_PREVIEW_GEO_URL)).toEqual({
+      status: 422,
+      code: 'geo_blocked',
+    })
 
     child.kill('SIGTERM')
     expect(await exited).toEqual([0, null])

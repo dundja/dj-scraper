@@ -17,6 +17,8 @@ import { errnoCode, failureName } from './util/errno.ts'
 
 export const LOCK_FILE = 'server.lock'
 export const JOBS_DIR = 'jobs'
+/** The preview cache (ADR-029): files of the app's own player, emptied at startup and shutdown. */
+export const PREVIEWS_DIR = 'previews'
 /** How long a second server waits for the previous one to finish its shutdown (8 s) and let go. */
 export const LOCK_WAIT_MS = 9000
 const LOCK_POLL_MS = 250
@@ -74,6 +76,8 @@ export async function prepareDataDir(
     const real = await realpath(dataDir)
     const jobs = path.join(real, JOBS_DIR)
     if ((await ownDir(jobs, dataDir, uid)) || ours) await chmod(jobs, 0o700)
+    const previews = path.join(real, PREVIEWS_DIR)
+    if ((await ownDir(previews, dataDir, uid)) || ours) await chmod(previews, 0o700)
     return real
   } catch (error) {
     if (error instanceof DataDirError) throw error
@@ -112,7 +116,7 @@ async function ownDir(dir: string, dataDir: string, uid: number | undefined): Pr
     }
     return true
   }
-  const what = dir === dataDir ? 'The app data folder' : 'Its jobs folder'
+  const what = dir === dataDir ? 'The app data folder' : `Its ${path.basename(dir)} folder`
   if (stats.isSymbolicLink()) throw new DataDirError(`${what} is a symbolic link`, dataDir)
   if (!stats.isDirectory()) throw new DataDirError(`${what} is not a folder`, dataDir)
   if (uid !== undefined && stats.uid !== uid) {
@@ -362,6 +366,7 @@ export async function sweepLeftovers(
 ): Promise<SweepResult> {
   const fs: SweepFs = { ...realFs, ...fsOverrides }
   const killed = await killLeftovers(dataDirReal, runFn, kill, sleep, log, pid)
+  await emptyPreviews(path.join(dataDirReal, PREVIEWS_DIR), fs, log)
   const jobsDir = path.join(dataDirReal, JOBS_DIR)
   let names: string[]
   try {
@@ -403,6 +408,31 @@ export async function sweepLeftovers(
   return { killed, removed, parts }
 }
 
+/** Removes everything in `previews/` (the cache is rebuilt from the sites); never follows a symlink. */
+async function emptyPreviews(dir: string, fs: SweepFs, log: Logger): Promise<void> {
+  let names: string[]
+  try {
+    names = await fs.readdir(dir)
+  } catch (error) {
+    if (errnoCode(error) !== 'ENOENT') {
+      log.warn(`[server] Can't read the previews folder (${failureName(error)}): not sweeping it`)
+    }
+    return
+  }
+  for (const name of names) {
+    const entry = path.join(dir, name)
+    try {
+      const stats = await fs.lstat(entry)
+      if (stats.isDirectory()) await fs.rmTree(entry)
+      else await fs.unlink(entry)
+    } catch (error) {
+      if (errnoCode(error) !== 'ENOENT') {
+        log.warn(`[server] Can't remove a leftover preview (${failureName(error)})`)
+      }
+    }
+  }
+}
+
 async function killLeftovers(
   dataDirReal: string,
   runFn: typeof run,
@@ -426,7 +456,13 @@ async function killLeftovers(
     log.warn("[server] Can't find this server in the process list: leftover jobs keep running")
     return 0
   }
-  const groups = leftoverGroups(rows, `${dataDirReal}/${JOBS_DIR}/`, self.pgid)
+  // A job's yt-dlp names `jobs/<uuid>`, a preview's fetch `previews/<uuid>` (ADR-029).
+  const groups = [
+    ...new Set([
+      ...leftoverGroups(rows, `${dataDirReal}/${JOBS_DIR}/`, self.pgid),
+      ...leftoverGroups(rows, `${dataDirReal}/${PREVIEWS_DIR}/`, self.pgid),
+    ]),
+  ]
   for (const group of groups) signalGroup(kill, group, 'SIGKILL')
   // Until they're gone, a dying ffmpeg could still write into a job dir the sweep removes. The
   // wait signals again, so a member forked while the first signal went out goes too.

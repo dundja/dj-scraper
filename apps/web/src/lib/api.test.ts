@@ -6,6 +6,8 @@ import {
   DownloadRequestSchema,
   type EntryResult,
   FolderPickRequestSchema,
+  type PreviewRequest,
+  PreviewRequestSchema,
   type RemixRequest,
   RemixRequestSchema,
   type ResolveEntriesRequest,
@@ -958,5 +960,58 @@ describe('api.pickFolder', () => {
 
     expect(error).not.toBeInstanceOf(ApiError)
     expect(error).toBe(reason)
+  })
+})
+
+describe('api.createPreview', () => {
+  const previewRequest: PreviewRequest = {
+    platform: 'youtube',
+    id: 'Kp7eSUU9oy8',
+    url: 'https://www.youtube.com/watch?v=Kp7eSUU9oy8',
+  }
+  const ready = {
+    id: 'a'.repeat(32),
+    src: `/api/previews/${'a'.repeat(32)}`,
+    mime: 'audio/mp4',
+    sizeBytes: 3_400_000,
+  }
+
+  it('posts the upload as its exact JSON body to /api/previews and returns the ready answer', async () => {
+    server.on('POST /api/previews', () => json(ready))
+
+    await expect(api.createPreview(previewRequest)).resolves.toEqual(ready)
+
+    const [call] = server.callsTo('POST /api/previews')
+    expect(call?.headers.get('Content-Type')).toBe('application/json')
+    expect(PreviewRequestSchema.parse(jsonBody(call))).toEqual(previewRequest)
+  })
+
+  it('reports an answer that breaks the contract as an invalid response', async () => {
+    server.on('POST /api/previews', () => json({ ...ready, src: 'https://example.com/a.m4a' }))
+
+    const error = await rejection(api.createPreview(previewRequest))
+
+    expect(error).toMatchObject({ kind: 'invalid_response' })
+  })
+
+  it('reports the normal error body as an api error', async () => {
+    server.on('POST /api/previews', () =>
+      json({ error: { code: 'unavailable', message: 'This upload was removed.' } }, 404),
+    )
+
+    const error = await rejection(api.createPreview(previewRequest))
+
+    expect(error).toMatchObject({ kind: 'api', status: 404, code: 'unavailable' })
+  })
+
+  it("rejects with the signal's reason when the request is aborted", async () => {
+    server.on('POST /api/previews', noAnswer)
+    const controller = new AbortController()
+    const reason = new DOMException('Canceled', 'AbortError')
+
+    const pending = api.createPreview(previewRequest, controller.signal)
+    controller.abort(reason)
+
+    expect(await rejection(pending)).toBe(reason)
   })
 })

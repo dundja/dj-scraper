@@ -133,6 +133,17 @@ export { type HealthProblem, healthProblems } from './health-problems.ts'
 export { type Platform, PlatformSchema, pacingPlatform } from './platform.ts'
 export { loopbackHosts, PortSchema, SERVER_PORT, WEB_DEV_PORT } from './ports.ts'
 export {
+  PREVIEW_ID_PATTERN,
+  PREVIEW_RATE_MAX,
+  PREVIEW_RATE_MIN,
+  PREVIEW_RATE_PRESETS,
+  PREVIEW_RATE_STEP,
+  type PreviewReady,
+  PreviewReadySchema,
+  type PreviewRequest,
+  PreviewRequestSchema,
+} from './preview.ts'
+export {
   type GenreSource,
   GenreSourceSchema,
   MAX_GENRE_LENGTH,

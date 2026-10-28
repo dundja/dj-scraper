@@ -36,6 +36,15 @@
 //   A download call only matches download rules and extraction errors (a rule without stdout and
 //   with a non-zero exit: yt-dlp fails the same way before it downloads). Other calls never match
 //   download rules, so a URL can have a -J rule and a download rule.
+// - A call without -J that has `--print after_move:PREVIEW …` is a PREVIEW (previewArgs, ADR-029). It
+//   must carry --no-playlist, -f, an absolute -P, `-o %(id)s.%(ext)s`, --abort-on-unavailable-fragments,
+//   --max-filesize 200M and --no-mtime, and neither -x nor a thumbnail option (a preview is the stream
+//   as it is); else exit 2. It matches a preview rule { url, preview: '<ext>', delayMs?, hang?, note? }
+//   and extraction-error rules (no stdout, non-zero exit: `exit: 101` with no stderr is the SoundCloud
+//   Go+ break filter). Its file is `<-P dir>/<id>.<ext>` (the id is the URL's `v` or last path
+//   segment): the FAKEAUDIO header of the recorded source for that extension (m4a, mp3, webm) and
+//   PREVIEW_BYTES bytes of a known pattern (byte i is i % 251), so a test can check ranges. It prints
+//   `PREVIEW {"filepath": "<file>"}` and exits 0.
 // - A search (`ytsearch<N>:<query>` or `scsearch<N>:<query>` after `--`, what spotify/matcher.ts
 //   and remix/finder.ts run through searchArgs) must be a `-J --flat-playlist` lookup with no
 //   playlist flag and no -I (an attempt's search may name its job dir with an absolute -P), and
@@ -126,7 +135,16 @@ const RULE_KEYS = new Set([
   'probe',
   'lineDelayMs',
   'hangAfter',
+  'preview',
 ])
+/** The size of a preview's fake stream after its header, and the extensions it can have. */
+const PREVIEW_BYTES = 6000
+const PREVIEW_PROBES = {
+  m4a: 'ffprobe/src-youtube-140-m4a.json',
+  mp3: 'ffprobe/src-soundcloud-mp3.json',
+  webm: 'ffprobe/src-youtube-251-webm.json',
+}
+const PREVIEW_PRINT = 'after_move:PREVIEW %(.{filepath})j'
 const DOWNLOAD_ONLY_KEYS = ['probe', 'lineDelayMs', 'hangAfter']
 
 /** The design's download argv (§4) that the recorded download cases depend on. */
@@ -201,6 +219,11 @@ function checkRule(rule, where) {
     (rule.playlist !== undefined && rule.playlist !== 'yes' && rule.playlist !== 'no') ||
     !Array.isArray(groups) ||
     !groups.every(isGroup) ||
+    (rule.preview !== undefined &&
+      (isDownload ||
+        rule.stdout !== undefined ||
+        rule.stderr !== undefined ||
+        !Object.hasOwn(PREVIEW_PROBES, rule.preview))) ||
     (rule.stdout !== undefined && (typeof rule.stdout !== 'string' || isDownload)) ||
     (rule.stderr !== undefined && (typeof rule.stderr !== 'string' || isDownload)) ||
     (rule.exit !== undefined &&
@@ -351,6 +374,51 @@ function isDownloadCall(options) {
     (option, i) => options[i - 1] === '--print' && option.startsWith('after_move:DONE'),
   )
   return done && options.includes('-P')
+}
+
+/** A preview: no -J, and the PREVIEW print that only previewArgs has. */
+function isPreviewCall(options) {
+  if (options.includes('-J') || options.includes('--dump-single-json')) return false
+  return options.some(
+    (option, i) => options[i - 1] === '--print' && option.startsWith('after_move:PREVIEW'),
+  )
+}
+
+/** Checks previewArgs' argv; returns the temp dir. */
+function checkPreviewArgv(options, playlist) {
+  if (playlist !== 'no') usage('a preview needs --no-playlist: it fetches one upload')
+  for (const tokens of [
+    ['--abort-on-unavailable-fragments'],
+    ['-o', '%(id)s.%(ext)s'],
+    ['--max-filesize', '200M'],
+    ['--no-mtime'],
+    ['--print', PREVIEW_PRINT],
+  ]) {
+    if (!hasRun(options, tokens)) usage(`a preview needs ${tokens.join(' ')} (ADR-029)`)
+  }
+  for (const flag of ['-x', '--extract-audio', '--write-thumbnail', '--embed-thumbnail']) {
+    if (options.includes(flag)) usage(`a preview is the stream as it is: no ${flag}`)
+  }
+  if (optionValue(options, '-f') === undefined) usage('a preview needs -f <selector>')
+  const dir = optionValue(options, '-P')
+  if (dir === undefined || !path.isAbsolute(dir)) usage('-P needs an absolute temp dir')
+  return path.resolve(dir)
+}
+
+/** The id yt-dlp names the file by: a watch URL's `v`, else the URL's last path segment. */
+function previewIdOf(url) {
+  const parsed = new URL(url)
+  const video = parsed.searchParams.get('v')
+  return video ?? parsed.pathname.split('/').filter(Boolean).at(-1) ?? 'preview'
+}
+
+/** Writes the rule's fake stream into `dir` and prints yt-dlp's line for it. */
+async function replayPreview(rule, dir, url) {
+  mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, `${previewIdOf(url)}.${rule.preview}`)
+  const payload = Buffer.from(Array.from({ length: PREVIEW_BYTES }, (_, i) => i % 251))
+  writeFileSync(file, audioBytes(sourceHeader(PREVIEW_PROBES[rule.preview]), payload))
+  await write('stdout', `PREVIEW ${JSON.stringify({ filepath: file })}\n`)
 }
 
 /** Checks the §4 argv the download fixtures were recorded with; returns the job dir. */
@@ -563,16 +631,22 @@ async function main() {
   const last = lastIndexOfAny(options, ['--yes-playlist', '--no-playlist'])
   const playlist = last !== -1 && options[last] === '--no-playlist' ? 'no' : 'yes'
   const download = isDownloadCall(options)
+  const preview = !download && isPreviewCall(options)
+  const previewDir = preview ? checkPreviewArgv(options, playlist) : undefined
   const jobDir = download ? checkDownloadArgv(options, playlist) : undefined
 
   const extra = knobs.FAKE_YTDLP_MANIFEST
   const recordedRules = loadRules(MANIFEST)
   const rules = [...(extra === undefined ? [] : loadRules(extra)), ...recordedRules]
+  const failsBeforeDownloading = (candidate) =>
+    candidate.stdout === undefined && (candidate.exit ?? 0) !== 0
   const serves = (candidate) =>
     download
-      ? candidate.download !== undefined ||
-        (candidate.stdout === undefined && (candidate.exit ?? 0) !== 0)
-      : candidate.download === undefined
+      ? candidate.download !== undefined || failsBeforeDownloading(candidate)
+      : preview
+        ? candidate.preview !== undefined ||
+          (candidate.download === undefined && failsBeforeDownloading(candidate))
+        : candidate.download === undefined && candidate.preview === undefined
   const rule = rules.find(
     (candidate) =>
       candidate.url === url &&
@@ -589,16 +663,22 @@ async function main() {
       ? { stdout: '', stderr: `ERROR: Unsupported URL: ${url}\n`, exit: 1 }
       : rule.download !== undefined
         ? undefined
-        : {
-            stdout: renderStdout(rule, options),
-            stderr: rule.stderr === undefined ? '' : readFixture(rule.stderr),
-            exit: rule.exit ?? 0,
-          }
+        : rule.preview !== undefined
+          ? { preview: true, exit: 0 }
+          : {
+              stdout: renderStdout(rule, options),
+              stderr: rule.stderr === undefined ? '' : readFixture(rule.stderr),
+              exit: rule.exit ?? 0,
+            }
 
   const wait = delayMs + (rule?.delayMs ?? 0)
   if (wait > 0) await sleep(wait)
   if (hang === '1' || rule?.hang === true) {
     await hangForever()
+  }
+  if (answer?.preview) {
+    await replayPreview(rule, previewDir, url)
+    return
   }
   if (answer === undefined) {
     const thumbnail = options.includes('--write-thumbnail')

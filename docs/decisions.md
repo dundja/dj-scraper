@@ -626,3 +626,26 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 - Each row costs one more embed read when it is in view, plus the one its download makes.
 - A Spotify 429 during enrichment pauses only the enricher's Spotify lookups: the resolver and a download's match step read the same pages without that cooldown, and a job that meets the limit fails `network` (ADR-026), to be retried. Sharing it is part of the shared-cooldowns follow-up.
 
+
+## ADR-029 — Listening to a remix: the server fetches the stream into its own cache, the browser plays it with its own speed control
+*2026-10-28 · accepted · amends ADR-027 (rows can be played) and CLAUDE.md non-negotiable 2 (a cache outside the user's folder)*
+
+**Context.** The user wants a Play button on each remix suggestion to hear it in the app before downloading, and a speed control like a DJ's pitch fader. The two ways to play a platform's audio are its embedded player (YouTube's iframe, SoundCloud's widget) or our own `<audio>` over a stream we fetch. The user chose the second.
+
+**Decision.**
+- **`POST /api/previews`** takes `{ platform, id, url }` (an upload of a remix row: YouTube or SoundCloud only), checks the URL with `checkUrl`, fetches the best audio stream **as it is** with yt-dlp through `engine/run.ts` (same selector as an M4A download, no `-x`, no conversion), and answers `{ id, src, mime, sizeBytes }`. **`GET /api/previews/:id`** serves the cached file to `<audio>` with range requests (seeking). The id is derived from the platform and track id, so a repeat costs nothing.
+- **A cache of the server's own**, `<dataDir>/previews/`, never the user's folder: at most 20 files and 400 MB, least recently used out first, emptied at startup. Nothing in it is published or tagged; it is not a download.
+- **Pacing.** Two fetches at a time, shared per upload; a SoundCloud fetch takes a token from the shared bucket (ADR-017). A Go+ preview clip plays as the 30 s it is.
+- **Speed is the browser's.** `audio.playbackRate` with `preservesPitch`: presets (0.75x to 1.5x), a slider in 0.01 steps, nudge buttons, reset and a pitch-lock toggle. No server work, no re-encode.
+- **No DRM, no new source.** Only public YouTube and SoundCloud streams the same yt-dlp reads for a download; Spotify is never played, and a Spotify row's audio is still its YouTube match.
+
+**Rejected.**
+- *Official embeds*: SoundCloud's widget has no speed control, YouTube's has fixed steps, both load third-party scripts and frames into the page, and neither can be tested offline (non-negotiable 5).
+- *Proxying `yt-dlp -g` URLs*: signed, IP-bound, HLS for SoundCloud; fetching the file once is simpler and seeks properly.
+- *Transcoding to a known codec*: the browsers play AAC/MP3/Opus streams as they are; converting would spend CPU for nothing.
+- *A waveform with a beat grid*: needs decoding and BPM detection; a follow-up.
+
+**Consequences.**
+- The first play waits for the whole stream to download (a few seconds for a typical track); the row says "Preparing audio…".
+- A preview is the upload's stream, not our finished file: it says so and makes no claim about the quality of a download.
+- Previews spend YouTube's and SoundCloud's request budgets like any fetch.

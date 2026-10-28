@@ -63,7 +63,11 @@ export const YOUTUBE_WATCH_LIST =
  * searches, most played first: "Rick Astley - Never Gonna Give You Up (Krysiek Remix)" (579K views,
  * 3 YouTube uploads), then the Timmo Hendriks remix (SoundCloud, 556K plays); 7 genres, Nu Disco
  * twice. Of their uploads only the Kryptonik remix (SoundCloud, Electro House) downloads (1.6 s,
- * SoundCloud's pacing); the others fail with unsupported_url.
+ * SoundCloud's pacing); the others fail with unsupported_url. Every one of their 24 uploads also
+ * plays ("play a remix", ADR-029): POST /api/previews takes 0.7 s, then the fake's AAC stream (6 KB of
+ * synthetic bytes, not decodable audio) is served with range support, except two uploads that fail:
+ * REMIX_PREVIEW_GO_PLUS_URL (the Timmo Hendriks remix on SoundCloud) with 422 preview_only, and
+ * REMIX_PREVIEW_GEO_URL (the Krysiek remix's second YouTube upload) with 422 geo_blocked.
  */
 export const YOUTUBE_MIX = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ'
 
@@ -206,3 +210,10 @@ export const SPOTIFY_TRACK_2 = 'https://open.spotify.com/track/6aiKIFjPwa3UvDCD5
  * of the pasted links (see SPOTIFY_TRACK_2).
  */
 export const SPOTIFY_TRACK_3 = 'https://open.spotify.com/track/76QJgXPE3oc1cnkE4PFHEn'
+
+/** The Timmo Hendriks remix upload on SoundCloud (id 293956543): its preview fails, 422 preview_only. */
+export const REMIX_PREVIEW_GO_PLUS_URL =
+  'https://soundcloud.com/timmohendriks/never-gonna-give-you-up-remix'
+
+/** The Krysiek remix's second YouTube upload (id k5zzJ_yWT_k): its preview fails, 422 geo_blocked. */
+export const REMIX_PREVIEW_GEO_URL = 'https://www.youtube.com/watch?v=k5zzJ_yWT_k'

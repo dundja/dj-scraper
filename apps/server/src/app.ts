@@ -5,6 +5,7 @@ import { securityHeaders } from './http/security-headers.ts'
 import { type DownloadsDeps, downloadRoutes } from './routes/downloads.ts'
 import { type EventsDeps, eventRoutes } from './routes/events.ts'
 import { type FolderDeps, folderRoutes } from './routes/folders.ts'
+import { type PreviewDeps, previewRoutes } from './routes/previews.ts'
 import { type RemixDeps, remixRoutes } from './routes/remixes.ts'
 import { type ResolveDeps, resolveRoutes } from './routes/resolve.ts'
 import { type SettingsDeps, settingsRoutes } from './routes/settings.ts'
@@ -15,6 +16,7 @@ export type AppDeps = GuardOptions &
   SystemDeps &
   ResolveDeps &
   RemixDeps &
+  PreviewDeps &
   DownloadsDeps &
   EventsDeps &
   SettingsDeps &
@@ -32,6 +34,7 @@ export const createApp = (deps: AppDeps) => {
   app.route('/api', systemRoutes(deps))
   app.route('/api', resolveRoutes(deps))
   app.route('/api', remixRoutes(deps))
+  app.route('/api', previewRoutes(deps))
   app.route('/api', downloadRoutes(deps))
   app.route('/api', eventRoutes(deps))
   app.route('/api', settingsRoutes(deps))

@@ -3,7 +3,12 @@ import path from 'node:path'
 import { JobProgressSchema } from '@dj-scraper/shared'
 import { describe, expect, it } from 'vitest'
 import type { DoneInfo, StartInfo } from '../jobs/types.ts'
-import { type DownloadLine, parseDownloadLine, waitingUntil } from './ytdlp-progress.ts'
+import {
+  type DownloadLine,
+  parseDownloadLine,
+  parsePreviewLine,
+  waitingUntil,
+} from './ytdlp-progress.ts'
 
 const downloadsDir = path.resolve(import.meta.dirname, '../../test/fixtures/downloads')
 const JOB_DIR =
@@ -737,5 +742,50 @@ describe('waitingUntil', () => {
 
   it.each([Number.NaN, Number.POSITIVE_INFINITY, -5, 1e15])('never throws on %d', (at) => {
     expect(waitingUntil({ availableAt: at }, 0)).toBeUndefined()
+  })
+})
+
+describe('parsePreviewLine', () => {
+  const previewsDir = path.resolve(import.meta.dirname, '../../test/fixtures/previews')
+  const TEMP = '/data/previews/0b7c1a52-8f0e-4c1e-9d38-2a3a6c1f5e11'
+  const lines = (name: string) =>
+    readFileSync(path.join(previewsDir, name), 'utf8')
+      .replaceAll('{TEMPDIR}', TEMP)
+      .split('\n')
+      .filter((line) => line !== '')
+
+  it('reads the file path of the recorded runs', () => {
+    expect(lines('youtube-m4a.stdout.log').map(parsePreviewLine)).toEqual([
+      `${TEMP}/jNQXAC9IVRw.m4a`,
+    ])
+    expect(lines('soundcloud-m4a.stdout.log').map(parsePreviewLine)).toEqual([
+      `${TEMP}/47127631.m4a`,
+    ])
+  })
+
+  it('has nothing to read in a Go+ break (both streams empty)', () => {
+    expect(lines('soundcloud-preview-break.stdout.log')).toEqual([])
+    expect(lines('soundcloud-preview-break.stderr.log')).toEqual([])
+  })
+
+  it('ignores everything else, and never throws', () => {
+    for (const line of [
+      '',
+      'PREVIEW',
+      'PREVIEW not json',
+      'PREVIEW []',
+      'PREVIEW {}',
+      'PREVIEW {"filepath": 3}',
+      'PREVIEW {"filepath": ""}',
+      'DONE {"filepath": "/x.m4a"}',
+      'ERROR: boom',
+      `PREVIEW {"filepath": "${'a'.repeat(5000)}"}`,
+    ]) {
+      expect(parsePreviewLine(line)).toBeUndefined()
+    }
+  })
+
+  it('keeps a path with non-ASCII characters as JSON escapes decode them', () => {
+    expect(parsePreviewLine('PREVIEW {"filepath": "/d/caf\\u00e9.m4a"}')).toBe('/d/caf\u00e9.m4a')
   })
 })

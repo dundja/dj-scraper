@@ -39,7 +39,7 @@ import { PortSchema } from '@dj-scraper/shared'
 import { z } from 'zod'
 import { DEFAULT_WEB_DIST } from '../src/config.ts'
 import { normalizeEntry } from '../src/engine/ytdlp-parse.ts'
-import { remixQuery, SEARCH_COUNTS, songOf } from '../src/remix/suggest.ts'
+import { parseSearchResults, remixQuery, SEARCH_COUNTS, songOf } from '../src/remix/suggest.ts'
 import { checkUrl } from '../src/resolve/input.ts'
 import { hasBuiltUi } from '../src/routes/web.ts'
 import { parseEmbedPage } from '../src/spotify/embed.ts'
@@ -316,6 +316,48 @@ async function remixDownloadRule(dir: string): Promise<FakeDownloadRule> {
   }
 }
 
+/**
+ * How long a preview takes to prepare in e2e: the UI shows its "preparing" state for this long
+ * before the player can play (the fake would answer at once).
+ */
+const PREVIEW_DELAY_MS = 700
+
+/** The two uploads of the e2e remix list that don't play (the rest of its 24 uploads do). */
+const PREVIEW_GO_PLUS_URL = 'https://soundcloud.com/timmohendriks/never-gonna-give-you-up-remix'
+const PREVIEW_GEO_URL = 'https://www.youtube.com/watch?v=k5zzJ_yWT_k'
+
+/**
+ * Previews (ADR-029) of every upload in the mix track's recorded remix searches (the 20 remixes of
+ * "Never Gonna Give You Up", 24 uploads): each prepares in PREVIEW_DELAY_MS and plays the fake's
+ * AAC stream, except the Timmo Hendriks SoundCloud upload (a Go+ track: `preview_only`) and the
+ * Krysiek remix's second YouTube upload (blocked in the country: `geo_blocked`).
+ */
+function previewRules(): FakeYtdlpRule[] {
+  const rules: FakeYtdlpRule[] = []
+  for (const [platform, file] of [
+    ['youtube', 'youtube/search-remixes-never-gonna.json'],
+    ['soundcloud', 'soundcloud/search-remixes-never-gonna.json'],
+  ] as const) {
+    for (const upload of parseSearchResults(platform, JSON.parse(readFixture(file)))) {
+      const note = `e2e: the preview of the remix upload ${upload.id}`
+      if (upload.url === PREVIEW_GO_PLUS_URL) {
+        rules.push({ url: upload.url, exit: 101, note: `${note} (Go+: preview_only)` })
+      } else if (upload.url === PREVIEW_GEO_URL) {
+        rules.push({
+          url: upload.url,
+          stderr: 'errors/youtube-geo-blocked.log',
+          exit: 1,
+          delayMs: PREVIEW_DELAY_MS,
+          note: `${note} (geo_blocked)`,
+        })
+      } else {
+        rules.push({ url: upload.url, preview: 'm4a', delayMs: PREVIEW_DELAY_MS, note })
+      }
+    }
+  }
+  return rules
+}
+
 /** A fixture (relative to test/fixtures) or a file a rule wrote (absolute). */
 const readFile = (file: string): string =>
   path.isAbsolute(file) ? readFileSync(file, 'utf8') : readFixture(file)
@@ -324,7 +366,7 @@ const readFile = (file: string): string =>
  * The e2e rules, their files written to `dir`: the UI states no recording shows (the slow list, the
  * private track in a playlist, the hanging download), then downloads for the set row and for every
  * row of DOWNLOADABLE, then empty remix searches for the single tracks the specs paste and the
- * download of the remix the remix spec downloads.
+ * download of the remix the remix spec downloads, and the previews of the remix uploads.
  */
 async function e2eRules(dir: string): Promise<FakeYtdlpRule[]> {
   await mkdir(dir)
@@ -339,6 +381,7 @@ async function e2eRules(dir: string): Promise<FakeYtdlpRule[]> {
       { url: HANGING_URL, info: path.join(dir, `${HANGING_ID}.info.json`) },
     ])),
     await remixDownloadRule(dir),
+    ...previewRules(),
   ]
   for (const row of rows.values()) {
     rules.push(

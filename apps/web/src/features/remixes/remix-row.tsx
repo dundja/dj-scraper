@@ -5,6 +5,8 @@ import { PlatformBadge } from '@/components/platform-badge.tsx'
 import { Badge } from '@/components/ui/badge.tsx'
 import { cn } from '@/lib/utils.ts'
 import { RemixDownload } from './remix-download.tsx'
+import { RemixPlayer } from './remix-player.tsx'
+import { RemixPreviewButton } from './remix-preview-button.tsx'
 import {
   defaultUpload,
   genreSourceText,
@@ -12,6 +14,7 @@ import {
   playsText,
   uploadsByPlatform,
 } from './remix-text.ts'
+import { usePreviewPlayer } from './use-preview-player.ts'
 
 type RemixRowProps = {
   suggestion: RemixSuggestion
@@ -28,37 +31,49 @@ type RemixRowProps = {
 export function RemixRow({ suggestion, jobId, onQueued }: RemixRowProps) {
   const titleId = useId()
   const top = defaultUpload(suggestion)
+  const preview = usePreviewPlayer(top)
   return (
     <li
       aria-labelledby={titleId}
-      className="flex items-start gap-3 border-b border-border/50 py-2.5 last:border-b-0"
+      className="flex flex-col gap-2 border-b border-border/50 py-2.5 last:border-b-0"
     >
-      <Artwork src={top.thumbnailUrl} size={40} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <p
-          id={titleId}
-          title={top.title}
-          className="line-clamp-2 text-sm leading-snug [overflow-wrap:anywhere]"
-        >
-          {top.title}
-        </p>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <span>{kindText(suggestion)}</span>
-          {suggestion.genre !== undefined && <GenreChip genre={suggestion.genre} />}
-          {uploadsByPlatform(suggestion).map((upload) => (
-            <PlatformBadge key={upload.platform} platform={upload.platform}>
-              {upload.plays === undefined ? undefined : playsText(upload.platform, upload.plays)}
-            </PlatformBadge>
-          ))}
-          {top.durationSec !== undefined && (
-            <span className="tabular-nums">
-              <span className="sr-only">Duration </span>
-              {formatDuration(top.durationSec)}
-            </span>
-          )}
+      <div className="flex items-start gap-3">
+        <Artwork src={top.thumbnailUrl} size={40} />
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <p
+            id={titleId}
+            title={top.title}
+            className="line-clamp-2 text-sm leading-snug [overflow-wrap:anywhere]"
+          >
+            {top.title}
+          </p>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span>{kindText(suggestion)}</span>
+            {suggestion.genre !== undefined && <GenreChip genre={suggestion.genre} />}
+            {uploadsByPlatform(suggestion).map((upload) => (
+              <PlatformBadge key={upload.platform} platform={upload.platform}>
+                {upload.plays === undefined ? undefined : playsText(upload.platform, upload.plays)}
+              </PlatformBadge>
+            ))}
+            {top.durationSec !== undefined && (
+              <span className="tabular-nums">
+                <span className="sr-only">Duration </span>
+                {formatDuration(top.durationSec)}
+              </span>
+            )}
+          </div>
         </div>
+        <RemixPreviewButton upload={top} status={preview.state.status} onToggle={preview.toggle} />
+        <RemixDownload uploads={suggestion.uploads} jobId={jobId} onQueued={onQueued} />
       </div>
-      <RemixDownload uploads={suggestion.uploads} jobId={jobId} onQueued={onQueued} />
+      <RemixPlayer
+        upload={top}
+        state={preview.state}
+        onToggle={preview.toggle}
+        onSeek={preview.seek}
+        onRate={preview.setRate}
+        onPitchLock={preview.setPitchLock}
+      />
     </li>
   )
 }

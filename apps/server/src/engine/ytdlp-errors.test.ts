@@ -679,3 +679,34 @@ describe('the pattern tables', () => {
     expect(covered).not.toContain('preview_only')
   })
 })
+
+describe('a preview run (previewArgs)', () => {
+  const previewsDir = path.resolve(import.meta.dirname, '../../test/fixtures/previews')
+  const stderrOf = (name: string) =>
+    readFileSync(path.join(previewsDir, `${name}.stderr.log`), 'utf8')
+
+  it('maps the recorded Go+ break (exit 101, no output) to preview_only on SoundCloud', () => {
+    expect(
+      mapDownload({
+        exitCode: 101,
+        stderr: stderrOf('soundcloud-preview-break'),
+        breakFilter: true,
+      }).code,
+    ).toBe('preview_only')
+  })
+
+  it('reads an exit 101 as unknown where no break filter ran (YouTube)', () => {
+    expect(mapDownload({ exitCode: 101, stderr: '', breakFilter: false }).code).toBe('unknown')
+  })
+
+  it('maps the same failures as a download does', () => {
+    expect(
+      mapDownload({
+        exitCode: 1,
+        stderr:
+          "ERROR: [youtube] abcdefghijk: Private video. Sign in if you've been granted access",
+        breakFilter: false,
+      }).code,
+    ).toBe('private')
+  })
+})

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import {
   type DownloadFormat,
   DownloadFormatSchema,
@@ -13,6 +15,8 @@ import {
   downloadArgs,
   downloadSelector,
   entryArgs,
+  PREVIEW_PRINT,
+  previewArgs,
   resolveArgs,
   START_FIELDS,
   START_PRINT,
@@ -464,5 +468,112 @@ describe('downloadArgs', () => {
         }
       }
     })
+  })
+})
+
+describe('previewArgs', () => {
+  const previewsDir = path.resolve(import.meta.dirname, '../../test/fixtures/previews')
+  const TEMP = '/data/previews/0b7c1a52-8f0e-4c1e-9d38-2a3a6c1f5e11'
+
+  /** A recorded run's argv (previews/<case>.argv.json) with its placeholders filled in. */
+  const recorded = (name: string): string[] =>
+    (JSON.parse(readFileSync(path.join(previewsDir, `${name}.argv.json`), 'utf8')) as string[]).map(
+      (arg) => arg.replaceAll('{TEMPDIR}', TEMP).replaceAll('{NODE}', NODE),
+    )
+
+  it.each([
+    ['youtube-m4a', 'youtube', 'https://www.youtube.com/watch?v=jNQXAC9IVRw'],
+    ['soundcloud-m4a', 'soundcloud', 'https://soundcloud.com/the-concept-band/knocked-up-mastered'],
+    [
+      'soundcloud-preview-break',
+      'soundcloud',
+      'https://soundcloud.com/the-concept-band/world-on-fire-1',
+    ],
+  ] as const)('is the argv of the recorded run %s', (name, platform, url) => {
+    expect(previewArgs({ url, platform, tempDir: TEMP, jsRuntime: NODE })).toEqual(recorded(name))
+  })
+
+  const youtube = () =>
+    previewArgs({ url: 'https://youtu.be/x', platform: 'youtube', tempDir: TEMP, jsRuntime: NODE })
+
+  it('starts like every call and puts the URL after --', () => {
+    const argv = youtube()
+    expect(argv.slice(0, baseArgs(NODE).length)).toEqual(baseArgs(NODE))
+    expect(argv.slice(-2)).toEqual(['--', 'https://youtu.be/x'])
+    expect(argv.filter((arg) => arg === '--')).toHaveLength(1)
+  })
+
+  it('downloads the stream as it is: no -x, no cover, no conversion', () => {
+    const argv = youtube()
+    for (const flag of ['-x', '--extract-audio', '--write-thumbnail', '--embed-thumbnail']) {
+      expect(argv).not.toContain(flag)
+    }
+    expect(argv).not.toContain('--audio-format')
+    expect(argv).toContain('--no-playlist')
+  })
+
+  it('uses the M4A selector of the platform, so AAC is taken where it exists', () => {
+    const at = (argv: string[]) => argv[argv.indexOf('-f') + 1]
+    expect(at(youtube())).toBe(downloadSelector('youtube', 'm4a'))
+    const soundcloud = previewArgs({
+      url: 'https://soundcloud.com/a/b',
+      platform: 'soundcloud',
+      tempDir: TEMP,
+      jsRuntime: NODE,
+    })
+    expect(at(soundcloud)).toBe(downloadSelector('soundcloud', 'm4a'))
+  })
+
+  it('caps the size, keeps the file age out of the LRU clock and prints the path', () => {
+    const argv = youtube()
+    expect(argv[argv.indexOf('--max-filesize') + 1]).toBe('200M')
+    expect(argv).toContain('--no-mtime')
+    expect(argv).toContain('--abort-on-unavailable-fragments')
+    expect(argv[argv.indexOf('--print') + 1]).toBe(PREVIEW_PRINT)
+  })
+
+  it('gives only SoundCloud the Go+ break filter and no extractor retries', () => {
+    expect(youtube()).not.toContain('--break-match-filters')
+    const soundcloud = previewArgs({
+      url: 'https://soundcloud.com/a/b',
+      platform: 'soundcloud',
+      tempDir: TEMP,
+      jsRuntime: NODE,
+    })
+    expect(soundcloud).toContain('--break-match-filters')
+    expect(soundcloud[soundcloud.indexOf('--extractor-retries') + 1]).toBe('0')
+  })
+
+  it('passes --ffmpeg-location only when given', () => {
+    expect(youtube()).not.toContain('--ffmpeg-location')
+    const argv = previewArgs({
+      url: 'https://youtu.be/x',
+      platform: 'youtube',
+      tempDir: TEMP,
+      jsRuntime: NODE,
+      ffmpegLocation: '/opt/ffmpeg',
+    })
+    expect(argv[argv.indexOf('--ffmpeg-location') + 1]).toBe('/opt/ffmpeg')
+  })
+
+  it('names its temp dir in argv, where the startup sweep looks', () => {
+    const argv = youtube()
+    expect(argv[argv.indexOf('-P') + 1]).toBe(TEMP)
+  })
+
+  it('refuses other platforms (Spotify streams are never fetched) and a relative dir', () => {
+    for (const platform of ['spotify', 'other'] as const) {
+      expect(() =>
+        previewArgs({ url: 'https://x.test/a', platform, tempDir: TEMP, jsRuntime: NODE }),
+      ).toThrow(RangeError)
+    }
+    expect(() =>
+      previewArgs({
+        url: 'https://youtu.be/x',
+        platform: 'youtube',
+        tempDir: 'rel',
+        jsRuntime: NODE,
+      }),
+    ).toThrow(RangeError)
   })
 })

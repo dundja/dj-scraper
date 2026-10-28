@@ -269,3 +269,69 @@ export function downloadArgs(options: DownloadArgsOptions): string[] {
     url,
   ]
 }
+
+/** What the preview run's one stdout line starts with (`parsePreviewLine` reads it back). */
+export const PREVIEW_LINE_PREFIX = 'PREVIEW '
+/** The finished file's path, printed after yt-dlp has moved it into its place. */
+export const PREVIEW_PRINT = `after_move:${PREVIEW_LINE_PREFIX}%(.{filepath})j`
+/** The largest stream a preview fetches (the plain HTTP downloader enforces it; HLS ignores it). */
+export const PREVIEW_MAX_FILESIZE = '200M'
+
+export type PreviewArgsOptions = {
+  /** `checkUrl(request.url).input.url`: the classified URL, never the request's own string. */
+  url: string
+  /** The classified platform: YouTube or SoundCloud. */
+  platform: Platform
+  /** Absolute (a real path): yt-dlp writes nothing outside it. */
+  tempDir: string
+  /** `process.execPath`. */
+  jsRuntime: string
+  /** `FFMPEG_PATH`, only when it is set. */
+  ffmpegLocation?: string
+}
+
+/**
+ * Fetches one upload's audio stream as it is, to listen to it in the app (ADR-029): the same
+ * selector as an M4A download (AAC where the site has it, never converted), no `-x`, no cover, no
+ * tags. Quiet, with the finished file's path as its one line of output.
+ * - `--no-mtime`: the file's age is the cache's LRU clock, not the upload's date.
+ * - SoundCloud: no extractor retries (a 429 fails at once) and the Go+ break filter, so a 30 s
+ *   preview is never offered as the track (exit 101, `mapDownloadExit` reads it as preview_only).
+ */
+export function previewArgs(options: PreviewArgsOptions): string[] {
+  const { url, platform, tempDir, jsRuntime, ffmpegLocation } = options
+  if (platform !== 'youtube' && platform !== 'soundcloud') {
+    throw new RangeError('Only YouTube and SoundCloud uploads are previewed')
+  }
+  if (!path.isAbsolute(tempDir)) throw new RangeError('tempDir must be an absolute path')
+  return [
+    ...baseArgs(jsRuntime),
+    '--no-playlist',
+    '-f',
+    downloadSelector(platform, 'm4a'),
+    '--socket-timeout',
+    String(SOCKET_TIMEOUT_SEC),
+    '--retries',
+    '3',
+    '--fragment-retries',
+    '3',
+    '--retry-sleep',
+    'fragment:exp=1:8',
+    '--abort-on-unavailable-fragments',
+    '--max-filesize',
+    PREVIEW_MAX_FILESIZE,
+    '--no-mtime',
+    ...(ffmpegLocation ? ['--ffmpeg-location', ffmpegLocation] : []),
+    ...(platform === 'soundcloud'
+      ? ['--extractor-retries', '0', '--break-match-filters', PREVIEW_BREAK_FILTER]
+      : []),
+    '-P',
+    tempDir,
+    '-o',
+    DOWNLOAD_OUTPUT_TEMPLATE,
+    '--print',
+    PREVIEW_PRINT,
+    '--',
+    url,
+  ]
+}

@@ -7,6 +7,7 @@ import {
   type ErrorCode,
   type Health,
   MAX_ENTRIES_PER_REQUEST,
+  MAX_PASTED_LINKS,
   type ResolveEntriesResponse,
   ResolveEntriesResponseSchema,
   type ResolveResult,
@@ -18,6 +19,7 @@ import { ApiError, ERROR_STATUS } from '../http/errors.ts'
 import type { Enricher } from '../resolve/enricher.ts'
 import type { Resolver } from '../resolve/resolver.ts'
 import { UNUSED_DOWNLOAD_DEPS, UNUSED_REMIX_DEPS } from '../stubs.ts'
+import { LINKS_BODY_LIMIT_BYTES } from './resolve.ts'
 
 const PORT = 4747
 const HOST = `127.0.0.1:${PORT}`
@@ -61,17 +63,45 @@ const ENRICHED: ResolveEntriesResponse = {
   ],
 }
 
+const TRACK_LINK = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC'
+
+const LISTED: ResolveResult = {
+  kind: 'collection',
+  collection: {
+    id: 'links-4uLU6hMCjMI75M1A2tKUQC',
+    platform: 'spotify',
+    url: TRACK_LINK,
+    kind: 'links',
+    title: 'Pasted Spotify tracks',
+    truncated: false,
+    entries: [
+      {
+        partial: true,
+        id: '4uLU6hMCjMI75M1A2tKUQC',
+        platform: 'spotify',
+        url: TRACK_LINK,
+        availability: 'unknown',
+      },
+    ],
+  },
+}
+
 function setup({
   resolve = async () => RESOLVED,
+  resolveLinks = () => LISTED,
   enrich = async () => ENRICHED,
   webRoot,
 }: {
   resolve?: Resolver['resolve']
+  resolveLinks?: Resolver['resolveLinks']
   enrich?: Enricher['enrich']
   /** A built UI to serve, as in production (pnpm start). Default none, as with --dev. */
   webRoot?: string
 } = {}) {
-  const resolver = { resolve: vi.fn<Resolver['resolve']>(resolve) }
+  const resolver = {
+    resolve: vi.fn<Resolver['resolve']>(resolve),
+    resolveLinks: vi.fn<Resolver['resolveLinks']>(resolveLinks),
+  }
   const enricher = { enrich: vi.fn<Enricher['enrich']>(enrich), peek: () => undefined }
   const stubHealth = { current: async () => health, recheck: async () => health }
   const app = createApp({
@@ -211,6 +241,66 @@ describe('POST /api/resolve', () => {
     )
     expect(res.status).toBe(200)
     expect([...res.headers.keys()].filter((name) => name.startsWith('access-control-'))).toEqual([])
+  })
+})
+
+describe('POST /api/resolve/links', () => {
+  it('lists the pasted links and returns the collection', async () => {
+    const { app, resolver } = setup()
+    const urls = [TRACK_LINK, 'https://open.spotify.com/track/6aiKIFjPwa3UvDCD5ecoJj']
+    const res = await send(app, '/api/resolve/links', postJson({ urls }))
+    expect(res.status).toBe(200)
+    expect(ResolveResultSchema.parse(await res.json())).toStrictEqual(LISTED)
+    expect(resolver.resolveLinks).toHaveBeenCalledWith({ urls })
+  })
+
+  it.each([
+    ['no links', { urls: [] }],
+    [`more than ${MAX_PASTED_LINKS} links`, { urls: Array(MAX_PASTED_LINKS + 1).fill('x') }],
+    ['a single url', { url: TRACK_LINK }],
+    ['a non-string link', { urls: [42] }],
+  ])('answers %s with 400 invalid_request without listing', async (_label, body) => {
+    const { app, resolver } = setup()
+    expect(await errorOf(await send(app, '/api/resolve/links', postJson(body)))).toMatchObject({
+      status: 400,
+      code: 'invalid_request',
+    })
+    expect(resolver.resolveLinks).not.toHaveBeenCalled()
+  })
+
+  it('takes a body far over the other routes’ 64 KiB, up to its own limit', async () => {
+    const { app, resolver } = setup()
+    const link = `${TRACK_LINK}?si=0123456789abcdef`
+    const full = { urls: Array(MAX_PASTED_LINKS).fill(link) }
+    expect(JSON.stringify(full).length).toBeGreaterThan(64 * 1024)
+    expect(JSON.stringify(full).length).toBeLessThan(LINKS_BODY_LIMIT_BYTES)
+    expect((await send(app, '/api/resolve/links', postJson(full))).status).toBe(200)
+
+    const over = { urls: ['x'.repeat(LINKS_BODY_LIMIT_BYTES)] }
+    const res = await send(app, '/api/resolve/links', postJson(over))
+    expect(await errorOf(res)).toMatchObject({ status: 413, code: 'invalid_request' })
+    expect(resolver.resolveLinks).toHaveBeenCalledOnce()
+  })
+
+  it('answers the resolver’s unsupported_url with 422', async () => {
+    const { app } = setup({
+      resolveLinks: () => {
+        throw new ApiError('unsupported_url', 'None of these links is a Spotify track.')
+      },
+    })
+    const res = await send(app, '/api/resolve/links', postJson({ urls: ['x'] }))
+    expect(await errorOf(res)).toMatchObject({ status: 422, code: 'unsupported_url' })
+  })
+
+  it('refuses another origin with 403 before listing', async () => {
+    const { app, resolver } = setup()
+    const res = await send(
+      app,
+      '/api/resolve/links',
+      postJson({ urls: [TRACK_LINK] }, { origin: 'http://evil.test' }),
+    )
+    expect(await errorOf(res)).toMatchObject({ status: 403, code: 'forbidden' })
+    expect(resolver.resolveLinks).not.toHaveBeenCalled()
   })
 })
 

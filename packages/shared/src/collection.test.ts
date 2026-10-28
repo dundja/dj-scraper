@@ -208,7 +208,7 @@ describe('CollectionKindSchema', () => {
 
   it('is exactly the union of the documented kinds', () => {
     expectTypeOf<CollectionKind>().toEqualTypeOf<
-      'playlist' | 'album' | 'set' | 'channel' | 'likes' | 'mix' | 'other'
+      'playlist' | 'album' | 'set' | 'channel' | 'likes' | 'mix' | 'links' | 'other'
     >()
   })
 })

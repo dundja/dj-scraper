@@ -1,13 +1,16 @@
-import { MAX_URL_LENGTH } from '@dj-scraper/shared'
+import { MAX_PASTED_LINKS, MAX_URL_LENGTH } from '@dj-scraper/shared'
 import { describe, expect, it } from 'vitest'
 import {
   carriesFiles,
   carriesLink,
   dropCandidate,
   dropLink,
+  dropSpotifyTrackList,
   findLink,
+  findSpotifyTrackLinks,
   isEditableTarget,
   pasteCandidate,
+  spotifyTrackList,
 } from './paste-text.ts'
 import { urlVerdict } from './url-verdict.ts'
 
@@ -225,5 +228,96 @@ describe('isEditableTarget', () => {
     expect(isEditableTarget(document.body)).toBe(false)
     expect(isEditableTarget(document)).toBe(false)
     expect(isEditableTarget(null)).toBe(false)
+  })
+})
+
+/** A 22-character Spotify track id, distinct per `n`. */
+const spotifyId = (n: number) => `djTrack${String(n).padStart(15, '0')}`
+const trackUrl = (n: number) => `https://open.spotify.com/track/${spotifyId(n)}`
+
+describe('findSpotifyTrackLinks', () => {
+  it('reads what the Spotify app copies from a playlist: one link per line, in order', () => {
+    const copied = [trackUrl(1), trackUrl(2), trackUrl(3)].join('\n')
+    expect(findSpotifyTrackLinks(copied)).toEqual([trackUrl(1), trackUrl(2), trackUrl(3)])
+    // Windows line ends, and a trailing one.
+    expect(findSpotifyTrackLinks(`${trackUrl(1)}\r\n${trackUrl(2)}\r\n`)).toEqual([
+      trackUrl(1),
+      trackUrl(2),
+    ])
+  })
+
+  it('turns spotify:track: URIs into links, as some versions copy them', () => {
+    const copied = `spotify:track:${spotifyId(1)}\nspotify:track:${spotifyId(2)}`
+    expect(findSpotifyTrackLinks(copied)).toEqual([trackUrl(1), trackUrl(2)])
+    // A URI cut short or run on isn't a track.
+    expect(findSpotifyTrackLinks('spotify:track:short')).toEqual([])
+    expect(findSpotifyTrackLinks(`spotify:track:${spotifyId(1)}x`)).toEqual([])
+  })
+
+  it('normalizes each link and keeps each track once, in the order first seen', () => {
+    const text = [
+      `${trackUrl(2)}?si=1b2c3d4e5f6a7b8c`,
+      `https://open.spotify.com/intl-de/track/${spotifyId(1)}`,
+      `spotify:track:${spotifyId(2)}`,
+      `open.spotify.com/embed/track/${spotifyId(3)}`,
+      trackUrl(1),
+    ].join('\n')
+    expect(findSpotifyTrackLinks(text)).toEqual([trackUrl(2), trackUrl(1), trackUrl(3)])
+  })
+
+  it('finds links in running text with the same rules as findLink', () => {
+    expect(
+      findSpotifyTrackLinks(`two bangers: (${trackUrl(1)}), “${trackUrl(2)}”. And ${trackUrl(3)}!`),
+    ).toEqual([trackUrl(1), trackUrl(2), trackUrl(3)])
+  })
+
+  it('leaves out links that are not Spotify tracks', () => {
+    const text = [
+      'https://www.youtube.com/watch?v=XNEnEBrHws8',
+      'https://open.spotify.com/album/6N9PS4QXF1D0OWPk0Sxtb4',
+      'https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt',
+      'spotify:album:6N9PS4QXF1D0OWPk0Sxtb4',
+      trackUrl(1),
+    ].join(' ')
+    expect(findSpotifyTrackLinks(text)).toEqual([trackUrl(1)])
+    expect(findSpotifyTrackLinks('no links here')).toEqual([])
+  })
+
+  it(`stops at ${MAX_PASTED_LINKS} tracks, what one paste may load`, () => {
+    const text = Array.from({ length: MAX_PASTED_LINKS + 3 }, (_, n) => trackUrl(n)).join('\n')
+    const found = findSpotifyTrackLinks(text)
+    expect(found).toHaveLength(MAX_PASTED_LINKS)
+    expect(found.at(-1)).toBe(trackUrl(MAX_PASTED_LINKS - 1))
+  })
+})
+
+describe('spotifyTrackList', () => {
+  it('takes two or more distinct tracks as one list', () => {
+    expect(spotifyTrackList(`${trackUrl(1)}\n${trackUrl(2)}`)).toEqual([trackUrl(1), trackUrl(2)])
+  })
+
+  it('leaves one track, the same track twice, and other links to the single-link paste', () => {
+    expect(spotifyTrackList(trackUrl(1))).toBeUndefined()
+    expect(spotifyTrackList(`${trackUrl(1)}\n${trackUrl(1)}?si=abc`)).toBeUndefined()
+    expect(
+      spotifyTrackList(`${trackUrl(1)} https://www.youtube.com/watch?v=XNEnEBrHws8`),
+    ).toBeUndefined()
+    expect(spotifyTrackList('')).toBeUndefined()
+  })
+})
+
+describe('dropSpotifyTrackList', () => {
+  it("takes a URI list's tracks, comments left out", () => {
+    const data = transfer({ 'text/uri-list': `# from Spotify\r\n${trackUrl(1)}\r\n${trackUrl(2)}` })
+    expect(dropSpotifyTrackList(data)).toEqual([trackUrl(1), trackUrl(2)])
+  })
+
+  it("falls back to the plain text's tracks", () => {
+    const data = transfer({
+      'text/uri-list': trackUrl(1),
+      'text/plain': `spotify:track:${spotifyId(1)}\nspotify:track:${spotifyId(2)}`,
+    })
+    expect(dropSpotifyTrackList(data)).toEqual([trackUrl(1), trackUrl(2)])
+    expect(dropSpotifyTrackList(transfer({ 'text/plain': trackUrl(1) }))).toBeUndefined()
   })
 })

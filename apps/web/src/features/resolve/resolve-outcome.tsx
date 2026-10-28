@@ -13,6 +13,8 @@ type ResolveOutcomeProps = {
    * takes the focus.
    */
   onLoad: (url: string, mode: ResolveMode) => void
+  /** Loads pasted Spotify track links again as one list (Try again after a links load). */
+  onLoadLinks: (urls: readonly string[]) => void
   /**
    * Puts the focus back in the paste box after a button here removed itself without loading
    * (Cancel, This track), so the keyboard doesn't fall back to the top of the page.
@@ -24,7 +26,7 @@ type ResolveOutcomeProps = {
  * Everything under the paste box: the empty state, the loading skeleton, the error, or the result.
  * A new resolve replaces the last result with its skeleton (the downloads panel keeps the history).
  */
-export function ResolveOutcome({ resolver, onLoad, onFocusBox }: ResolveOutcomeProps) {
+export function ResolveOutcome({ resolver, onLoad, onLoadLinks, onFocusBox }: ResolveOutcomeProps) {
   const { status, submission } = resolver
   if (submission === undefined) return <PasteEmptyState />
 
@@ -45,6 +47,17 @@ export function ResolveOutcome({ resolver, onLoad, onFocusBox }: ResolveOutcomeP
       const failure = failureView(resolver.error)
       // An abort shows nothing: Cancel or a newer paste did it.
       if (failure === undefined) return <PasteEmptyState />
+      if (submission.kind === 'links') {
+        const { urls } = submission
+        return (
+          <ResolveError
+            failure={failure}
+            fallback={undefined}
+            onRetry={() => onLoadLinks(urls)}
+            onOpenList={() => {}}
+          />
+        )
+      }
       const { url, mode } = submission
       return (
         <ResolveError

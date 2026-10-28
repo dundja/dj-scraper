@@ -17,6 +17,12 @@ export const MAX_MIX_ENTRIES = 50
  */
 export const MAX_SPOTIFY_ENTRIES = 100
 
+/**
+ * The most links one `POST /api/resolve/links` takes: a long Spotify playlist copied from the
+ * Spotify app (select all, copy) fits, and the list stays as long as any other.
+ */
+export const MAX_PASTED_LINKS = MAX_COLLECTION_ENTRIES
+
 /** The most rows one `POST /api/resolve/entries` may ask for: about a screenful. */
 export const MAX_ENTRIES_PER_REQUEST = 25
 
@@ -33,6 +39,16 @@ export const ResolveRequestSchema = z.object({
   mode: ResolveModeSchema.default('auto'),
 })
 export type ResolveRequest = z.infer<typeof ResolveRequestSchema>
+
+/**
+ * `POST /api/resolve/links`: several Spotify track links pasted at once (copied from a playlist in
+ * the Spotify app), answered as one `links` collection of partial rows that fill in as they come
+ * into view. Each URL is checked with `classifyUrl`; links that aren't Spotify tracks are skipped.
+ */
+export const ResolveLinksRequestSchema = z.object({
+  urls: z.array(z.string().max(MAX_URL_LENGTH)).min(1).max(MAX_PASTED_LINKS),
+})
+export type ResolveLinksRequest = z.infer<typeof ResolveLinksRequestSchema>
 
 /** The list behind an `ambiguous` result: a mix is capped at `MAX_MIX_ENTRIES` when listed. */
 export const AmbiguousListKindSchema = CollectionKindSchema.extract(['playlist', 'album', 'mix'])

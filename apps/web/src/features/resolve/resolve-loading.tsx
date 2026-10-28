@@ -1,9 +1,15 @@
+import type { Platform } from '@dj-scraper/shared'
 import { Button } from '@/components/ui/button.tsx'
 import { Spinner } from '@/components/ui/spinner.tsx'
 import { cn } from '@/lib/utils.ts'
-import { bigListNote, loadingLabel, SLOW_AFTER_SECONDS } from './resolve-text.ts'
+import {
+  bigListNote,
+  SLOW_AFTER_SECONDS,
+  submissionLoadingLabel,
+  submissionShape,
+} from './resolve-text.ts'
 import { ListSkeleton, TrackSkeleton } from './result-skeletons.tsx'
-import { loadingShape, urlVerdict } from './url-verdict.ts'
+import { urlVerdict } from './url-verdict.ts'
 import { useElapsedSeconds } from './use-elapsed-seconds.ts'
 import type { Submission } from './use-resolve.ts'
 
@@ -19,11 +25,10 @@ type ResolveLoadingProps = {
  * more than a few seconds shows the seconds and why (YouTube lists 100 rows per request).
  */
 export function ResolveLoading({ submission, startedAt, onCancel }: ResolveLoadingProps) {
-  const shape = loadingShape(submission.url, submission.mode)
+  const shape = submissionShape(submission)
   const elapsed = useElapsedSeconds(startedAt)
   const slow = elapsed >= SLOW_AFTER_SECONDS
-  const verdict = urlVerdict(submission.url)
-  const platform = verdict.status === 'ok' ? verdict.platform : 'other'
+  const platform = platformOf(submission)
 
   return (
     // A list spans the column, as the collection it turns into does; a track card doesn't.
@@ -34,7 +39,7 @@ export function ResolveLoading({ submission, startedAt, onCancel }: ResolveLoadi
     >
       <div className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
         <Spinner aria-hidden />
-        <span>{loadingLabel(shape)}</span>
+        <span>{submissionLoadingLabel(submission)}</span>
         {/* Not live: announcing every second would drown out everything else. */}
         {slow && <span className="tabular-nums">{elapsed} s</span>}
         <Button variant="ghost" size="sm" onClick={onCancel}>
@@ -47,4 +52,11 @@ export function ResolveLoading({ submission, startedAt, onCancel }: ResolveLoadi
       {shape === 'list' ? <ListSkeleton /> : <TrackSkeleton />}
     </div>
   )
+}
+
+/** Whose list is loading, for the note on big lists: pasted links are Spotify tracks. */
+function platformOf(submission: Submission): Platform {
+  if (submission.kind === 'links') return 'spotify'
+  const verdict = urlVerdict(submission.url)
+  return verdict.status === 'ok' ? verdict.platform : 'other'
 }

@@ -6,9 +6,17 @@ import { userEvent } from '@testing-library/user-event'
 import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { settings } from '@/test/downloads.ts'
-import { fakeApi, json, jsonBody, noAnswer } from '@/test/fake-api.ts'
+import { fakeApi, json, jsonBody, networkError, noAnswer } from '@/test/fake-api.ts'
 import { renderWithQueryClient } from '@/test/render.tsx'
-import { scTrack, trackResult, urls } from '@/test/resolve.ts'
+import {
+  collectionResult,
+  pastedLinks,
+  pastedLinksText,
+  pastedTracks,
+  scTrack,
+  trackResult,
+  urls,
+} from '@/test/resolve.ts'
 import { ResolvePage } from './resolve-page.tsx'
 import { remixMounts, viewMounts } from './testing/result-view-log.ts'
 
@@ -448,6 +456,156 @@ describe('drop a link', () => {
     fireEvent.dragEnter(document.body, dragData(LINK_DRAG))
     expect(overlay()).not.toBeNull()
     expect(resolveCalls()).toEqual([])
+  })
+})
+
+describe('several Spotify track links at once', () => {
+  const linksCalls = () => server.callsTo('POST /api/resolve/links')
+  const pastedUrls = pastedTracks.map((full) => full.url)
+  const NOTE = 'Pasted 3 Spotify track links: they load as one list.'
+
+  it('loads a playlist copied in the Spotify app as one list, and empties the box', async () => {
+    server.on('POST /api/resolve/links', noAnswer)
+    const user = userEvent.setup()
+    renderWithQueryClient(<ResolvePage />)
+    await user.type(urlBox(), 'old text')
+    act(() => urlBox().blur())
+
+    await user.paste(pastedLinksText)
+
+    await waitFor(() => expect(linksCalls()).toHaveLength(1))
+    expect(jsonBody(linksCalls()[0])).toEqual({ urls: pastedUrls })
+    expect(resolveCalls()).toEqual([])
+    // The box holds one link: it is emptied, and says what became of the paste.
+    expect(urlBox().value).toBe('')
+    expect(urlBox().getAttribute('aria-invalid')).toBeNull()
+    expect(description()).toBe(NOTE)
+    expect(document.activeElement).toBe(urlBox())
+    expect(screen.getByText('Loading 3 Spotify tracks…', { selector: 'span' })).toBeTruthy()
+    expect(status().textContent).toBe('Loading 3 Spotify tracks…')
+
+    // Typing again is a new start: the note goes.
+    await user.type(urlBox(), 'x')
+    expect(description()).toBe("That doesn't look like a link.")
+  })
+
+  it('shows the list once loaded, and announces it', async () => {
+    server.on('POST /api/resolve/links', () => json(collectionResult(pastedLinks)))
+    const user = userEvent.setup()
+    renderWithQueryClient(<ResolvePage />)
+    act(() => urlBox().blur())
+
+    await user.paste(`spotify:track:${pastedTracks[0]?.id}\nspotify:track:${pastedTracks[1]?.id}`)
+
+    expect(
+      await screen.findByRole('region', { name: 'Collection: Pasted Spotify tracks' }),
+    ).toBeTruthy()
+    expect(jsonBody(linksCalls()[0])).toEqual({ urls: pastedUrls.slice(0, 2) })
+    expect(status().textContent).toBe('Pasted Spotify tracks, 3 tracks')
+    expect(viewMounts).toEqual([{ view: 'collection', id: pastedLinks.id }])
+  })
+
+  it('loads the links pasted into the box itself', async () => {
+    server.on('POST /api/resolve/links', noAnswer)
+    const user = userEvent.setup()
+    renderWithQueryClient(<ResolvePage />)
+
+    await user.type(urlBox(), 'half a li')
+    await user.paste(pastedLinksText)
+
+    await waitFor(() => expect(linksCalls()).toHaveLength(1))
+    expect(urlBox().value).toBe('')
+    expect(description()).toBe(NOTE)
+  })
+
+  it('loads a single Spotify link, or the same track twice, as a track, as before', async () => {
+    server.on('POST /api/resolve', noAnswer)
+    const user = userEvent.setup()
+    renderWithQueryClient(<ResolvePage />)
+    act(() => urlBox().blur())
+
+    await user.paste(`${urls.spotifyTrack}\n${urls.spotifyTrack}?si=abc`)
+
+    await waitFor(() => expect(resolveBodies()).toEqual([{ url: urls.spotifyTrack }]))
+    expect(urlBox().value).toBe(urls.spotifyTrack)
+    expect(linksCalls()).toEqual([])
+  })
+
+  it('leaves links pasted into another text field to that field', async () => {
+    const user = userEvent.setup()
+    renderWithQueryClient(
+      <>
+        <input aria-label="Filter" />
+        <ResolvePage />
+      </>,
+    )
+    const filter = screen.getByRole('textbox', { name: 'Filter' })
+
+    await user.click(filter)
+    await user.paste(pastedLinksText)
+
+    expect((filter as HTMLInputElement).value).not.toBe('')
+    expect(linksCalls()).toEqual([])
+  })
+
+  it('loads the tracks dragged from the Spotify app, wherever they are dropped', async () => {
+    server.on('POST /api/resolve/links', noAnswer)
+    renderWithQueryClient(
+      <>
+        <input aria-label="Filter" />
+        <ResolvePage />
+      </>,
+    )
+    const filter = screen.getByRole('textbox', { name: 'Filter' })
+
+    const dropped = fireEvent.drop(
+      filter,
+      dragData(LINK_DRAG, { 'text/uri-list': pastedUrls.join('\r\n') }),
+    )
+
+    expect(dropped).toBe(false)
+    await waitFor(() => expect(linksCalls()).toHaveLength(1))
+    expect(jsonBody(linksCalls()[0])).toEqual({ urls: pastedUrls })
+    expect((filter as HTMLInputElement).value).toBe('')
+    expect(description()).toBe(NOTE)
+  })
+
+  it('tries the same links again after a failure, and cancels like any load', async () => {
+    server.on('POST /api/resolve/links', networkError)
+    const user = userEvent.setup()
+    renderWithQueryClient(<ResolvePage />)
+    act(() => urlBox().blur())
+
+    await user.paste(pastedLinksText)
+    await screen.findByText('Server offline')
+    server.on('POST /api/resolve/links', noAnswer)
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    await waitFor(() => expect(linksCalls()).toHaveLength(2))
+    expect(jsonBody(linksCalls()[1])).toEqual({ urls: pastedUrls })
+    expect(description()).toBe(NOTE)
+    expect(status().textContent).toBe('Loading 3 Spotify tracks…')
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(linksCalls()[1]?.signal?.aborted).toBe(true)
+    expect(status().textContent).toBe('Canceled.')
+  })
+
+  it('aborts the links still loading when a single link is pasted', async () => {
+    server.on('POST /api/resolve/links', noAnswer)
+    server.on('POST /api/resolve', () => json(trackResult(scTrack)))
+    const user = userEvent.setup()
+    renderWithQueryClient(<ResolvePage />)
+    act(() => urlBox().blur())
+
+    await user.paste(pastedLinksText)
+    await waitFor(() => expect(linksCalls()).toHaveLength(1))
+    await user.paste(urls.scTrack)
+
+    expect(await screen.findByRole('article', { name: 'Track card: Robo Kitty' })).toBeTruthy()
+    expect(linksCalls()[0]?.signal?.aborted).toBe(true)
+    expect(urlBox().value).toBe(urls.scTrack)
+    expect(description()).not.toContain('Pasted')
   })
 })
 

@@ -4,22 +4,27 @@ import {
   carriesLink,
   dropCandidate,
   dropLink,
+  dropSpotifyTrackList,
   isEditableTarget,
 } from './paste-text.ts'
 
 /**
  * Drop a link anywhere on the window: returns whether a link is being dragged over it (for the
- * overlay), and calls `onDrop` with the dropped link. Text without a link dropped on a text field
- * other than `box` (the collection's filter) is left to that field. A dragged file is refused, so
+ * overlay), and calls `onDrop` with the dropped link, or `onDropLinks` with its Spotify track
+ * links when it carries two or more (tracks dragged from the Spotify app), wherever it lands. Text
+ * without a link dropped on a text field other than `box` (the collection's filter) is left to
+ * that field. A dragged file is refused, so
  * the browser can't open it in place of the app. Drags that start on this page (a link in the
  * header) are left to the browser.
  */
 export function useLinkDrop(
   onDrop: (text: string) => void,
+  onDropLinks: (urls: string[]) => void,
   box: RefObject<HTMLElement | null>,
 ): boolean {
   const [dragging, setDragging] = useState(false)
   const handleDrop = useEffectEvent(onDrop)
+  const handleDropLinks = useEffectEvent(onDropLinks)
 
   useEffect(() => {
     // dragenter and dragleave fire for every element the pointer crosses: count them, so moving
@@ -74,6 +79,12 @@ export function useLinkDrop(
       }
       if (!isLinkDrag(event)) return
       stop()
+      const links = dropSpotifyTrackList(data)
+      if (links !== undefined) {
+        event.preventDefault()
+        handleDropLinks(links)
+        return
+      }
       const toOtherField = event.target !== box.current && isEditableTarget(event.target)
       const text = toOtherField ? dropLink(data) : dropCandidate(data)
       // Text without a link is that field's, as a paste into it would be: the browser inserts it.

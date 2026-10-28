@@ -28,6 +28,7 @@ const KIND_LABELS: Record<CollectionKind, string> = {
   channel: 'Channel',
   likes: 'Likes',
   mix: 'Mix',
+  links: 'Pasted links',
   other: 'List',
 }
 
@@ -70,7 +71,8 @@ export function totalDurationText(
 
 /**
  * Why the table holds fewer rows than the platform has: our listing cap cut it, a mix never ends,
- * or Spotify's page lists only the first 100.
+ * or Spotify's page lists only the first 100 (pasting the tracks copied in Spotify's app loads
+ * them all).
  */
 export function truncatedNote(
   collection: Pick<Collection, 'truncated' | 'kind' | 'entries' | 'platform'>,
@@ -78,7 +80,7 @@ export function truncatedNote(
   if (!collection.truncated) return undefined
   if (collection.platform === 'spotify') {
     const list = collection.kind === 'album' ? 'an album' : 'a playlist'
-    return `Spotify shows only the first ${MAX_SPOTIFY_ENTRIES} tracks of ${list}.`
+    return `Spotify shows only the first ${MAX_SPOTIFY_ENTRIES} tracks of ${list}. To load them all, open it in the Spotify desktop app, select every track (⌘A), copy (⌘C) and paste here.`
   }
   const listed = formatCount(collection.entries.length)
   return collection.kind === 'mix'
@@ -100,7 +102,12 @@ export function sourceNote(collection: Pick<Collection, 'platform'>): string | u
  * What a linked list is called: SoundCloud keeps sets and albums under `/sets/`, so only an Albums
  * tab says "album"; elsewhere they are playlists.
  */
-export function listNoun(collection: Pick<Collection, 'platform' | 'url'>, count: number): string {
+export function listNoun(
+  collection: Pick<Collection, 'platform' | 'url' | 'kind'>,
+  count: number,
+): string {
+  // Pasted links have no page of their own: their `url` is their first track's.
+  if (collection.kind === 'links') return countOf(count, 'list')
   const path = new URL(collection.url).pathname.replace(/\/+$/, '')
   const noun = path.endsWith('/albums')
     ? 'album'
@@ -112,7 +119,7 @@ export function listNoun(collection: Pick<Collection, 'platform' | 'url'>, count
 
 /** "This page also lists 2 sets", for a page with tracks that links to lists too. */
 export function listsNote(
-  collection: Pick<Collection, 'platform' | 'url' | 'lists'>,
+  collection: Pick<Collection, 'platform' | 'url' | 'kind' | 'lists'>,
 ): string | undefined {
   const count = collection.lists?.length ?? 0
   return count === 0 ? undefined : `This page also lists ${listNoun(collection, count)}.`
@@ -120,14 +127,19 @@ export function listsNote(
 
 /**
  * The skipped rows that aren't lists we can open: "2 rows aren't tracks", or with lists "1 other
- * row isn't a track".
+ * row isn't a track". For pasted links, the links that aren't Spotify tracks.
  */
 export function skippedNote(
-  collection: Pick<Collection, 'skippedEntries' | 'lists'>,
+  collection: Pick<Collection, 'skippedEntries' | 'lists' | 'kind'>,
 ): string | undefined {
   const lists = collection.lists?.length ?? 0
   const others = (collection.skippedEntries ?? 0) - lists
   if (others <= 0) return undefined
+  if (collection.kind === 'links') {
+    return others === 1
+      ? "1 pasted link isn't a Spotify track."
+      : `${formatCount(others)} pasted links aren't Spotify tracks.`
+  }
   const other = lists > 0 ? 'other ' : ''
   return others === 1
     ? `1 ${other}row isn't a track.`

@@ -517,6 +517,58 @@ export const spotifyBigPlaylist: Collection = CollectionSchema.parse({
   ),
 })
 
+/**
+ * Three Spotify tracks as their embed pages give them (recorded 2026-10): what
+ * `POST /api/resolve/entries` fills `pastedLinks`' rows with, in its order.
+ */
+export const pastedTracks: Track[] = [
+  spotifyTrack,
+  TrackSchema.parse({
+    id: '6aiKIFjPwa3UvDCD5ecoJj',
+    platform: 'spotify',
+    url: 'https://open.spotify.com/track/6aiKIFjPwa3UvDCD5ecoJj',
+    title: 'Whenever You Need Somebody',
+    artist: 'Rick Astley',
+    durationSec: 233.666,
+    thumbnailUrl: spotifyTrack.thumbnailUrl,
+    availability: 'available',
+  }),
+  TrackSchema.parse({
+    id: '76QJgXPE3oc1cnkE4PFHEn',
+    platform: 'spotify',
+    url: 'https://open.spotify.com/track/76QJgXPE3oc1cnkE4PFHEn',
+    title: 'Together Forever',
+    artist: 'Rick Astley',
+    durationSec: 205.533,
+    thumbnailUrl: spotifyTrack.thumbnailUrl,
+    availability: 'available',
+  }),
+]
+
+/** `pastedTracks`' links, one per line, as the Spotify app copies a selection of tracks (⌘A, ⌘C). */
+export const pastedLinksText = pastedTracks.map((full) => full.url).join('\n')
+
+/**
+ * What `POST /api/resolve/links` answers for `pastedLinksText`: a `links` collection whose rows are
+ * partial (id + url, `availability: 'unknown'`) in paste order, filled in from each track's embed
+ * page as they come into view. Its `url` is the first track's: no page holds the list.
+ */
+export const pastedLinks: Collection = CollectionSchema.parse({
+  id: `links-${spotifyTrack.id}`,
+  platform: 'spotify',
+  url: spotifyTrack.url,
+  kind: 'links',
+  title: 'Pasted Spotify tracks',
+  truncated: false,
+  entries: pastedTracks.map(({ id, url }) => ({
+    id,
+    platform: 'spotify',
+    url,
+    availability: 'unknown',
+    partial: true,
+  })),
+})
+
 /** `{ kind: 'track' }`, the answer to a single track's URL. */
 export function trackResult(resolved: Track = track): ResolveResult {
   return ResolveResultSchema.parse({ kind: 'track', track: resolved })

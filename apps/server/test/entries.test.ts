@@ -54,7 +54,10 @@ const DRM: EntryRef = {
   id: '1440857786',
   url: 'https://music.apple.com/us/album/x/1440857781?i=1440857786',
 }
-/** Spotify rows come complete from the listing: there is nothing to look up (ADR-026). */
+/**
+ * A Spotify row is read from its embed page, never with yt-dlp (ADR-026); this app reads no
+ * Spotify, so it's refused (test/resolve.test.ts reads them from the fixtures).
+ */
 const SPOTIFY: EntryRef = {
   platform: 'spotify',
   id: '4uLU6hMCjMI75M1A2tKUQC',
@@ -118,7 +121,7 @@ describe('POST /api/resolve/entries', () => {
       'youtube:jNQXAC9IVRw → ok',
       'other:1440857786 → unsupported_url',
       'soundcloud:2284613 → invalid_request',
-      'spotify:4uLU6hMCjMI75M1A2tKUQC → invalid_request',
+      'spotify:4uLU6hMCjMI75M1A2tKUQC → unsupported_url',
     ])
     expect(trackOf(results, ENTRY.id)).toMatchObject({
       id: '47127631',

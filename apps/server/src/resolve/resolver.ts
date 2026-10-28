@@ -1,4 +1,5 @@
 import {
+  type ResolveLinksRequest,
   type ResolveRequest,
   type ResolveResult,
   ResolveResultSchema,
@@ -15,6 +16,7 @@ import { SPOTIFY_UNREADABLE, type SpotifyClient, SpotifyError } from '../spotify
 import { EmbedParseError, type SpotifyEntity, toResolveResult } from '../spotify/embed.ts'
 import { checkUrl } from './input.ts'
 import { createLimiter } from './limiter.ts'
+import { linksCollection } from './links.ts'
 import { planResolve, type ResolvePlan } from './plan.ts'
 import { CANCELED, callYtdlp, findYtdlp, type Logger, since, UNREADABLE } from './ytdlp-call.ts'
 
@@ -39,6 +41,11 @@ export type Resolver = {
    * `signal` (the browser closed the request) stops yt-dlp or the read.
    */
   resolve: (request: ResolveRequest, signal?: AbortSignal) => Promise<ResolveResult>
+  /**
+   * `POST /api/resolve/links`: Spotify track links pasted at once, as one `links` collection of
+   * partial rows (`linksCollection`). Reads nothing: the rows fill in through the enricher.
+   */
+  resolveLinks: (request: ResolveLinksRequest) => ResolveResult
 }
 
 export function createResolver({
@@ -119,6 +126,21 @@ export function createResolver({
   }
 
   return {
+    resolveLinks(request) {
+      const startedAt = performance.now()
+      try {
+        const result = linksCollection(request.urls)
+        log.info(
+          `[resolve/links] ${request.urls.length} links → ${summarize(result)} in ${since(startedAt)}`,
+        )
+        return result
+      } catch (error) {
+        const code = error instanceof ApiError ? error.code : 'unknown'
+        log.info(`[resolve/links] ${request.urls.length} links → ${code} in ${since(startedAt)}`)
+        throw error
+      }
+    },
+
     async resolve(request, signal) {
       const startedAt = performance.now()
       let kind: UrlKind | 'invalid' = 'invalid'

@@ -17,6 +17,8 @@ import { InfoParseError, normalizeEntry } from '../engine/ytdlp-parse.ts'
 import { ApiError } from '../http/errors.ts'
 import { describeIssues } from '../http/json.ts'
 import type { TokenBucket } from '../pacing/token-bucket.ts'
+import { SPOTIFY_UNREADABLE, type SpotifyClient, SpotifyError } from '../spotify/client.ts'
+import { EmbedParseError, toResolveResult } from '../spotify/embed.ts'
 import { checkUrl } from './input.ts'
 import {
   type Budget,
@@ -55,13 +57,21 @@ export type Pacing = Record<Platform, PacingRule>
  */
 export const SOUNDCLOUD_LOOKUP_BUDGET: Budget = { burst: MAX_ENTRIES_PER_REQUEST, refillMs: 5000 }
 
+/**
+ * A Spotify row's lookup is one read of its embed page (about 10 kB, a few hundred ms), never
+ * yt-dlp. Rows of a playlist's own listing come complete; only pasted track links
+ * (`POST /api/resolve/links`) are partial. Two at a time and four starts a second fill a screenful
+ * in a few seconds, at the user's scroll pace, and a 429 pauses Spotify's lookups (the cooldown
+ * below) without touching YouTube's or SoundCloud's.
+ */
+export const SPOTIFY_LOOKUP_INTERVAL_MS = 250
+
 /** Shared by all requests, so parallel batches can't add up. */
 export const DEFAULT_PACING: Pacing = {
   soundcloud: { concurrency: 2, minIntervalMs: 1000, budget: SOUNDCLOUD_LOOKUP_BUDGET },
   youtube: { concurrency: 2, minIntervalMs: 500 },
   other: { concurrency: 2, minIntervalMs: 500 },
-  // Never used: Spotify rows are complete, and a lookup of one is refused (ADR-026).
-  spotify: { concurrency: 1, minIntervalMs: 1000 },
+  spotify: { concurrency: 2, minIntervalMs: SPOTIFY_LOOKUP_INTERVAL_MS },
 }
 
 export const ENTRY_TIMEOUT_MS = 60_000
@@ -96,6 +106,8 @@ export type EnricherDeps = {
   pacing?: Pacing
   cacheTtlMs?: number
   cacheMax?: number
+  /** Reads a Spotify row's embed page (ADR-026); without it, Spotify rows are refused. */
+  spotify?: SpotifyClient
   log?: Logger
 }
 
@@ -158,6 +170,7 @@ export function createEnricher({
   pacing = DEFAULT_PACING,
   cacheTtlMs = DEFAULT_CACHE_TTL_MS,
   cacheMax = DEFAULT_CACHE_MAX,
+  spotify,
   log = console,
 }: EnricherDeps): Enricher {
   const cache = createTtlCache<Track>({ ttlMs: cacheTtlMs, max: cacheMax, clock })
@@ -203,6 +216,42 @@ export function createEnricher({
   const warn = (target: Target, detail: string) =>
     log.warn(`[resolve/entries] ${JSON.stringify(target.key)}: ${detail}`)
 
+  /** Caches a found track and ends the platform's run of rate limits. */
+  const found = (target: Target, track: Track): Outcome => {
+    cache.set(target.key, track)
+    const state = stateOf(target.platform)
+    if (clock() >= state.cooldownUntil) state.strikes = 0
+    return { ok: true, track }
+  }
+
+  /** A Spotify row: its track's embed page, read the way a pasted track link resolves. */
+  async function lookupSpotify(
+    target: Target,
+    client: SpotifyClient,
+    signal: AbortSignal,
+  ): Promise<Outcome> {
+    let result: ReturnType<typeof toResolveResult>
+    try {
+      const entity = await client.entity(target.input, signal)
+      if (entity.type !== 'track') {
+        warn(target, `Spotify answered with a ${entity.type}`)
+        return { ok: false, error: SPOTIFY_UNREADABLE }
+      }
+      result = toResolveResult(entity)
+    } catch (error) {
+      if (error instanceof EmbedParseError) {
+        warn(target, error.message)
+        return { ok: false, error: SPOTIFY_UNREADABLE }
+      }
+      if (!(error instanceof SpotifyError)) throw error
+      if (error.info.code === 'rate_limited') startCooldown(target.platform)
+      else if (error.info.code === 'unknown' && error.detail) warn(target, error.detail)
+      return { ok: false, error: error.info }
+    }
+    if (result.kind !== 'track') return { ok: false, error: SPOTIFY_UNREADABLE }
+    return found(target, result.track)
+  }
+
   async function lookup(target: Target, bin: string, signal: AbortSignal): Promise<Outcome> {
     const argv = entryArgs({ url: target.input.url, jsRuntime })
     const outcome = await callYtdlp(bin, argv, {
@@ -230,32 +279,35 @@ export function createEnricher({
       warn(target, `off-contract track: ${describeIssues(checked.error.issues)}`)
       return { ok: false, error: UNREADABLE }
     }
-
-    cache.set(target.key, checked.data)
-    const state = stateOf(target.platform)
-    if (clock() >= state.cooldownUntil) state.strikes = 0
-    return { ok: true, track: checked.data }
+    return found(target, checked.data)
   }
 
-  /** Locates yt-dlp, waits for the platform's pacing, then looks the row up. */
+  /**
+   * Locates yt-dlp (a Spotify row needs none), waits for the platform's pacing, then looks the row
+   * up.
+   */
   async function paced(
     target: Target,
     bin: () => Promise<string>,
     signal: AbortSignal,
   ): Promise<Outcome> {
-    const path = await bin()
+    let start: () => Promise<Outcome>
+    if (target.platform === 'spotify') {
+      const client = spotify
+      if (client === undefined) return { ok: false, error: NO_SPOTIFY }
+      start = () => lookupSpotify(target, client, signal)
+    } else {
+      const path = await bin()
+      start = () => lookup(target, path, signal)
+    }
     try {
-      return await stateOf(target.platform).limiter.run<Outcome>(
-        () => lookup(target, path, signal),
-        signal,
-        () => {
-          // Filled, or a cooldown begun, before its turn came: start nothing, spend no pacing.
-          const fresh = cache.get(target.key)
-          if (fresh) return { value: { ok: true, track: fresh } }
-          const cooling = cooldownError(target.platform)
-          return cooling ? { value: { ok: false, error: cooling } } : undefined
-        },
-      )
+      return await stateOf(target.platform).limiter.run<Outcome>(start, signal, () => {
+        // Filled, or a cooldown begun, before its turn came: start nothing, spend no pacing.
+        const fresh = cache.get(target.key)
+        if (fresh) return { value: { ok: true, track: fresh } }
+        const cooling = cooldownError(target.platform)
+        return cooling ? { value: { ok: false, error: cooling } } : undefined
+      })
     } catch (error) {
       if (error instanceof CooldownError) {
         return { ok: false, error: cooldownError(target.platform) ?? RATE_LIMITED }
@@ -331,7 +383,7 @@ export function createEnricher({
     if (!checked.ok) return failed(row, checked.error)
     const { input } = checked
     if (input.guess === 'collection') return failed(row, NOT_A_TRACK)
-    if (input.platform === 'spotify') return failed(row, SPOTIFY_ROW)
+    if (input.platform === 'spotify' && spotify === undefined) return failed(row, NO_SPOTIFY)
     const target: Target = { key: `${input.platform}:${row.id}`, platform: input.platform, input }
     const cached = cache.get(target.key)
     if (cached) return filled(row, cached)
@@ -387,10 +439,10 @@ const NOT_A_TRACK: ErrorInfo = {
   message: 'This link is a list, not a track: resolve it instead.',
 }
 
-/** Spotify rows come complete from the listing; there is nothing for yt-dlp to look up (ADR-026). */
-const SPOTIFY_ROW: ErrorInfo = {
-  code: 'invalid_request',
-  message: 'Spotify rows are complete: there is nothing to look up.',
+/** A server built without a Spotify client (some tests) can't read Spotify's pages. */
+const NO_SPOTIFY: ErrorInfo = {
+  code: 'unsupported_url',
+  message: "This server can't read Spotify links.",
 }
 
 const RATE_LIMITED: ErrorInfo = {

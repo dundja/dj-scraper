@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   bigPlaylist,
   collectionWith,
+  pastedLinks,
   playlist,
   scSet,
   spotifyBigPlaylist,
@@ -48,6 +49,10 @@ describe('counts', () => {
 })
 
 describe('kindLabel', () => {
+  it('names a list of pasted links', () => {
+    expect(kindLabel(pastedLinks)).toBe('Pasted links')
+  })
+
   it('names each kind', () => {
     expect(kindLabel(playlist)).toBe('Playlist')
     expect(kindLabel(scSet)).toBe('Set')
@@ -120,9 +125,12 @@ describe('truncatedNote', () => {
   })
 
   it("says Spotify's page lists only a list's first 100 tracks, never our own cap", () => {
+    // The way to every track: paste them all, copied in Spotify's app (a `links` collection).
+    const HOW_TO_LOAD_ALL =
+      'To load them all, open it in the Spotify desktop app, select every track (⌘A), copy (⌘C) and paste here.'
     expect(truncatedNote(spotifyPlaylist)).toBeUndefined()
     expect(truncatedNote(spotifyBigPlaylist)).toBe(
-      'Spotify shows only the first 100 tracks of a playlist.',
+      `Spotify shows only the first 100 tracks of a playlist. ${HOW_TO_LOAD_ALL}`,
     )
     // Podcast episodes among the first 100 are skipped: the note still says 100.
     const withEpisodes = collectionWith(spotifyBigPlaylist, {
@@ -130,10 +138,10 @@ describe('truncatedNote', () => {
       skippedEntries: 3,
     })
     expect(truncatedNote(withEpisodes)).toBe(
-      'Spotify shows only the first 100 tracks of a playlist.',
+      `Spotify shows only the first 100 tracks of a playlist. ${HOW_TO_LOAD_ALL}`,
     )
     expect(truncatedNote(collectionWith(spotifyBigPlaylist, { kind: 'album' }))).toBe(
-      'Spotify shows only the first 100 tracks of an album.',
+      `Spotify shows only the first 100 tracks of an album. ${HOW_TO_LOAD_ALL}`,
     )
   })
 })
@@ -186,6 +194,24 @@ describe('lists', () => {
     expect(
       listTitle({ url: 'https://soundcloud.com/x/sets/royal-ep/s-8Pjrp', title: 'Royal EP' }),
     ).toBe('Royal EP')
+  })
+})
+
+describe('pasted links', () => {
+  it("say which pasted links weren't Spotify tracks", () => {
+    expect(skippedNote(pastedLinks)).toBeUndefined()
+    expect(skippedNote(collectionWith(pastedLinks, { skippedEntries: 1 }))).toBe(
+      "1 pasted link isn't a Spotify track.",
+    )
+    expect(skippedNote(collectionWith(pastedLinks, { skippedEntries: 1200 }))).toBe(
+      "1,200 pasted links aren't Spotify tracks.",
+    )
+  })
+
+  it("never read their url as a page: it is the first track's", () => {
+    expect(listNoun(pastedLinks, 2)).toBe('2 lists')
+    expect(truncatedNote(pastedLinks)).toBeUndefined()
+    expect(sourceNote(pastedLinks)).toContain('found on YouTube')
   })
 })
 

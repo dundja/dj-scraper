@@ -3,7 +3,7 @@ import { type RefObject, useEffect, useId } from 'react'
 import { Button } from '@/components/ui/button.tsx'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group.tsx'
 import { cn } from '@/lib/utils.ts'
-import { findLink } from './paste-text.ts'
+import { findLink, spotifyTrackList } from './paste-text.ts'
 import { UrlBadge } from './url-badge.tsx'
 import type { UrlVerdict } from './url-verdict.ts'
 import { usePasteShortcut } from './use-paste-shortcut.ts'
@@ -20,6 +20,10 @@ type PasteBoxProps = {
   onTextChange: (text: string) => void
   /** Enter or Go with the box's text, or a link pasted into the box. */
   onLoad: (text: string) => void
+  /** Two or more Spotify track links pasted into the box, to load as one list. */
+  onLoadLinks: (urls: string[]) => void
+  /** A note under the empty box, e.g. what became of the Spotify links pasted last. */
+  note?: string | undefined
   onCancel: () => void
 }
 
@@ -36,6 +40,8 @@ export function PasteBox({
   pending,
   onTextChange,
   onLoad,
+  onLoadLinks,
+  note,
   onCancel,
 }: PasteBoxProps) {
   const id = useId()
@@ -53,7 +59,11 @@ export function PasteBox({
     verdict.status === 'ok' || (verdict.status === 'empty' && !refused)
       ? undefined
       : verdict.message
-  const describedBy = [hasBadge && badgeId, message !== undefined && messageId].filter(Boolean)
+  const shownNote = message === undefined && verdict.status === 'empty' ? note : undefined
+  const describedBy = [
+    hasBadge && badgeId,
+    (message !== undefined || shownNote !== undefined) && messageId,
+  ].filter(Boolean)
 
   return (
     <form
@@ -88,7 +98,15 @@ export function PasteBox({
             onChange={(event) => onTextChange(event.target.value)}
             onPaste={(event) => {
               // A link replaces whatever was in the box and loads; other text pastes as usual.
-              const link = findLink(event.clipboardData.getData('text/plain'))
+              // Several Spotify track links (a playlist copied in the Spotify app) load as one list.
+              const pasted = event.clipboardData.getData('text/plain')
+              const links = spotifyTrackList(pasted)
+              if (links !== undefined) {
+                event.preventDefault()
+                onLoadLinks(links)
+                return
+              }
+              const link = findLink(pasted)
               if (link === undefined) return
               event.preventDefault()
               onLoad(link)
@@ -115,6 +133,11 @@ export function PasteBox({
           className={cn('px-0.5 text-xs', refused ? 'text-destructive' : 'text-muted-foreground')}
         >
           {message}
+        </p>
+      )}
+      {shownNote !== undefined && (
+        <p id={messageId} className="px-0.5 text-xs text-muted-foreground">
+          {shownNote}
         </p>
       )}
     </form>

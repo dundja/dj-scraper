@@ -119,7 +119,7 @@ export function createServices({
   const pacing = overrides.pacing ?? productionPacing()
   const spotify = createSpotifyClient(spotifyOrigin === undefined ? {} : { origin: spotifyOrigin })
   const resolver = createResolver({ engine, spotify, log })
-  const enricher = createEnricher({ engine, log, pacing: pacing.lookups })
+  const enricher = createEnricher({ engine, spotify, log, pacing: pacing.lookups })
   const remixes = createRemixFinder({
     engine,
     ...(pacing.lookups.soundcloud.budget === undefined

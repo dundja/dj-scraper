@@ -40,6 +40,10 @@ export function PasteEmptyState() {
           <span className="sr-only">Command V</span>
           <span>anywhere on the page, or drop a link on the window</span>
         </p>
+        <p className="text-xs text-pretty text-muted-foreground">
+          A Spotify playlist over 100 tracks: in the Spotify desktop app, select every track (⌘A),
+          copy (⌘C) and paste here.
+        </p>
       </EmptyContent>
     </Empty>
   )

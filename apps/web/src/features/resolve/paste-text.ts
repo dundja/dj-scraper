@@ -1,4 +1,4 @@
-import { MAX_URL_LENGTH } from '@dj-scraper/shared'
+import { classifyUrl, MAX_PASTED_LINKS, MAX_URL_LENGTH } from '@dj-scraper/shared'
 
 /**
  * Typographic punctuation that closes around a link and never belongs to one: smart quotes ‘’‚‛“”„‟
@@ -18,6 +18,16 @@ const SCHEMELESS_LINK = new RegExp(
   String.raw`(?<![\w@.-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}/${LINK_BODY}*`,
   'i',
 )
+/**
+ * A Spotify track URI, as some versions of the Spotify app copy a selection of tracks:
+ * `spotify:track:<22 base62 characters>`.
+ */
+const SPOTIFY_TRACK_URI = /spotify:track:([0-9a-z]{22})(?![0-9a-z])/i
+/** Every link and Spotify track URI in a text, in order (an http(s) link first at each place). */
+const ANY_LINK = new RegExp(
+  `${HTTP_LINK.source}|${SPOTIFY_TRACK_URI.source}|${SCHEMELESS_LINK.source}`,
+  'gi',
+)
 /** Punctuation that closes the sentence around a link rather than the link itself. */
 const SENTENCE_END = new Set(['.', ',', ';', ':', '!', '?'])
 const CLOSING_BRACKETS: Record<string, string> = { ')': '(', ']': '[' }
@@ -30,6 +40,52 @@ const CLOSING_BRACKETS: Record<string, string> = { ')': '(', ']': '[' }
 export function findLink(text: string): string | undefined {
   const match = HTTP_LINK.exec(text) ?? SCHEMELESS_LINK.exec(text)
   return match === null ? undefined : clip(trimLinkEnd(match[0]))
+}
+
+/**
+ * Every Spotify track link in `text`, in order and once per track, as canonical
+ * `https://open.spotify.com/track/<id>` URLs: what the Spotify app copies from a playlist with ⌘A
+ * then ⌘C, one link per line (some versions copy `spotify:track:<id>` URIs instead). Links are read
+ * as `findLink` reads them; other links are left out. At most `MAX_PASTED_LINKS`.
+ */
+export function findSpotifyTrackLinks(text: string): string[] {
+  const urls: string[] = []
+  const seen = new Set<string>()
+  for (const match of text.matchAll(ANY_LINK)) {
+    const uriId = match[1]
+    const candidate =
+      uriId === undefined ? trimLinkEnd(match[0]) : `https://open.spotify.com/track/${uriId}`
+    const classified = classifyUrl(candidate)
+    if (!classified.ok || classified.kind !== 'spotify_track') continue
+    const id = classified.spotifyId ?? classified.url
+    if (seen.has(id)) continue
+    seen.add(id)
+    urls.push(classified.url)
+    if (urls.length === MAX_PASTED_LINKS) break
+  }
+  return urls
+}
+
+/**
+ * The Spotify track links of a paste that loads as one list: 2 or more distinct tracks. Undefined
+ * otherwise, and the paste loads its first link as usual.
+ */
+export function spotifyTrackList(text: string): string[] | undefined {
+  const urls = findSpotifyTrackLinks(text)
+  return urls.length >= 2 ? urls : undefined
+}
+
+/**
+ * The Spotify track links of a drop that loads as one list (2 or more): those of its
+ * `text/uri-list` (comments left out), else of its `text/plain`.
+ */
+export function dropSpotifyTrackList(data: Pick<DataTransfer, 'getData'>): string[] | undefined {
+  const uris = data
+    .getData('text/uri-list')
+    .split(/\r?\n/)
+    .filter((line) => !line.trim().startsWith('#'))
+    .join('\n')
+  return spotifyTrackList(uris) ?? spotifyTrackList(data.getData('text/plain'))
 }
 
 /**

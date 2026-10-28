@@ -21,6 +21,7 @@ import {
   type ResolveEntriesRequestSchema,
   type ResolveEntriesResponse,
   ResolveEntriesResponseSchema,
+  type ResolveLinksRequest,
   type ResolveRequestSchema,
   type ResolveResult,
   ResolveResultSchema,
@@ -169,6 +170,13 @@ export const api = {
     signal?: AbortSignal,
   ): Promise<ResolveResult> =>
     request('/resolve', ResolveResultSchema, { method: 'POST', body, signal }),
+  /**
+   * Several Spotify track links pasted at once (a playlist copied in the Spotify app), answered as
+   * one `links` collection of partial rows in paste order, which fill in as they come into view.
+   * Links that aren't Spotify tracks are skipped; none at all is 422 `unsupported_url`.
+   */
+  resolveLinks: (body: ResolveLinksRequest, signal?: AbortSignal): Promise<ResolveResult> =>
+    request('/resolve/links', ResolveResultSchema, { method: 'POST', body, signal }),
   /** Full Tracks for the partial collection rows in view; each row succeeds or fails on its own. */
   resolveEntries: (
     body: z.input<typeof ResolveEntriesRequestSchema>,

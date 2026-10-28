@@ -651,6 +651,8 @@ export const SPOTIFY_FIXTURES = path.join(FIXTURES, 'spotify')
 /** What the fixture server answers: an embed page's path → its fixture in SPOTIFY_FIXTURES. */
 export const SPOTIFY_PAGES: Readonly<Record<string, string>> = {
   '/embed/track/4uLU6hMCjMI75M1A2tKUQC': 'track.html',
+  '/embed/track/6aiKIFjPwa3UvDCD5ecoJj': 'track-2.html',
+  '/embed/track/76QJgXPE3oc1cnkE4PFHEn': 'track-3.html',
   '/embed/album/6N9PS4QXF1D0OWPk0Sxtb4': 'album.html',
   '/embed/playlist/37i9dQZF1DXcBWIGoYBM5M': 'playlist.html',
   '/embed/playlist/37i9dQZF1DX4UtSsGT1Sbe': 'playlist-capped.html',

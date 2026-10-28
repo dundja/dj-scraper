@@ -7,10 +7,18 @@ import { mapYtdlpError } from '../engine/ytdlp-errors.ts'
 import { InfoParseError, normalizeEntry } from '../engine/ytdlp-parse.ts'
 import { ApiError } from '../http/errors.ts'
 import {
+  SPOTIFY_NOT_FOUND,
+  SPOTIFY_RATE_LIMITED,
+  type SpotifyClient,
+  SpotifyError,
+} from '../spotify/client.ts'
+import type { SpotifyEntity } from '../spotify/embed.ts'
+import {
   createEnricher,
   type EnricherDeps,
   type Pacing,
   SOUNDCLOUD_LOOKUP_BUDGET,
+  SPOTIFY_LOOKUP_INTERVAL_MS,
 } from './enricher.ts'
 
 // The parser and the error mapper have their own fixture tests; here they are stand-ins.
@@ -39,6 +47,25 @@ const yt = (id: string): EntryRef => ({
   id,
   url: `https://www.youtube.com/watch?v=${id.padEnd(11, '0')}`,
 })
+/** A Spotify track row, as a pasted link lists it: ids are 22 letters and digits. */
+const sp = (n: number): EntryRef => {
+  const id = `${n}`.padStart(22, 'a')
+  return { platform: 'spotify', id, url: `https://open.spotify.com/track/${id}` }
+}
+
+/** What the stand-in embed page says about a Spotify track. */
+const spotifyTrack = (id: string): SpotifyEntity => ({
+  type: 'track',
+  track: {
+    id,
+    title: `Song ${id.replace(/^a+/, '')}`,
+    artists: ['Rick Astley'],
+    durationSec: 213.573,
+  },
+})
+
+type SpotifyResponder = (id: string, signal?: AbortSignal) => SpotifyEntity | Promise<SpotifyEntity>
+
 /** `count` SoundCloud rows with ids `from`, `from + 1`, … */
 const scRows = (from: number, count: number) =>
   Array.from({ length: count }, (_, i) => sc(String(from + i)))
@@ -129,8 +156,11 @@ function setup({
   pacing,
   cacheTtlMs,
   cacheMax,
+  spotify,
 }: {
   respond?: Responder
+  /** Gives the enricher a Spotify client whose embed pages this answers. Default none. */
+  spotify?: SpotifyResponder
   engine?: EngineEnv
   /**
    * Use the default locator (findYtdlp), whose file checks finish at any point of the fake time.
@@ -153,6 +183,14 @@ function setup({
   // clock can move.
   const locate = vi.fn<Locate>(async () => YTDLP)
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+  const spotifyReads: { id: string; at: number }[] = []
+  const entity = vi.fn<SpotifyClient['entity']>(async (input, signal) => {
+    const id = input.spotifyId ?? ''
+    spotifyReads.push({ id, at: time.now })
+    if (spotify === undefined) throw new Error('no Spotify client in this test')
+    return spotify(id, signal)
+  })
+  const client: SpotifyClient = { entity, cover: async () => undefined }
   const enricher = createEnricher({
     engine,
     run: runFn,
@@ -164,9 +202,10 @@ function setup({
     ...(pacing ? { pacing } : {}),
     ...(cacheTtlMs === undefined ? {} : { cacheTtlMs }),
     ...(cacheMax === undefined ? {} : { cacheMax }),
+    ...(spotify === undefined ? {} : { spotify: client }),
   })
   const enrich = (entries: EntryRef[], signal?: AbortSignal) => enricher.enrich({ entries }, signal)
-  return { enricher, enrich, run: runFn, locate, starts, time, log }
+  return { enricher, enrich, run: runFn, locate, starts, time, log, entity, spotifyReads }
 }
 
 /** Results reduced to `id → ok | code`, in order. */
@@ -269,8 +308,13 @@ describe('enricher.enrich', () => {
       'https://music.apple.com/us/album/x/1440857781?i=1440857786',
       'unsupported_url',
     ],
-    // Spotify rows come complete from the listing; yt-dlp has nothing to look up (ADR-026).
-    ['a Spotify track', 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC', 'invalid_request'],
+    // A Spotify track needs the Spotify client, which this enricher wasn't given.
+    ['a Spotify track', 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC', 'unsupported_url'],
+    [
+      'a Spotify playlist',
+      'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M',
+      'invalid_request',
+    ],
     ['a Spotify page', 'https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt', 'unsupported_url'],
     ['a SoundCloud set', 'https://soundcloud.com/someone/sets/a-set', 'invalid_request'],
     ['a YouTube playlist', 'https://www.youtube.com/playlist?list=PLabc', 'invalid_request'],
@@ -600,6 +644,139 @@ describe('enricher.enrich', () => {
       const again = await enrich([sc('1')])
       expect(again.results).toMatchObject([{ status: 'ok', platform: 'soundcloud', id: '1' }])
       expect(run).toHaveBeenCalledOnce()
+    })
+  })
+
+  describe('Spotify rows (pasted track links, ADR-026)', () => {
+    it('fills a row from its embed page, without yt-dlp', async () => {
+      const { enrich, run, locate, entity } = setup({ spotify: spotifyTrack })
+      const response = await enrich([sp(1)])
+      expect(response.results).toStrictEqual([
+        {
+          status: 'ok',
+          platform: 'spotify',
+          id: sp(1).id,
+          track: {
+            id: sp(1).id,
+            platform: 'spotify',
+            url: sp(1).url,
+            title: 'Song 1',
+            artist: 'Rick Astley',
+            durationSec: 213.573,
+            availability: 'available',
+          },
+        },
+      ])
+      expect(entity).toHaveBeenCalledOnce()
+      expect(entity.mock.calls[0]?.[0]).toMatchObject({
+        kind: 'spotify_track',
+        spotifyId: sp(1).id,
+      })
+      expect(run).not.toHaveBeenCalled()
+      expect(locate).not.toHaveBeenCalled()
+    })
+
+    it('fills Spotify rows when yt-dlp is missing', async () => {
+      const { enrich } = setup({ spotify: spotifyTrack, engine: {}, realLocator: true })
+      expect(outcome(await enrich([sp(1)]))).toEqual([[sp(1).id, 'ok']])
+    })
+
+    it(`reads two pages at a time, ${SPOTIFY_LOOKUP_INTERVAL_MS} ms apart, beside the other platforms`, async () => {
+      const { enrich, spotifyReads, starts } = setup({ spotify: spotifyTrack })
+      const response = await enrich([sp(1), sp(2), sp(3), sp(4), yt('7')])
+      expect(response.results.every((r) => r.status === 'ok')).toBe(true)
+      const t0 = spotifyReads[0]?.at ?? 0
+      expect(spotifyReads.map((read) => read.at - t0)).toEqual([0, 250, 500, 750])
+      // YouTube's lookup doesn't wait behind Spotify's pacing.
+      expect(starts.map((start) => start.at - t0)).toEqual([0])
+    })
+
+    it('caches a filled row: a second request reads nothing, and peek knows it', async () => {
+      const { enricher, enrich, entity } = setup({ spotify: spotifyTrack })
+      await enrich([sp(1)])
+      expect(outcome(await enrich([sp(1)]))).toEqual([[sp(1).id, 'ok']])
+      expect(entity).toHaveBeenCalledOnce()
+      expect(enricher.peek('spotify', sp(1).id)).toMatchObject({ title: 'Song 1' })
+    })
+
+    it('fails a missing track on its own row', async () => {
+      const { enrich } = setup({
+        spotify: (id) => {
+          if (id === sp(2).id) throw new SpotifyError(SPOTIFY_NOT_FOUND, 'HTTP 404')
+          return spotifyTrack(id)
+        },
+      })
+      const response = await enrich([sp(1), sp(2)])
+      expect(outcome(response)).toEqual([
+        [sp(1).id, 'ok'],
+        [sp(2).id, 'unavailable'],
+      ])
+      expect(response.results[1]).toMatchObject({ error: SPOTIFY_NOT_FOUND })
+    })
+
+    it('pauses only Spotify after a 429: its waiting and new rows fail without a read', async () => {
+      const { enrich, entity, time } = setup({
+        spotify: (id) => {
+          if (id === sp(1).id) throw new SpotifyError(SPOTIFY_RATE_LIMITED, 'HTTP 429')
+          return spotifyTrack(id)
+        },
+      })
+      const response = await enrich([sp(1), sp(2), sp(3), yt('7')])
+      expect(outcome(response)).toEqual([
+        [sp(1).id, 'rate_limited'],
+        [sp(2).id, 'rate_limited'],
+        [sp(3).id, 'rate_limited'],
+        ['7', 'ok'],
+      ])
+      expect(response.results[2]).toMatchObject({
+        error: { message: 'Spotify is limiting requests. Try again in 1 minute.' },
+      })
+      // Row 2 was waiting for its turn (250 ms later) when the cooldown began.
+      expect(entity).toHaveBeenCalledOnce()
+
+      time.now += 60_000
+      expect(outcome(await enrich([sp(3)]))).toEqual([[sp(3).id, 'ok']])
+    })
+
+    it.each<[string, SpotifyEntity]>([
+      ['an album', { type: 'album', id: 'x', title: 'X', rows: [], skipped: 0, listed: 0 }],
+      [
+        'a track the contract refuses',
+        {
+          type: 'track',
+          track: { id: 'x', title: 'X', artists: [], coverUrl: 'file:///etc/passwd' },
+        },
+      ],
+    ])(
+      'fails a row whose page holds %s as unreadable, and logs no page text',
+      async (_label, page) => {
+        const { enrich, log } = setup({ spotify: () => page })
+        const response = await enrich([sp(1)])
+        expect(response.results[0]).toMatchObject({
+          status: 'error',
+          error: {
+            code: 'unknown',
+            message: "Spotify's page has changed, and DJ Scraper can't read it.",
+          },
+        })
+        expect(logged(log)).not.toContain('X')
+      },
+    )
+
+    it('stops the read when the request goes away', async () => {
+      let readSignal: AbortSignal | undefined
+      const { enrich } = setup({
+        spotify: (_id, signal) => {
+          readSignal = signal
+          return new Promise<SpotifyEntity>(() => {})
+        },
+      })
+      const controller = new AbortController()
+      const pending = apiError(enrich([sp(1)], controller.signal))
+      await vi.waitFor(() => expect(readSignal).toBeDefined())
+      controller.abort()
+      expect(await pending).toMatchObject({ code: 'canceled' })
+      expect(readSignal?.aborted).toBe(true)
     })
   })
 

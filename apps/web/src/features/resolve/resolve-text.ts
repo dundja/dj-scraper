@@ -2,10 +2,12 @@ import {
   type AmbiguousListKind,
   type CollectionKind,
   MAX_MIX_ENTRIES,
+  MAX_PASTED_LINKS,
   type Platform,
   type ResolveResult,
 } from '@dj-scraper/shared'
-import type { ResultShape } from './url-verdict.ts'
+import { loadingShape, type ResultShape } from './url-verdict.ts'
+import type { Submission } from './use-resolve.ts'
 
 /** The words of the "this track or the whole list?" choice, by the kind of list. */
 export type AmbiguousWording = {
@@ -60,6 +62,31 @@ export function loadingLabel(shape: ResultShape): string {
   return LOADING_LABELS[shape]
 }
 
+/** The skeleton a load shows: a list for pasted links, else what its link most likely is. */
+export function submissionShape(submission: Submission): ResultShape {
+  return submission.kind === 'links' ? 'list' : loadingShape(submission.url, submission.mode)
+}
+
+/** "Loading the track…", or for pasted Spotify links "Loading 312 Spotify tracks…". */
+export function submissionLoadingLabel(submission: Submission): string {
+  if (submission.kind === 'links') {
+    return `Loading ${countOf(submission.urls.length, 'Spotify track')}…`
+  }
+  return loadingLabel(submissionShape(submission))
+}
+
+/**
+ * Under the emptied paste box after a paste of several Spotify track links, which a one-link box
+ * can't hold: what became of them.
+ */
+export function pastedLinksNote(count: number): string {
+  // findSpotifyTrackLinks stops at the cap, so a longer paste is cut there: say so.
+  if (count >= MAX_PASTED_LINKS) {
+    return `Pasted the first ${countOf(MAX_PASTED_LINKS, 'Spotify track link')}, the most one list takes: paste any others on their own.`
+  }
+  return `Pasted ${countOf(count, 'Spotify track link')}: they load as one list.`
+}
+
 /** How long to wait before a list's loading state shows the seconds and the note below. */
 export const SLOW_AFTER_SECONDS = 3
 
@@ -80,6 +107,7 @@ const COLLECTION_NOUNS: Record<CollectionKind, string> = {
   channel: 'Channel',
   likes: 'Likes',
   mix: 'Mix',
+  links: 'Pasted links',
   other: 'List',
 }
 
@@ -103,7 +131,10 @@ export function resultAnnouncement(result: ResolveResult): string {
         entries.length > 0 || lists === undefined
           ? countOf(entries.length, 'track')
           : countOf(lists.length, 'list')
-      return `${COLLECTION_NOUNS[kind]}: ${title}, ${contents}`
+      // Pasted links have no page of their own: the title already says what they are.
+      return kind === 'links'
+        ? `${title}, ${contents}`
+        : `${COLLECTION_NOUNS[kind]}: ${title}, ${contents}`
     }
   }
 }

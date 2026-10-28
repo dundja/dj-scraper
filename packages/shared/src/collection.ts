@@ -5,7 +5,8 @@ import { HttpUrlSchema } from './url.ts'
 
 /**
  * `channel` covers a YouTube channel tab and a SoundCloud user page (all, tracks, reposts). `album`
- * also covers SoundCloud sets the uploader labelled album, EP, single or compilation.
+ * also covers SoundCloud sets the uploader labelled album, EP, single or compilation. `links` is a
+ * list of track links pasted at once (`POST /api/resolve/links`), which no platform page holds.
  */
 export const CollectionKindSchema = z.enum([
   'playlist',
@@ -14,6 +15,7 @@ export const CollectionKindSchema = z.enum([
   'channel',
   'likes',
   'mix',
+  'links',
   'other',
 ])
 export type CollectionKind = z.infer<typeof CollectionKindSchema>

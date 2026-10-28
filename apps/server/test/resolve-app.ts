@@ -61,8 +61,9 @@ let count = 0
 /**
  * Starts the app on a free port with a fake yt-dlp in `root/app-<n>/`. `engine` replaces the fake
  * (e.g. a YTDLP_PATH that doesn't exist); `manifestRules` come before the recorded fixtures' rules.
- * `spotifyOrigin` (a `startSpotifyFixtures` origin) gives the resolver a Spotify client reading
- * from it; without one, Spotify links are refused, so no test ever reaches open.spotify.com.
+ * `spotifyOrigin` (a `startSpotifyFixtures` origin) gives the resolver and the enricher a Spotify
+ * client reading from it; without one, Spotify links are refused, so no test ever reaches
+ * open.spotify.com.
  */
 export async function startResolveApp(
   root: string,
@@ -84,14 +85,17 @@ export async function startResolveApp(
     logs.push(data.map(String).join(' '))
   }
   const log = { info: write, warn: write, error: write }
-  const resolver = createResolver({
+  const spotify =
+    options.spotifyOrigin === undefined
+      ? undefined
+      : createSpotifyClient({ origin: options.spotifyOrigin })
+  const resolver = createResolver({ engine, log, ...(spotify === undefined ? {} : { spotify }) })
+  const enricher = createEnricher({
     engine,
     log,
-    ...(options.spotifyOrigin === undefined
-      ? {}
-      : { spotify: createSpotifyClient({ origin: options.spotifyOrigin }) }),
+    pacing: options.pacing ?? SEQUENTIAL,
+    ...(spotify === undefined ? {} : { spotify }),
   })
-  const enricher = createEnricher({ engine, log, pacing: options.pacing ?? SEQUENTIAL })
   const remixes = createRemixFinder({ engine, log })
   const stubHealth = { current: async () => health, recheck: async () => health }
   const server = await startServer(0, (port) =>

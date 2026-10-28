@@ -13,10 +13,13 @@ import {
   MAX_COLLECTION_ENTRIES,
   MAX_ENTRIES_PER_REQUEST,
   MAX_MIX_ENTRIES,
+  MAX_PASTED_LINKS,
   type ResolveEntriesRequest,
   ResolveEntriesRequestSchema,
   type ResolveEntriesResponse,
   ResolveEntriesResponseSchema,
+  type ResolveLinksRequest,
+  ResolveLinksRequestSchema,
   type ResolveMode,
   ResolveModeSchema,
   type ResolveRequest,
@@ -286,14 +289,55 @@ describe('ResolveRequestSchema', () => {
   })
 })
 
+describe('ResolveLinksRequestSchema', () => {
+  const urls = [
+    'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC',
+    'https://open.spotify.com/track/7GhIk7Il098yCjg4BQjzvb?si=abc',
+  ]
+
+  it('takes the pasted links as they are: classifyUrl checks each one on the server', () => {
+    expect(ResolveLinksRequestSchema.parse({ urls })).toStrictEqual({ urls })
+    expect(ResolveLinksRequestSchema.parse({ urls: ['not a link'] })).toStrictEqual({
+      urls: ['not a link'],
+    })
+  })
+
+  it('takes as many links as a list may hold, and no more', () => {
+    expect(MAX_PASTED_LINKS).toBe(MAX_COLLECTION_ENTRIES)
+    const full = Array.from({ length: MAX_PASTED_LINKS }, () => urls[0] as string)
+    expect(ResolveLinksRequestSchema.safeParse({ urls: full }).success).toBe(true)
+    expect(issuePaths(ResolveLinksRequestSchema, { urls: [...full, urls[0]] })).toEqual([['urls']])
+  })
+
+  it.each([
+    ['without urls', {}, ['urls']],
+    ['with no link', { urls: [] }, ['urls']],
+    ['with a non-string link', { urls: [42] }, ['urls', 0]],
+    [
+      'with an over-long link',
+      { urls: [`https://a.b/${'x'.repeat(MAX_URL_LENGTH)}`] },
+      ['urls', 0],
+    ],
+  ])('rejects a request %s', (_label, input, path) => {
+    expect(issuePaths(ResolveLinksRequestSchema, input)).toEqual([path])
+  })
+
+  it('is a list of strings', () => {
+    expectTypeOf<ResolveLinksRequest>().toEqualTypeOf<{ urls: string[] }>()
+  })
+})
+
 describe('AmbiguousListKindSchema', () => {
   it.each(['playlist', 'album', 'mix'])('accepts %j', (kind) => {
     expect(AmbiguousListKindSchema.parse(kind)).toBe(kind)
   })
 
-  it.each(['set', 'channel', 'likes', 'other'])('rejects the collection kind %j', (kind) => {
-    expect(AmbiguousListKindSchema.safeParse(kind).success).toBe(false)
-  })
+  it.each(['set', 'channel', 'likes', 'links', 'other'])(
+    'rejects the collection kind %j',
+    (kind) => {
+      expect(AmbiguousListKindSchema.safeParse(kind).success).toBe(false)
+    },
+  )
 
   it('is the YouTube list kinds of CollectionKind', () => {
     expectTypeOf<AmbiguousListKind>().toEqualTypeOf<'playlist' | 'album' | 'mix'>()

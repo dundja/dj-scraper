@@ -8,6 +8,8 @@ import {
   type ErrorCode,
   MAX_COLLECTION_ENTRIES,
   MAX_MIX_ENTRIES,
+  MAX_PASTED_LINKS,
+  ResolveEntriesResponseSchema,
   type ResolveMode,
   type ResolveResult,
   ResolveResultSchema,
@@ -930,6 +932,109 @@ describe('POST /api/resolve: Spotify links (ADR-026)', () => {
       status: 422,
       code: 'unsupported_url',
       message: "This server can't read Spotify links.",
+    })
+  })
+
+  describe('POST /api/resolve/links: track links pasted at once', () => {
+    const SECOND = 'https://open.spotify.com/track/6aiKIFjPwa3UvDCD5ecoJj'
+    const THIRD = 'https://open.spotify.com/track/76QJgXPE3oc1cnkE4PFHEn'
+
+    async function linksOk(app: ResolveApp, urls: string[]) {
+      const res = await app.post('/api/resolve/links', { urls })
+      const body = await jsonBody(res)
+      expect(res.status, JSON.stringify(body)).toBe(200)
+      return asCollection(ResolveResultSchema.parse(body))
+    }
+
+    it('lists the tracks as partial rows without reading anything, then fills them in', async () => {
+      const { spotify, app } = await startSpotify()
+      const pasted = [`${TRACK}?si=abc123`, ALBUM, SECOND, 'not a link', TRACK, `spotify ${THIRD}`]
+      const list = await linksOk(app, pasted)
+      expect(list).toMatchObject({
+        platform: 'spotify',
+        kind: 'links',
+        title: 'Pasted Spotify tracks',
+        url: TRACK,
+        truncated: false,
+        // The album and the two texts that aren't links; the repeat of TRACK is dropped.
+        skippedEntries: 3,
+      })
+      expect(list.entries).toStrictEqual(
+        [TRACK, SECOND].map((url) => ({
+          partial: true,
+          id: url.split('/').at(-1),
+          platform: 'spotify',
+          url,
+          availability: 'unknown',
+        })),
+      )
+      expect(spotify.requests()).toEqual([])
+      expect(
+        await waitForLog(app.logs, /^\[resolve\/links\] 6 links → links of 2, 2 partial in /),
+      ).toBeDefined()
+
+      const entries = list.entries.map(({ platform, id, url }) => ({ platform, id, url }))
+      const res = await app.post('/api/resolve/entries', { entries })
+      expect(res.status).toBe(200)
+      const { results } = ResolveEntriesResponseSchema.parse(await res.json())
+      expect(results).toMatchObject([
+        {
+          status: 'ok',
+          id: '4uLU6hMCjMI75M1A2tKUQC',
+          track: { title: 'Never Gonna Give You Up', artist: 'Rick Astley', durationSec: 213.573 },
+        },
+        {
+          status: 'ok',
+          id: '6aiKIFjPwa3UvDCD5ecoJj',
+          track: {
+            title: 'Whenever You Need Somebody',
+            artist: 'Rick Astley',
+            durationSec: 233.666,
+          },
+        },
+      ])
+      expect(spotify.requests()).toEqual([
+        '/embed/track/4uLU6hMCjMI75M1A2tKUQC',
+        '/embed/track/6aiKIFjPwa3UvDCD5ecoJj',
+      ])
+      expect(await app.lookups()).toEqual([])
+      expect(app.logs.join('\n')).not.toMatch(/https?:|Never Gonna|Whenever/)
+    })
+
+    it('fails a removed track on its own row', async () => {
+      const { app } = await startSpotify()
+      const entries = [MISSING, THIRD].map((url) => ({
+        platform: 'spotify',
+        id: url.split('/').at(-1),
+        url,
+      }))
+      const res = await app.post('/api/resolve/entries', { entries })
+      const { results } = ResolveEntriesResponseSchema.parse(await res.json())
+      expect(results.map((r) => (r.status === 'ok' ? r.track.title : r.error.code))).toEqual([
+        'unavailable',
+        'Together Forever',
+      ])
+    })
+
+    it('answers 422 unsupported_url when no link is a Spotify track', async () => {
+      const { spotify, app } = await startSpotify()
+      expect(
+        await resolveError(app, { urls: [ALBUM, VIDEO, 'hello'] }, '/api/resolve/links'),
+      ).toMatchObject({ status: 422, code: 'unsupported_url' })
+      expect(spotify.requests()).toEqual([])
+    })
+
+    it('takes a full list of links, the longest a paste may be', async () => {
+      const { app } = await startSpotify()
+      const urls = Array.from(
+        { length: MAX_PASTED_LINKS },
+        (_, i) =>
+          `https://open.spotify.com/track/${String(i).padStart(22, '0')}?si=0123456789abcdef`,
+      )
+      expect((await linksOk(app, urls)).entries).toHaveLength(MAX_PASTED_LINKS)
+      expect(
+        await resolveError(app, { urls: [...urls, TRACK] }, '/api/resolve/links'),
+      ).toMatchObject({ status: 400, code: 'invalid_request' })
     })
   })
 })

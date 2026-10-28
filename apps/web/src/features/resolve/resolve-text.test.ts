@@ -1,7 +1,9 @@
+import { MAX_PASTED_LINKS } from '@dj-scraper/shared'
 import { describe, expect, it } from 'vitest'
 import {
   collectionResult,
   ambiguous as fixtures,
+  pastedLinks,
   playlist,
   scSet,
   trackResult,
@@ -12,7 +14,10 @@ import {
   bigListNote,
   countOf,
   loadingLabel,
+  pastedLinksNote,
   resultAnnouncement,
+  submissionLoadingLabel,
+  submissionShape,
 } from './resolve-text.ts'
 
 describe('ambiguousWording', () => {
@@ -55,6 +60,32 @@ describe('loadingLabel', () => {
   })
 })
 
+describe('submissionLoadingLabel', () => {
+  it('words a link by its likely shape, and pasted links by their count', () => {
+    const link = { kind: 'link', url: playlist.url, mode: 'auto', seq: 1 } as const
+    expect(submissionShape(link)).toBe('list')
+    expect(submissionLoadingLabel(link)).toBe('Loading the list…')
+    expect(submissionLoadingLabel({ ...link, mode: 'track' })).toBe('Loading the track…')
+
+    const urls = Array.from({ length: 1312 }, (_, n) => `https://open.spotify.com/track/${n}`)
+    const links = { kind: 'links', urls, seq: 2 } as const
+    expect(submissionShape(links)).toBe('list')
+    expect(submissionLoadingLabel(links)).toBe('Loading 1,312 Spotify tracks…')
+    expect(submissionLoadingLabel({ ...links, urls: urls.slice(0, 1) })).toBe(
+      'Loading 1 Spotify track…',
+    )
+  })
+})
+
+describe('pastedLinksNote', () => {
+  it('says how many links the emptied box loaded', () => {
+    expect(pastedLinksNote(312)).toBe('Pasted 312 Spotify track links: they load as one list.')
+    expect(pastedLinksNote(MAX_PASTED_LINKS)).toBe(
+      'Pasted the first 5,000 Spotify track links, the most one list takes: paste any others on their own.',
+    )
+  })
+})
+
 describe('bigListNote', () => {
   it("gives YouTube's measured listing times", () => {
     expect(bigListNote('youtube')).toBe(
@@ -91,6 +122,12 @@ describe('resultAnnouncement', () => {
   it('counts the lists of a page that has no tracks, only lists', () => {
     expect(resultAnnouncement(collectionResult(userPageWithLists))).toBe(
       'Channel: The Royal Concept (Sets), 4 lists',
+    )
+  })
+
+  it('names pasted links by their title alone: they have no page or kind of their own', () => {
+    expect(resultAnnouncement(collectionResult(pastedLinks))).toBe(
+      'Pasted Spotify tracks, 3 tracks',
     )
   })
 

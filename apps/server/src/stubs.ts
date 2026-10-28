@@ -18,7 +18,7 @@ const fails = (name: string) => (): never => {
 }
 
 export const UNUSED_RESOLVE_DEPS: ResolveDeps = {
-  resolver: { resolve: unused('resolver.resolve') },
+  resolver: { resolve: unused('resolver.resolve'), resolveLinks: fails('resolver.resolveLinks') },
   // A cache that knows nothing is a correct answer, not a request reaching the enricher.
   enricher: { enrich: unused('enricher.enrich'), peek: () => undefined },
 }

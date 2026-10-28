@@ -3,32 +3,43 @@ import { useMutation } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api.ts'
 
-/** One load of a link: the normalized URL, the mode, and its number (results are keyed by it). */
-export type Submission = { url: string; mode: ResolveMode; seq: number }
+/**
+ * What one load asks for: a link in a mode (`POST /api/resolve`), or several Spotify track links
+ * pasted at once, loaded as one list (`POST /api/resolve/links`).
+ */
+export type Load =
+  | { kind: 'link'; url: string; mode: ResolveMode }
+  | { kind: 'links'; urls: readonly string[] }
+
+/** One load and its number (results are keyed by it). */
+export type Submission = Load & { seq: number }
 
 type Variables = Submission & { signal: AbortSignal }
 
 export type Resolver = ReturnType<typeof useResolve>
 
+function send(variables: Variables): Promise<ResolveResult> {
+  const { signal } = variables
+  if (variables.kind === 'links') return api.resolveLinks({ urls: [...variables.urls] }, signal)
+  const { url, mode } = variables
+  return api.resolve(mode === 'auto' ? { url } : { url, mode }, signal)
+}
+
 /**
- * `POST /api/resolve` for the paste box. One resolve at a time: a new one aborts the one running
- * (closing the request stops yt-dlp on the server), and so do Cancel and unmounting. No retries:
- * a failure shows at once with a Try again button. A mutation, not a query: each paste is a new
- * request, even of the same URL, and its answer isn't shared.
+ * `POST /api/resolve` (or `/resolve/links`) for the paste box. One resolve at a time: a new one
+ * aborts the one running (closing the request stops yt-dlp on the server), and so do Cancel and
+ * unmounting. No retries: a failure shows at once with a Try again button. A mutation, not a
+ * query: each paste is a new request, even of the same URL, and its answer isn't shared.
  */
 export function useResolve() {
   const controller = useRef<AbortController | undefined>(undefined)
   const lastSeq = useRef(0)
   const [canceled, setCanceled] = useState(false)
-  const mutation = useMutation({
-    mutationKey: ['resolve'],
-    mutationFn: ({ url, mode, signal }: Variables): Promise<ResolveResult> =>
-      api.resolve(mode === 'auto' ? { url } : { url, mode }, signal),
-  })
+  const mutation = useMutation({ mutationKey: ['resolve'], mutationFn: send })
   const { mutate, reset } = mutation
 
-  const resolve = useCallback(
-    (url: string, mode: ResolveMode = 'auto') => {
+  const start = useCallback(
+    (load: Load) => {
       controller.current?.abort()
       const next = new AbortController()
       controller.current = next
@@ -36,9 +47,19 @@ export function useResolve() {
       setCanceled(false)
       // The signal travels with the variables, so a quick second paste can't hand its own to the
       // first request.
-      mutate({ url, mode, seq: lastSeq.current, signal: next.signal })
+      mutate({ ...load, seq: lastSeq.current, signal: next.signal })
     },
     [mutate],
+  )
+
+  const resolve = useCallback(
+    (url: string, mode: ResolveMode = 'auto') => start({ kind: 'link', url, mode }),
+    [start],
+  )
+  /** Loads several Spotify track links as one list, by the same rules as `resolve`. */
+  const resolveLinks = useCallback(
+    (urls: readonly string[]) => start({ kind: 'links', urls }),
+    [start],
   )
 
   const { status, variables } = mutation
@@ -65,10 +86,7 @@ export function useResolve() {
 
   return {
     status,
-    submission:
-      variables === undefined
-        ? undefined
-        : { url: variables.url, mode: variables.mode, seq: variables.seq },
+    submission: variables === undefined ? undefined : submissionOf(variables),
     /** When the current resolve started (ms since the epoch). */
     submittedAt: mutation.submittedAt,
     result: mutation.data,
@@ -76,7 +94,13 @@ export function useResolve() {
     /** The last resolve was canceled and nothing has been loaded since. */
     canceled,
     resolve,
+    resolveLinks,
     cancel,
     dismissError,
   }
+}
+
+/** The variables without their signal. */
+function submissionOf({ signal: _signal, ...submission }: Variables): Submission {
+  return submission
 }

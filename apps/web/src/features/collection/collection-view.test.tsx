@@ -183,7 +183,12 @@ describe('CollectionView for Spotify', () => {
   it("says Spotify shows only a list's first 100 tracks", () => {
     renderView(spotifyBigPlaylist)
     expect(screen.getByText(/^100 tracks · /)).toBeTruthy()
-    expect(screen.getByText('Spotify shows only the first 100 tracks of a playlist.')).toBeTruthy()
+    // With the way to load every track: paste them, copied in Spotify's app.
+    expect(
+      screen.getByText(
+        /^Spotify shows only the first 100 tracks of a playlist\. To load them all, /,
+      ),
+    ).toBeTruthy()
     expect(screen.getByText(SOURCE_NOTE)).toBeTruthy()
   })
 

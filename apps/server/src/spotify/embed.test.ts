@@ -27,6 +27,8 @@ const RECORDED_PAGES: Record<string, string> = {
   'playlist-capped.html': 'https://open.spotify.com/embed/playlist/37i9dQZF1DX4UtSsGT1Sbe',
   'playlist.html': 'https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M',
   'track.html': 'https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC',
+  'track-2.html': 'https://open.spotify.com/embed/track/6aiKIFjPwa3UvDCD5ecoJj',
+  'track-3.html': 'https://open.spotify.com/embed/track/76QJgXPE3oc1cnkE4PFHEn',
 }
 
 /** What a scrubbed page must never hold (test/fixtures/spotify/trim-embed.mjs refuses the same). */

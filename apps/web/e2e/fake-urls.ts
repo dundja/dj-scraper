@@ -190,3 +190,19 @@ export const SPOTIFY_ARTIST = 'https://open.spotify.com/artist/0gxyHStUsqpMadRV0
 
 /** A Spotify track the fixture server doesn't know: 422 unavailable ("Spotify doesn't show this link: …"). */
 export const SPOTIFY_MISSING_TRACK = 'https://open.spotify.com/track/0000000000000000000404'
+
+/**
+ * "Whenever You Need Somebody" by Rick Astley (3:54, 233.666 s), a track, also a row of
+ * SPOTIFY_ALBUM. Pasted with SPOTIFY_TRACK and SPOTIFY_TRACK_3 (POST /api/resolve/links, as the
+ * Spotify app copies a selection with ⌘A ⌘C), it is a partial row of the "Pasted Spotify tracks"
+ * list that fills in from its embed page (POST /api/resolve/entries). The e2e server answers its
+ * page and match as the album row's (e2e-server.ts), so it downloads like one: a YouTube download
+ * against the run's burst.
+ */
+export const SPOTIFY_TRACK_2 = 'https://open.spotify.com/track/6aiKIFjPwa3UvDCD5ecoJj'
+
+/**
+ * "Together Forever" by Rick Astley (3:26, 205.533 s), a track and a row of SPOTIFY_ALBUM, the third
+ * of the pasted links (see SPOTIFY_TRACK_2).
+ */
+export const SPOTIFY_TRACK_3 = 'https://open.spotify.com/track/76QJgXPE3oc1cnkE4PFHEn'

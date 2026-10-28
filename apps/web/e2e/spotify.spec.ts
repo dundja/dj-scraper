@@ -151,6 +151,18 @@ test('a Spotify album says where its audio comes from, and downloads the rows pi
   }
   expect(files.sort()).toEqual(picked.map((title) => `Rick Astley - ${title}.mp3`).sort())
   expect(new Set(jobs.map((job) => job.match?.id)).size).toBe(2)
+
+  // Hide downloaded: the two Done rows leave the table and the selection, their checks kept.
+  const hide = page.getByRole('button', { name: 'Hide downloaded (2)' })
+  await expect(hide).toHaveAttribute('aria-pressed', 'false')
+  await hide.click()
+  await expect(hide).toHaveAttribute('aria-pressed', 'true')
+  for (const title of picked) await expect(box(page, title)).toHaveCount(0)
+  await expect(page.getByRole('table', { name: 'Tracks' }).getByRole('checkbox')).toHaveCount(8)
+  await expect(selection(page)).toHaveText('None selected')
+  await hide.click()
+  for (const title of picked) await expect(box(page, title)).toBeChecked()
+  await expect(selection(page)).toHaveText(/^2 selected · /)
 })
 
 test('a Spotify playlist the page cuts at 100 tracks says so', async ({ page }) => {
@@ -161,7 +173,9 @@ test('a Spotify playlist the page cuts at 100 tracks says so', async ({ page }) 
 
   await expect(page.getByRole('heading', { name: 'All Out 80s' })).toBeVisible()
   await expect(
-    page.getByText('Spotify shows only the first 100 tracks of a playlist.'),
+    page.getByText(
+      'Spotify shows only the first 100 tracks of a playlist. To load them all, open it in the Spotify desktop app, select every track (⌘A), copy (⌘C) and paste here.',
+    ),
   ).toBeVisible()
   await expect(selection(page)).toHaveText(/^100 selected · /)
 })

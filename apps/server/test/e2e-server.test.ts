@@ -13,6 +13,7 @@ import {
   DownloadsSnapshotSchema,
   HealthSchema,
   JobSchema,
+  ResolveEntriesResponseSchema,
   ResolveResultSchema,
   type Settings,
   SettingsSchema,
@@ -28,6 +29,8 @@ import {
   SPOTIFY_PLAYLIST,
   SPOTIFY_PLAYLIST_TRUNCATED,
   SPOTIFY_TRACK,
+  SPOTIFY_TRACK_2,
+  SPOTIFY_TRACK_3,
   YOUTUBE_HANGING_TRACK,
   YOUTUBE_PRIVATE_IN_PLAYLIST,
   YOUTUBE_SLOW_PLAYLIST,
@@ -375,6 +378,26 @@ describe('e2e-server', () => {
       expect(res.status, url).toBe(422)
       expect(ApiErrorBodySchema.parse(await res.json()).error.code).toBe(code)
     }
+
+    // Track links pasted at once: one list of partial rows, filled in from each embed page.
+    const pasted = await api(port, '/resolve/links', ResolveResultSchema, {
+      urls: [SPOTIFY_TRACK, SPOTIFY_TRACK_2, SPOTIFY_TRACK_3],
+    })
+    if (pasted.kind !== 'collection') throw new Error(`resolved ${pasted.kind}`)
+    expect(pasted.collection).toMatchObject({ kind: 'links', title: 'Pasted Spotify tracks' })
+    expect(pasted.collection.entries.every((entry) => entry.partial)).toBe(true)
+    const filled = await api(port, '/resolve/entries', ResolveEntriesResponseSchema, {
+      entries: pasted.collection.entries.map(({ platform, id, url }) => ({ platform, id, url })),
+    })
+    expect(
+      filled.results.map((result) =>
+        result.status === 'ok' ? [result.track.title, result.track.durationSec] : result.error.code,
+      ),
+    ).toEqual([
+      ['Never Gonna Give You Up', 213.573],
+      ['Whenever You Need Somebody', 233.666],
+      ['Together Forever', 205.533],
+    ])
 
     // The album's 10 rows, matched on YouTube and downloaded with Spotify's names.
     const [album] = lists

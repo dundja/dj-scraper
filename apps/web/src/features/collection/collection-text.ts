@@ -146,6 +146,18 @@ export function skippedNote(
     : `${formatCount(others)} ${other}rows aren't tracks.`
 }
 
+/** What the table says when it shows no row: nothing matches the filter, or all are downloaded. */
+export function tableEmptyText(query: string, hideDownloaded: boolean): string {
+  const trimmed = query.trim()
+  if (trimmed === '') {
+    return hideDownloaded
+      ? 'Every track here is downloaded: turn off Hide downloaded to see them.'
+      : 'No tracks here.'
+  }
+  const hidden = hideDownloaded ? ' Downloaded tracks are hidden.' : ''
+  return `No track matches “${trimmed}”.${hidden}`
+}
+
 /** "28 selected", or "None selected": what the toolbar announces when the selection changes. */
 export function selectionCountText(count: number): string {
   return count === 0 ? 'None selected' : `${formatCount(count)} selected`

@@ -18,7 +18,10 @@ import { selectedInOrder, type TableRow } from './rows.ts'
 
 type DownloadBarProps = {
   collection: Collection
-  /** Every row in table order (not just the filtered ones): the selection outlives the filter. */
+  /**
+   * The rows in table order that may download: every row (the selection outlives the filter), less
+   * the downloaded ones while "Hide downloaded" is on.
+   */
   rows: readonly TableRow[]
   selected: ReadonlySet<TrackKey>
   /** How many tracks are selected (rows sharing a track count once). */

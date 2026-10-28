@@ -9,6 +9,7 @@ import {
   scSet,
 } from '@/test/resolve.ts'
 import {
+  countRowsOf,
   filterRows,
   foldText,
   rowsInView,
@@ -16,6 +17,7 @@ import {
   summarize,
   type TableRow,
   tableRows,
+  withoutRowsOf,
 } from './rows.ts'
 import type { EnrichedRow } from './use-enrichment.ts'
 
@@ -136,6 +138,29 @@ describe('filterRows', () => {
   it('searches 5,000 rows', () => {
     const rows = tableRows(ready(bigPlaylist(5000).entries))
     expect(titles(filterRows(rows, 'track 4999'))).toEqual(['Track 4999'])
+  })
+})
+
+describe('withoutRowsOf and countRowsOf', () => {
+  // Row 5 and row 20 are the same video: hiding its track hides both rows.
+  const copperLines = playlistRows[5]?.key
+  const tidalDrift = playlistRows[0]?.key
+  if (copperLines === undefined || tidalDrift === undefined) throw new Error('fixture')
+  const hidden = new Set<TrackKey>([copperLines, tidalDrift, 'youtube:not-listed'])
+
+  it('leaves out the rows of the given tracks, in order', () => {
+    const kept = withoutRowsOf(playlistRows, hidden)
+    expect(kept).toHaveLength(playlistRows.length - 3)
+    expect(kept.map((row) => row.index).slice(0, 5)).toEqual([1, 2, 3, 4, 6])
+    expect(countRowsOf(playlistRows, hidden)).toBe(3)
+  })
+
+  it('returns the rows themselves when none is left out', () => {
+    expect(withoutRowsOf(playlistRows, new Set())).toBe(playlistRows)
+    expect(withoutRowsOf(playlistRows, new Set<TrackKey>(['youtube:not-listed']))).toBe(
+      playlistRows,
+    )
+    expect(countRowsOf(playlistRows, new Set())).toBe(0)
   })
 })
 

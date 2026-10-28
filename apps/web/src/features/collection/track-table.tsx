@@ -50,7 +50,7 @@ export function TrackTable({
     overscan: 8,
   })
   const items = virtualizer.getVirtualItems()
-  const focus = useRowFocus(rows.length, virtualizer, scrollRef)
+  const focus = useRowFocus(rows, virtualizer, scrollRef)
   // Changes only when jobs come or go; each row's chip follows its own job.
   const jobIds = useJobIdsByTrack()
 

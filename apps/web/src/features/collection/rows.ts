@@ -94,6 +94,26 @@ export function filterRows<Row extends TableRow>(
   })
 }
 
+/** How many of `rows` belong to a track in `keys` (a track listed twice counts twice). */
+export function countRowsOf(rows: readonly SelectableRow[], keys: ReadonlySet<TrackKey>): number {
+  if (keys.size === 0) return 0
+  let count = 0
+  for (const row of rows) if (keys.has(row.key)) count++
+  return count
+}
+
+/**
+ * The rows whose track isn't in `hidden` ("Hide downloaded"), in order; `rows` itself when none
+ * is, so nothing downstream recomputes.
+ */
+export function withoutRowsOf<Row extends SelectableRow>(
+  rows: readonly Row[],
+  hidden: ReadonlySet<TrackKey>,
+): readonly Row[] {
+  if (hidden.size === 0 || !rows.some((row) => hidden.has(row.key))) return rows
+  return rows.filter((row) => !hidden.has(row.key))
+}
+
 /** The first row of each selected track, in table order: what "Download N tracks" sends. */
 export function selectedInOrder<Row extends SelectableRow>(
   rows: readonly Row[],

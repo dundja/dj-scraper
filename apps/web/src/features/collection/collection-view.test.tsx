@@ -14,7 +14,7 @@ import {
   spotifyJob,
   spotifyMatch,
 } from '@/test/downloads.ts'
-import { fakeApi, json } from '@/test/fake-api.ts'
+import { fakeApi, json, jsonBody } from '@/test/fake-api.ts'
 import { renderWithQueryClient } from '@/test/render.tsx'
 import {
   collectionWith,
@@ -621,5 +621,168 @@ describe('CollectionView downloads', () => {
     await stream.send({ type: 'job.progress', jobId: job.id, progress: { percent: 42 } })
     expect(row?.textContent).toContain('Download: 42 %')
     expect(rowRenders()).toBe(before)
+  })
+})
+
+describe('CollectionView Hide downloaded', () => {
+  const entry = (title: string) => {
+    const found = playlist.entries.find((candidate) => candidate.title === title)
+    if (found === undefined) throw new Error(`No row ${title}`)
+    return found
+  }
+  const finished = { finishedAt: '2026-10-02T08:01:00.000Z' }
+  const done = (n: number, title: string) =>
+    jobWith({
+      id: testUuid(n),
+      status: 'done',
+      track: toTrackRef(entry(title)),
+      outputPath: `/Users/dj/Music/DJ Scraper/${title}.mp3`,
+      output: { ext: 'mp3', codec: 'mp3', bitrateKbps: 320, encoded: true },
+      ...finished,
+    })
+  const inFolder = jobWith({
+    id: testUuid(41),
+    status: 'skipped',
+    track: toTrackRef(entry('Low Sun (Extended Mix)')),
+    outputPath: '/Users/dj/Music/DJ Scraper/Low Sun (Extended Mix).mp3',
+    ...finished,
+  })
+  const failed = jobWith({
+    id: testUuid(42),
+    status: 'failed',
+    track: toTrackRef(entry('Copper Lines')),
+    error: { code: 'private', message: 'This video is private.' },
+    ...finished,
+  })
+  const running = jobWith({
+    id: testUuid(43),
+    status: 'downloading',
+    track: toTrackRef(entry('Glasshouse')),
+    startedAt: '2026-10-02T08:00:00.000Z',
+    progress: { percent: 10 },
+  })
+
+  async function renderWithJobs() {
+    const view = renderView()
+    const stream = await liveDownloads(
+      view.queryClient,
+      snapshotWith({ jobs: [done(40, 'Tidal Drift'), inFolder, failed, running] }),
+    )
+    const toggle = screen.getByRole('button', { name: 'Hide downloaded (2)' })
+    return { ...view, stream, toggle }
+  }
+
+  it('is not offered while no row is downloaded', async () => {
+    const { queryClient } = renderView()
+    await liveDownloads(queryClient, snapshotWith({ jobs: [failed, running] }))
+    expect(screen.queryByRole('button', { name: /^Hide downloaded/ })).toBeNull()
+  })
+
+  it('takes the Done and In folder rows out of the table, the selection and the download', async () => {
+    server.on('POST /api/downloads', () =>
+      json({ jobIds: Array.from({ length: 25 }, (_, n) => testUuid(500 + n)), duplicates: 0 }),
+    )
+    const { user, toggle } = await renderWithJobs()
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(selectionLine().textContent).toMatch(/^27 selected/)
+
+    await user.click(toggle)
+
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(shownTitles()).toHaveLength(28)
+    expect(shownTitles()).not.toContain('Tidal Drift')
+    expect(shownTitles()).not.toContain('Low Sun (Extended Mix)')
+    // A failed or running download stays.
+    expect(shownTitles()).toContain('Copper Lines')
+    expect(shownTitles()).toContain('Glasshouse')
+    expect(selectionLine().textContent).toMatch(/^25 selected/)
+
+    await screen.findByText('~/Music/DJ Scraper')
+    await user.click(screen.getByRole('button', { name: 'Download 25 tracks' }))
+    const sent = jsonBody(server.callsTo('POST /api/downloads')[0]) as { items: { id: string }[] }
+    expect(sent.items).toHaveLength(25)
+    const ids = sent.items.map((item) => item.id)
+    expect(ids).not.toContain(entry('Tidal Drift').id)
+    expect(ids).not.toContain(entry('Low Sun (Extended Mix)').id)
+  })
+
+  it('keeps the hidden rows selected: turning it off brings their checks back', async () => {
+    const { user, toggle } = await renderWithJobs()
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Select none' }))
+    expect(selectionLine().textContent).toBe('None selected')
+
+    await user.click(toggle)
+
+    expect(shownTitles()).toHaveLength(30)
+    expect(isChecked(checkbox('Tidal Drift'))).toBe(true)
+    expect(isChecked(checkbox('Low Sun (Extended Mix)'))).toBe(true)
+    expect(isChecked(checkbox('Glasshouse'))).toBe(false)
+    expect(selectionLine().textContent).toMatch(/^2 selected/)
+  })
+
+  it('counts the filtered rows among those it leaves, and says when it hides every match', async () => {
+    const { user, toggle } = await renderWithJobs()
+    await user.click(toggle)
+    const filter = screen.getByRole('textbox', { name: 'Filter tracks' })
+
+    await user.type(filter, 'kollektiv')
+    expect(shownTitles()).toEqual(['Undertow', 'Breakwater'])
+    expect(screen.getByText('2 of 28')).toBeTruthy()
+
+    await user.clear(filter)
+    await user.type(filter, 'tidal')
+    expect(screen.getByText('No track matches “tidal”. Downloaded tracks are hidden.')).toBeTruthy()
+  })
+
+  it('hides a row that finishes while it is on, but not for its progress', async () => {
+    const { user, toggle, stream } = await renderWithJobs()
+    await user.click(toggle)
+    const before = rowRenders()
+
+    await stream.send({ type: 'job.progress', jobId: running.id, progress: { percent: 60 } })
+    expect(rowRenders()).toBe(before)
+    expect(shownTitles()).toContain('Glasshouse')
+
+    await stream.send({ type: 'jobs.updated', jobs: [done(43, 'Glasshouse')] })
+
+    expect(shownTitles()).not.toContain('Glasshouse')
+    expect(shownTitles()).toHaveLength(27)
+    expect(screen.getByRole('button', { name: 'Hide downloaded (3)' })).toBe(toggle)
+    expect(selectionLine().textContent).toMatch(/^24 selected/)
+  })
+
+  it('hands the focus to the next row when the focused row finishes and leaves', async () => {
+    const { user, toggle, stream } = await renderWithJobs()
+    await user.click(toggle)
+    const titles = shownTitles()
+    const next = titles[titles.indexOf('Glasshouse') + 1] ?? ''
+    act(() => checkbox('Glasshouse').focus())
+
+    await stream.send({ type: 'jobs.updated', jobs: [done(43, 'Glasshouse')] })
+
+    expect(document.activeElement).toBe(checkbox(next))
+    expect(checkbox(next).getAttribute('tabindex')).toBe('0')
+  })
+
+  it('keeps the tab stop on the focused row when a row above it leaves', async () => {
+    const { user, toggle, stream } = await renderWithJobs()
+    await user.click(toggle)
+    const titles = shownTitles()
+    // A row below Glasshouse whose track, and the next one's, is listed once.
+    const once = (title: string | undefined) => titles.filter((t) => t === title).length === 1
+    const focusedAt = titles.findIndex(
+      (title, at) => at > titles.indexOf('Glasshouse') && once(title) && once(titles[at + 1]),
+    )
+    const focusedTitle = titles[focusedAt] ?? ''
+    const below = titles[focusedAt + 1] ?? ''
+    act(() => checkbox(focusedTitle).focus())
+
+    await stream.send({ type: 'jobs.updated', jobs: [done(43, 'Glasshouse')] })
+
+    expect(document.activeElement).toBe(checkbox(focusedTitle))
+    expect(checkbox(focusedTitle).getAttribute('tabindex')).toBe('0')
+    await user.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(checkbox(below))
   })
 })

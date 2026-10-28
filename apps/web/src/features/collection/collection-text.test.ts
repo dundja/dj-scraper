@@ -25,6 +25,7 @@ import {
   selectionText,
   skippedNote,
   sourceNote,
+  tableEmptyText,
   totalDurationText,
   trackCountText,
   truncatedNote,
@@ -212,6 +213,19 @@ describe('pasted links', () => {
     expect(listNoun(pastedLinks, 2)).toBe('2 lists')
     expect(truncatedNote(pastedLinks)).toBeUndefined()
     expect(sourceNote(pastedLinks)).toContain('found on YouTube')
+  })
+})
+
+describe('tableEmptyText', () => {
+  it('says nothing matches, and that downloaded tracks are hidden', () => {
+    expect(tableEmptyText('  kollektiv ', false)).toBe('No track matches “kollektiv”.')
+    expect(tableEmptyText('kollektiv', true)).toBe(
+      'No track matches “kollektiv”. Downloaded tracks are hidden.',
+    )
+    expect(tableEmptyText('', true)).toBe(
+      'Every track here is downloaded: turn off Hide downloaded to see them.',
+    )
+    expect(tableEmptyText(' ', false)).toBe('No tracks here.')
   })
 })
 

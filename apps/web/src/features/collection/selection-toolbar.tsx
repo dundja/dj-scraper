@@ -8,23 +8,29 @@ import {
   InputGroupInput,
 } from '@/components/ui/input-group.tsx'
 import { formatCount, selectionCountText, selectionText } from './collection-text.ts'
+import { HideDownloadedToggle } from './hide-downloaded-toggle.tsx'
 import type { SelectionSummary } from './rows.ts'
 
 type SelectionToolbarProps = {
   summary: SelectionSummary
   query: string
   onQueryChange: (query: string) => void
-  /** Rows the filter shows, of `total`. */
+  /** Rows the filter shows, of `total` (the rows "Hide downloaded" leaves). */
   shown: number
   total: number
   /** All / none / invert over the rows the filter shows. */
   onSelect: (change: 'all' | 'none' | 'invert') => void
+  /** Rows already downloaded (newest job done or in the folder): what "Hide downloaded" hides. */
+  downloaded: number
+  hideDownloaded: boolean
+  onHideDownloadedChange: (hide: boolean) => void
 }
 
 /**
- * Select all / none / invert, the filter, and the count and length of the selection. The buttons
- * act on the rows the filter shows; the filter itself never changes the selection. Only the count
- * is announced: the length changes as partial rows fill in, which nobody asked to hear.
+ * Select all / none / invert, the filter, "Hide downloaded", and the count and length of the
+ * selection. The buttons act on the rows shown; the filter and the toggle never change the
+ * selection. Only the count is announced: the length changes as partial rows fill in, which nobody
+ * asked to hear.
  */
 export function SelectionToolbar({
   summary,
@@ -33,10 +39,13 @@ export function SelectionToolbar({
   shown,
   total,
   onSelect,
+  downloaded,
+  hideDownloaded,
+  onHideDownloadedChange,
 }: SelectionToolbarProps) {
   const filterRef = useRef<HTMLInputElement>(null)
   const filtering = query.trim() !== ''
-  const scope = filtering ? 'Acts on the rows the filter shows' : undefined
+  const scope = filtering || hideDownloaded ? 'Acts on the rows shown' : undefined
 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 pb-3">
@@ -113,6 +122,11 @@ export function SelectionToolbar({
           </InputGroupAddon>
         )}
       </InputGroup>
+      <HideDownloadedToggle
+        downloaded={downloaded}
+        pressed={hideDownloaded}
+        onPressedChange={onHideDownloadedChange}
+      />
       <p
         data-slot="selection-summary"
         className="text-xs text-muted-foreground tabular-nums sm:ml-auto"

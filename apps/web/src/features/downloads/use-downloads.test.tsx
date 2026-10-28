@@ -18,7 +18,7 @@ import {
 import { fakeApi } from '@/test/fake-api.ts'
 import { createTestQueryClient } from '@/test/render.tsx'
 import { trackKey } from './track-ref.ts'
-import { useDownloads, useJob, useJobIdsByTrack } from './use-downloads.ts'
+import { useDownloadedTrackKeys, useDownloads, useJob, useJobIdsByTrack } from './use-downloads.ts'
 
 let server: ReturnType<typeof fakeApi>
 
@@ -213,5 +213,82 @@ describe('useJobIdsByTrack', () => {
     await stream.send({ type: 'jobs.added', batch, jobs: [again] })
     expect(result.current).not.toBe(first)
     expect(result.current.get(trackKey(failedJob.track))).toBe(again.id)
+  })
+})
+
+describe('useDownloadedTrackKeys', () => {
+  const scRef = {
+    platform: 'soundcloud',
+    id: '1501000002',
+    url: 'https://soundcloud.com/a/b',
+  } as const
+  const spotifyRow = {
+    platform: 'spotify',
+    id: '6aiKIFjPwa3UvDCD5ecoJj',
+    url: 'https://open.spotify.com/track/6aiKIFjPwa3UvDCD5ecoJj',
+  } as const
+
+  it('is empty before the stream starts', () => {
+    const { result } = renderCounted(useDownloadedTrackKeys)
+    expect(result.current).toEqual([])
+  })
+
+  it('lists the tracks whose newest job is done or already in the folder, sorted', async () => {
+    const skipped = jobWith({
+      id: testUuid(70),
+      status: 'skipped',
+      track: spotifyRow,
+      outputPath: '/Users/dj/Music/DJ Scraper/Rick Astley - Whenever You Need Somebody.mp3',
+      finishedAt: batch.createdAt,
+    })
+    const { result, queryClient } = renderCounted(useDownloadedTrackKeys)
+    // The YouTube track's newest job is done; the SoundCloud row's failed.
+    await liveDownloads(queryClient, snapshotWith({ jobs: [...snapshotWith().jobs, skipped] }))
+
+    expect(result.current).toEqual([trackKey(skipped.track), trackKey(doneJob.track)].sort())
+    expect(result.current).not.toContain(trackKey(failedJob.track))
+  })
+
+  it("keeps the same array through progress events, and changes when a track's newest job does", async () => {
+    const running = jobWith({
+      id: testUuid(71),
+      status: 'downloading',
+      track: scRef,
+      startedAt: batch.createdAt,
+    })
+    const { result, queryClient, renders } = renderCounted(useDownloadedTrackKeys)
+    const stream = await liveDownloads(
+      queryClient,
+      snapshotWith({ jobs: [doneJob, failedJob, running] }),
+    )
+    const first = result.current
+    expect(first).toEqual([trackKey(doneJob.track)])
+    const before = renders()
+
+    await stream.send(progressOf(running, 40))
+    await stream.send(progressOf(running, 80))
+    await stream.send({
+      type: 'queue.updated',
+      queue: { platforms: [{ platform: 'youtube', nextStartAt: '2026-10-02T08:01:00.000Z' }] },
+    })
+    expect(result.current).toBe(first)
+    expect(renders()).toBe(before)
+
+    // The SoundCloud row finishes: it joins.
+    const finished = jobWith({
+      ...running,
+      status: 'done',
+      outputPath: '/Users/dj/Music/DJ Scraper/b.mp3',
+      output: { ext: 'mp3', codec: 'mp3', bitrateKbps: 128, encoded: false },
+      finishedAt: '2026-10-02T08:02:00.000Z',
+    })
+    await stream.send({ type: 'jobs.updated', jobs: [finished] })
+    expect(result.current).toEqual([trackKey(doneJob.track), trackKey(scRef)].sort())
+
+    // The done YouTube track is queued again (another format): its newest job isn't done.
+    const aiffBatch = { ...batch, id: testUuid(102), format: 'aiff' } as const
+    const again = jobWith({ id: testUuid(72), status: 'queued', track: doneJob.track }, aiffBatch)
+    await stream.send({ type: 'jobs.added', batch: aiffBatch, jobs: [again] })
+    expect(result.current).toEqual([trackKey(scRef)])
   })
 })

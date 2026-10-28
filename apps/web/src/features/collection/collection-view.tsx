@@ -8,12 +8,13 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty.tsx'
+import { useDownloadedTrackKeys } from '@/features/downloads/use-downloads.ts'
 import { CollectionHeader } from './collection-header.tsx'
 import { ListsContent } from './collection-lists.tsx'
-import { skippedNote } from './collection-text.ts'
+import { skippedNote, tableEmptyText } from './collection-text.ts'
 import { DownloadBar } from './download-bar.tsx'
 import { instanceKey } from './instance-key.ts'
-import { filterRows, summarize, tableRows } from './rows.ts'
+import { countRowsOf, filterRows, summarize, tableRows, withoutRowsOf } from './rows.ts'
 import { SelectionToolbar } from './selection-toolbar.tsx'
 import { TrackTable } from './track-table.tsx'
 import { useEnrichment } from './use-enrichment.ts'
@@ -38,10 +39,24 @@ function CollectionPage({ collection, onOpenList }: CollectionViewProps) {
   const titleId = useId()
   const enrichment = useEnrichment(collection.entries)
   const rows = useMemo(() => tableRows(enrichment.rows), [enrichment.rows])
+  // The selection covers every row, also those "Hide downloaded" takes out: turning it off brings
+  // their checks back.
   const [selection, dispatch] = useSelection(rows)
   const [query, setQuery] = useState('')
-  const shown = useMemo(() => filterRows(rows, query), [rows, query])
-  const summary = useMemo(() => summarize(rows, selection.selected), [rows, selection.selected])
+  const [hideDownloaded, setHideDownloaded] = useState(false)
+  // The same array until a track's newest job ends downloaded or another job replaces it, so a
+  // progress event changes nothing here.
+  const downloadedKeys = useDownloadedTrackKeys()
+  const downloaded = useMemo(() => new Set(downloadedKeys), [downloadedKeys])
+  const downloadedRows = useMemo(() => countRowsOf(rows, downloaded), [rows, downloaded])
+  // The rows the table, the selection line and the download work on: all, or the ones not
+  // downloaded yet. A row that finishes while the toggle is on leaves by itself.
+  const kept = useMemo(
+    () => (hideDownloaded ? withoutRowsOf(rows, downloaded) : rows),
+    [hideDownloaded, rows, downloaded],
+  )
+  const shown = useMemo(() => filterRows(kept, query), [kept, query])
+  const summary = useMemo(() => summarize(kept, selection.selected), [kept, selection.selected])
   // Read at click time (after the commit), so the callback stays the same while rows fill in and a
   // memoized row re-renders only when it changed.
   const shownRef = useRef(shown)
@@ -94,19 +109,22 @@ function CollectionPage({ collection, onOpenList }: CollectionViewProps) {
         query={query}
         onQueryChange={setQuery}
         shown={shown.length}
-        total={rows.length}
+        total={kept.length}
         onSelect={(change) => dispatch({ type: change, rows: shown })}
+        downloaded={downloadedRows}
+        hideDownloaded={hideDownloaded}
+        onHideDownloadedChange={setHideDownloaded}
       />
       <TrackTable
         rows={shown}
         selected={selection.selected}
         onRowClick={onRowClick}
         onRowsInViewChange={enrichment.setRowsInView}
-        empty={`No track matches “${query.trim()}”.`}
+        empty={tableEmptyText(query, hideDownloaded)}
       />
       <DownloadBar
         collection={collection}
-        rows={rows}
+        rows={kept}
         selected={selection.selected}
         count={summary.count}
       />

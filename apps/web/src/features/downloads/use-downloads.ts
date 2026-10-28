@@ -62,3 +62,25 @@ export function useJobIdsByTrack(): JobIdsByTrack {
   // A Map, so the select's structural sharing keeps it by identity and doesn't walk it.
   return useQuery({ ...downloadsQueryOptions, select: newestJobIdByTrack }).data ?? NO_JOBS
 }
+
+const NO_KEYS: readonly TrackKey[] = []
+
+/** The tracks whose newest job ended `done` or `skipped` ("Done", "In folder"), sorted. */
+function downloadedTrackKeys(state: DownloadsState): readonly TrackKey[] {
+  const keys: TrackKey[] = []
+  for (const [key, id] of newestJobIdByTrack(state)) {
+    const status = state.byId[id]?.status
+    if (status === 'done' || status === 'skipped') keys.push(key)
+  }
+  return keys.sort()
+}
+
+/**
+ * The `trackKey`s whose newest job is downloaded: `done`, or `skipped` because the file was already
+ * in the folder (the rows "Hide downloaded" hides). A sorted array, so the select's structural
+ * sharing keeps the same array while it holds the same keys: a progress event re-renders nothing.
+ * Build a `Set` from it with `useMemo`.
+ */
+export function useDownloadedTrackKeys(): readonly TrackKey[] {
+  return useQuery({ ...downloadsQueryOptions, select: downloadedTrackKeys }).data ?? NO_KEYS
+}

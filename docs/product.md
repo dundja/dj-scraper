@@ -14,7 +14,7 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud, and from
 | SoundCloud: tracks, sets/playlists/albums, private links with a secret token | ✅ first-class |
 | SoundCloud: a user's tracks / likes / reposts | ✅ as collections |
 | Anything else yt-dlp supports (Bandcamp, Mixcloud, Vimeo, …) | best effort, generic normalization |
-| Spotify: tracks, albums, playlists (`open.spotify.com`) | ✅ as track lists: names and covers from Spotify, the audio matched and downloaded on YouTube (ADR-026). Lists show their first 100 tracks |
+| Spotify: tracks, albums, playlists (`open.spotify.com`) | ✅ as track lists: names and covers from Spotify, the audio matched and downloaded on YouTube (ADR-026). A playlist link shows its first 100 tracks; pasting its track links lists them all (ADR-028) |
 | Spotify's own streams, and other Spotify pages (artists, podcasts, `spotify.link` short links) | ❌ streams are DRM-protected and never downloaded; other pages refused by URL |
 | DRM services (Apple Music, Amazon Music, Tidal, Deezer, Beatport streaming) | ❌ out of scope, refused by URL |
 
@@ -36,6 +36,7 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud, and from
 - Spotify's streams are DRM-protected, so each track's audio comes from YouTube: the download searches YouTube for the artists and title and takes the upload whose length agrees and that isn't another version (live, remix, cover, …). The card and the downloads panel show which upload it took, and the file is tagged with Spotify's title, artists, year and cover.
 - The quality is YouTube's (see Quality), never dressed up: the source line shows the YouTube stream.
 - When no upload matches, the track fails with "No YouTube upload matches", and pasting a YouTube or SoundCloud link of the track instead is the way out.
+- Spotify's page lists only a playlist's first 100 tracks, and the list says so and how to get them all: in the Spotify desktop app, select every track of the playlist (⌘A), copy (⌘C) and paste. A paste or drop holding two or more Spotify track links loads as one list, "Pasted Spotify tracks", in the order they were pasted, each track once. Its rows fill in with names and durations as they scroll into view, and any row downloads, filled in or not (ADR-028). The paste box empties and says how many links it took.
 
 ### 2c. Remix suggestions
 - Under a single track's card (YouTube, SoundCloud or Spotify), a **Remixes** section lists up to 20 remixes of the song found on YouTube and SoundCloud, most played first. The card and its auto-download work as before; the section never holds them up.
@@ -53,6 +54,7 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud, and from
 - Selection:
   - select all / none / invert, and shift-click ranges
   - a text filter that keeps the selection
+  - **Hide downloaded**, with the number of rows it hides: tracks whose latest download is Done or In folder leave the table and the download, so only the new ones go out. Their checks are kept for when it is turned off, and a track that finishes while it is on leaves by itself. It knows the downloads the server still holds (since it started)
   - a live count and total duration of what's selected
 - Unavailable entries (private, deleted, region-blocked) show greyed out with a reason and can't be selected.
 - Stays smooth with 1,000+ tracks. Lists of up to 5,000 rows load whole, and longer ones show their first 5,000 and say so (a mix shows its first 50). SoundCloud sets list instantly; titles, durations and artwork fill in as rows load, paced to stay within SoundCloud's request budget.

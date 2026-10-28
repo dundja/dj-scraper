@@ -32,7 +32,9 @@ src/
     resolve/        ResolvePage: the paste box and badge (url-verdict.ts: ok, or `refused` for a DRM service or a
                     Spotify page that isn't a track or list), paste anywhere, the ⌘V fallback
                     and drop (useLinkDrop; paste-text.ts finds the link: findLink, dropLink, carriesFiles,
-                    isEditableTarget), useResolve (a useMutation per load with its own AbortController),
+                    isEditableTarget; and pasted Spotify track links, ADR-028: findSpotifyTrackLinks,
+                    spotifyTrackList, dropSpotifyTrackList), useResolve (a useMutation per load with its own
+                    AbortController; a `link` or `links` Submission, resolveLinks),
                     loading / error / ambiguous views, ResolvedResult (keyed by the load's number; autoStart
                     frozen at mount; a single track gets the RemixSection below its card). testing/ =
                     vi.mock doubles of TrackCard, CollectionView and RemixSection for this folder's tests;
@@ -51,13 +53,13 @@ src/
                     section so they survive remounts), remix-request.ts (remixRequestFor, uploadRef),
                     remix-text.ts (wording, genre counts)
     collection/     CollectionView (keyed by the collection object: instance-key.ts), header and lists,
-                    selection-toolbar, track-table + track-row (virtualized div table with ARIA roles; roving
-                    focus in use-row-focus.ts), selection.ts (pure reducer) + use-selection.ts, download-bar;
+                    selection-toolbar (with hide-downloaded-toggle.tsx), track-table + track-row
+                    (virtualized div table with ARIA roles; roving focus in use-row-focus.ts), selection.ts (pure reducer) + use-selection.ts, download-bar;
                     job-status.tsx (a row's chip, read by job id); use-enrichment.ts over enrich-session.ts
                     and the pure enrich-plan/-merge/-retry.ts (ADR-022); test-utils.ts (stubTableViewport,
                     useFakeEnrichment; tests only); collection-enrichment.test.tsx (the real hook and table)
-    downloads/      use-downloads.ts (useDownloads, useJob, useJobIdsByTrack, useQueue: never fetch),
-                    use-create-downloads.ts, track-ref.ts (toTrackRef, trackKey, downloadOptionsFrom);
+    downloads/      use-downloads.ts (useDownloads, useJob, useJobIdsByTrack, useDownloadedTrackKeys,
+                    useQueue: never fetch), use-create-downloads.ts, track-ref.ts (toTrackRef, trackKey, downloadOptionsFrom);
                     job-*: JobRow (JOB_ROW_HEIGHT 56), JobInline, job-text.ts (wording), job-actions.ts (one
                     action per job), job-clock.ts (useNow); the panel: downloads-panel.tsx, panel-* (header,
                     menu, notes, list, batch row, actions, rows, text), summary.ts (counts, progress weights)
@@ -108,6 +110,8 @@ src/
 - Settings changes go through `useUpdateSettings`: optimistic, rolled back (and refetched) on error, and sent one at a time in the order they were made (mutation scope `settings`), so a slow folder check can't let an older choice be saved last.
 - Every QueryClient uses `queryClientDefaults` (`lib/query-client.ts`, `networkMode: 'always'`): the API is local, so the browser's online state must not pause a query or mutation.
 - Enrichment of partial rows bypasses TanStack Query: `useEnrichment` reads a session store with `useSyncExternalStore` (ADR-022).
+- A paste or drop holding 2+ Spotify track links (`https://open.spotify.com/track/…` or `spotify:track:…`) loads them as one `links` list through `POST /api/resolve/links`, wherever it lands, except that a paste into another text field stays there (ADR-028). The paste box then empties and says how many links it took. Anything else loads its first link.
+- "Hide downloaded" (the track table's toolbar) takes out the rows whose track's newest job is `done` or `skipped` (`useDownloadedTrackKeys`, a sorted array that keeps its identity through progress events) before the text filter, and out of the summary and the download bar. The selection reducer still gets every row, so their checks come back when it is turned off. A row that leaves while focused hands the focus to the row now at its position (`use-row-focus.ts`, whose tab stop follows its row by collection index).
 - Page-wide paste and ⌘V ignore events inside other text fields (`isEditableTarget` in `features/resolve/paste-text.ts`). Drops: a file is refused (the browser would open it in place of the app), text without a link dropped on another text field goes into that field, and a link loads wherever it is dropped.
 - Show folder paths with `FolderPath` (`components/folder-path.tsx`): `~` for the home folder, cut at the start when they don't fit, so the folders that tell them apart stay visible.
 - UI-only state (selection, filters, dialogs) stays local to its feature (`useState`/`useReducer`). Add a store only when distant features really share state.

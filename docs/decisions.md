@@ -212,7 +212,7 @@ The web enriches partial rows through `POST /api/resolve/entries`, which returns
 **Consequences.** Lists over 5,000 rows show their first 5,000 and say so. A big channel takes tens of seconds to list, so the UI needs a visible loading state. `Collection` gained `trackCount`, `durationSec`, `truncated` and `skippedEntries`, and `ambiguous` gained `collectionKind`.
 
 ## ADR-014 — Partial rows are enriched lazily, one yt-dlp lookup per row, within each platform's budget
-*2026-10-02 · accepted · implements ADR-008 · amended by ADR-017 · the web side is ADR-022*
+*2026-10-02 · accepted · implements ADR-008 · amended by ADR-017 and ADR-028 (a Spotify row reads its embed page, not yt-dlp) · the web side is ADR-022*
 
 **Context.** SoundCloud set rows come back bare from the flat listing (ADR-008). A per-track `yt-dlp -J` lookup takes about 1 s, half of it process start, and costs 3–5 SoundCloud API requests: one lookup plus one per stream format. SoundCloud allows about 600 requests per 10 min. Narrowing the formats with `--extractor-args soundcloud:formats=…` saves 1–2 requests, but a track without the chosen formats fails with "No video formats found!". Skipping formats entirely costs one request, but loses the source codec and bitrate and Go+ preview detection, and honest audio needs both.
 
@@ -540,7 +540,7 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 - No e2e covers it, since it needs more than 2,000 finished jobs on the shared e2e server; `queue.test.ts` does.
 
 ## ADR-026 — Spotify links are track lists; the audio is matched and downloaded on YouTube
-*2026-10-21 · accepted · amends non-negotiable 7 and ADR-013 (Spotify is no longer refused by URL)*
+*2026-10-21 · accepted · amends non-negotiable 7 and ADR-013 (Spotify is no longer refused by URL) · amended by ADR-028 (pasted track links list a whole playlist)*
 
 **Context.** The user wants Spotify links to work like YouTube and SoundCloud ones: a track downloads at once, and a playlist or album offers all or a selection of its tracks. They want it without a sign-in, a developer app or an API key (paste the link and go, as sites like spotsaver.net work), and only on this machine. They also want to compare Spotify's quality with the other platforms'. Spotify's streams are DRM-protected (Widevine). Downloading them means breaking that protection, which non-negotiable 7 forbids and which the law forbids even for private use (DMCA §1201, EU InfoSoc art. 6). The 2026-10-03 brainstorm had ruled it out too. Sites like spotsaver download a YouTube match and re-encode it to "320 kbps MP3", which non-negotiable 6 forbids.
 
@@ -570,7 +570,7 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 - Reading Spotify's pages goes against Spotify's terms of use, which forbid scraping. This is the user's choice for a personal tool that never goes public; the app reads one public page per link or track, at the user's pace, and never touches the streams.
 - The embed page is undocumented and may change: an unreadable page fails `unknown` ("Spotify's page has changed"), and the smoke test is the place to notice.
 - Matching can pick the wrong upload: a lyric re-upload, or a different master within 5 s. The job always shows its match. Without an ISRC (the embed page has none), versions are told apart by duration and words only, and extended mixes and obscure tracks are the weak spots (a live check of 35 tracks from two playlists: all matched, after one "Piano Version" taught the version words).
-- Lists over 100 tracks show their first 100 and say so.
+- Lists over 100 tracks show their first 100 and say so (ADR-028: and how to paste them all).
 - Follow-ups: a review step for doubtful matches, SoundCloud as a second match source, and choosing another match by hand.
 
 ## ADR-027 — Remix suggestions: YouTube and SoundCloud searches, filtered and grouped by rule, genres only from the platforms' words
@@ -602,3 +602,27 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 - A SoundCloud suggestion may turn out a Go+ preview: the flat search has no formats to tell. In the recordings, Go+ tracks came back with `duration: 30` (the preview's length), which the 90 s minimum drops; one that slips through fails its download with `preview_only` as any other would.
 - Searches spend SoundCloud's shared budget: one token per pasted song, at most once per 30 minutes per song while its search succeeds. A failed search isn't cached, so each new request for it spends another.
 - Follow-ups: remix suggestions for a playlist row; a second query for bootlegs and extended mixes, which "remix" searches find only partly; sharing a rate limit's cooldown with lookups and downloads.
+
+## ADR-028 — A long Spotify playlist comes in as its pasted track links, each row read from its own embed page
+*2026-10-27 · accepted · amends ADR-026 (Spotify rows can be partial) and ADR-014 (Spotify lookups)*
+
+**Context.** The user has a 312-track Spotify playlist and saw only 100 rows. The embed page (ADR-026) lists at most 100 rows. Live probes on 2026-10-27 found no public, token-free way to get more: the embed page ignores `offset`, `page` and `start`. The normal playlist page sends a browser an empty shell, and a bare client a page with 30 rows and the real total (`music:song_count`). oEmbed has no rows. Paging through the list takes Spotify's anonymous player token, which ADR-026 rejected. The Web API needs a sign-in, which the user declined. The Spotify desktop app copies the links of the tracks selected in a playlist (select all with ⌘A, copy with ⌘C), one per line; this is its known behavior, not yet checked live for a playlist over 100 tracks (a roadmap item). The user chose that way in (over only showing the real total, and over the token).
+
+**Decision.**
+- **`POST /api/resolve/links`** takes `{ urls }`, 1 to `MAX_PASTED_LINKS` (5,000, a list's cap) strings, with a body limit of 1 MiB. It answers a `ResolveResult` with one collection of `kind: 'links'` (new in `CollectionKind`), built by the pure `resolve/links.ts`. Each URL is checked with `checkUrl`, and only `spotify_track` links are kept, in paste order, each track once. Every other link (another platform, an album, text) counts in `skippedEntries`. No Spotify track at all is 422 `unsupported_url`. The collection is titled "Pasted Spotify tracks", its platform is `spotify`, and its `url` is the first track's (no page holds the list). Nothing is read from Spotify to answer it.
+- **Rows are partial** (id, url, `availability: 'unknown'`) and fill in like SoundCloud set rows (ADR-022). `POST /api/resolve/entries` now reads a Spotify row's embed page (the same `SpotifyClient` and parser as a pasted track link, never yt-dlp) and caches it as any lookup. Spotify lookups are paced on their own: 2 at a time, 250 ms between starts, so a screenful of 25 rows fills in within about 6 s. A 429 starts the usual cooldown for Spotify lookups only. A server without a Spotify client answers Spotify rows `unsupported_url`.
+- **The web** loads a paste or drop holding two or more Spotify track links (`https://open.spotify.com/track/…`, or `spotify:track:…` URIs) as one list. Any other paste loads its first link, as before. A truncated Spotify playlist's note says how to paste them all.
+- **Downloads are unchanged.** A row downloads whether or not it has filled in, since a Spotify job reads its names from Spotify's page itself (ADR-026).
+
+**Rejected.**
+- *The anonymous player token* (Spotify's internal API pages through any list): the reasons in ADR-026 stand.
+- *Only saying "100 of 312"* from the normal page's song count: it would read a second page per link, and the user would still lack 212 tracks.
+- *Reading every row's page when the paste arrives*: 312 reads before the user has scrolled or picked anything. Rows in view are read, and a download reads its own.
+- *Any platform's links in one paste*: a SoundCloud link's id isn't in its URL, so a row's key would change when it fills in and lose its selection. Spotify tracks first (the user's need); YouTube and SoundCloud links are a follow-up.
+
+**Consequences.**
+- The list has no name of the playlist (track links don't carry it), so its subfolder is "Pasted Spotify tracks".
+- A 312-row paste fills in as the user scrolls, at up to 4 rows a second. The filter matches only filled-in rows.
+- Each row costs one more embed read when it is in view, plus the one its download makes.
+- A Spotify 429 during enrichment pauses only the enricher's Spotify lookups: the resolver and a download's match step read the same pages without that cooldown, and a job that meets the limit fails `network` (ADR-026), to be retried. Sharing it is part of the shared-cooldowns follow-up.
+

@@ -20,14 +20,16 @@ src/
   http/             guard.ts (Host/Origin/Fetch-Metadata, JSON-only; --dev trusts the Vite port), errors.ts (ApiError
                     with an optional status override, status map), security-headers.ts (anti-framing, nosniff,
                     no-referrer on every response), json.ts (readJson(c, Schema), jsonBodyLimit, jsonBodyLimitOf)
-  routes/           system.ts (health, recheck), resolve.ts (resolve, entries), remixes.ts (POST /api/remixes,
+  routes/           system.ts (health, recheck), resolve.ts (resolve, links, entries), remixes.ts (POST /api/remixes,
                     ADR-027), downloads.ts (create, list, cancel,
                     retry, reveal, bulk cancel/retry/clear), events.ts (SSE: createEventStreams), settings.ts
                     (a changed folder is checked like a picked one; PUTs apply one at a time, in arrival
                     order), folders.ts (folder picker, then
                     checkPickedFolder), web.ts (the built UI + SPA fallback, ADR-012)
-  resolve/          plan.ts (pure: URL + mode → yt-dlp call), resolver.ts (POST /api/resolve),
-                    enricher.ts (POST /api/resolve/entries: pacing, budget, cooldown, cache; peek for downloads),
+  resolve/          plan.ts (pure: URL + mode → yt-dlp call), resolver.ts (POST /api/resolve and
+                    /api/resolve/links), links.ts (pure: pasted Spotify track links → a `links` collection,
+                    ADR-028), enricher.ts (POST /api/resolve/entries: pacing, budget, cooldown, cache; a
+                    Spotify row reads its embed page; peek for downloads),
                     limiter.ts, lru.ts, input.ts (checkUrl), ytdlp-call.ts
   engine/
     binaries.ts     find yt-dlp/ffmpeg/ffprobe (YTDLP_PATH/FFMPEG_PATH → PATH), JS runtime, versions → Health;
@@ -116,7 +118,7 @@ test/
   1. Send SIGINT to the process group. Not SIGTERM: it can orphan ffmpeg.
   2. Send SIGKILL after 3 s (`KILL_GRACE_MS`).
   3. Delete the job dir once `run` has settled (its group is gone by then).
-- **Spotify** (ADR-026). Never request Spotify's streams, API or player token. Read only the embed page's `state.data.entity`, build its URL from the classified id, fetch covers only from Spotify's image CDNs, and take a Spotify job's names from Spotify's page, never the request. Recorded embed pages are scrubbed of the token, client id and tracing data.
+- **Spotify** (ADR-026, ADR-028). Never request Spotify's streams, API or player token. Read only the embed page's `state.data.entity` (a list's, a track's, or a pasted link row's in the enricher), build its URL from the classified id, fetch covers only from Spotify's image CDNs, and take a Spotify job's names from Spotify's page, never the request. Recorded embed pages are scrubbed of the token, client id and tracing data.
 - **Pacing.** Downloads go through `pacing/gates.ts` (ADR-017); lookups through the enricher's limiter (ADR-014). A Spotify job is paced as YouTube (`pacingPlatform`). SoundCloud's token bucket is one instance shared by both (`productionPacing` in `services.ts`; never build the services by hand). Every platform decision uses the classified URL's platform, never `TrackRef.platform`. No yt-dlp `--sleep-*` flags.
 - **Data dir.** One server holds it (`server.lock`); the startup sweep relies on that. Only `jobs/` entries named `<uuid>` or `<uuid>.part.json` are ours to delete, and nothing there follows symlinks. A part record whose folder is missing (a drive not plugged in) is kept for up to 30 days. The sweep finds leftover processes by `<dataDir>/jobs/<uuid>` in their argv, so every engine argv of an attempt must name its job dir (yt-dlp's `-P`, ffmpeg's absolute paths).
 - **SSE.** `GET /api/events` writes a raw `retry: 1000`, then a snapshot taken in the same tick as the bus subscription, then every event in order. Heartbeats are a typed `{ type: 'heartbeat' }` every 15 s (comments never reach page JS). No progress throttle: `--progress-delta 0.5` already caps DL lines at about two a second per job. A bulk change is one event. Unsubscribe on disconnect, and end every stream cleanly at shutdown. HEAD never opens a stream (Hono runs the GET handler for it and drops the body unread, so the stream would never hear the client go). The bus serializes each event once and checks it against `ServerEventSchema` in dev and tests.

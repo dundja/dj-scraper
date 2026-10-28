@@ -125,8 +125,9 @@ The reasons are in ADR-007.
 | `remix/genre.ts` | pure: the genre vocabulary (about 45 genres DJs sort by, with aliases); `genreIn` (the most specific genre a text names, ignoring the song's own words; descriptions skip ambiguous single words) and `uploadGenre` (SoundCloud's genre field, then the title, tags and description) (ADR-027) |
 | `remix/suggest.ts` | pure: `songOf` (the pasted track's names → the song: no version notes, no featured artists), `remixQuery`, `parseSearchResults` (YouTube and SoundCloud flat search JSON → candidates with plays, genre clues and a downloadable page URL), `versionOf` (is a result a remix, bootleg, edit or extended mix of the song, and by whom), `suggestRemixes` (one suggestion per version, most played first, at most 20) |
 | `remix/finder.ts` | `createRemixFinder`: `POST /api/remixes`. One flat search per platform asked for (`ytsearch30:` / `scsearch30:`), one at a time per platform, SoundCloud's taking a token from the shared bucket; searches shared while in flight (stopped when no request waits) and cached 30 min; the answer checked against the contract |
-| `resolve/resolver.ts` | `POST /api/resolve`: plan → one yt-dlp call → normalize → contract check; a Spotify link reads its embed page instead; at most 4 at a time |
-| `resolve/enricher.ts` | `POST /api/resolve/entries`: per-row lookups with per-platform pacing, SoundCloud's request budget (shared with downloads), rate-limit cooldown and a 30 min cache; `peek` reads the cache for the downloads route |
+| `resolve/resolver.ts` | `POST /api/resolve`: plan → one yt-dlp call → normalize → contract check; a Spotify link reads its embed page instead; at most 4 at a time. `POST /api/resolve/links` (`resolveLinks`) |
+| `resolve/links.ts` | pure: pasted Spotify track links → one `links` collection of partial rows, in paste order, each track once, the other links counted as skipped (ADR-028) |
+| `resolve/enricher.ts` | `POST /api/resolve/entries`: per-row lookups with per-platform pacing, SoundCloud's request budget (shared with downloads), rate-limit cooldown and a 30 min cache; a Spotify row reads its embed page instead of yt-dlp (ADR-028); `peek` reads the cache for the downloads route |
 | `resolve/limiter.ts`, `lru.ts`, `input.ts`, `ytdlp-call.ts` | FIFO limiter (concurrency, min gap between starts, an optional token bucket of its own or a shared one, abortable waits, a bypass for answers from cache), TTL/LRU cache, URL checks shared by both services and the downloads route, one yt-dlp call → JSON or `ErrorInfo` |
 
 ## Web modules (`apps/web`)
@@ -163,7 +164,8 @@ JSON bodies are validated with the shared schemas. Errors use the shape `{ error
 | `GET /api/health` | – | `Health` (cached up to 10 min): per tool `ok`/`missing`/`error` with path, version and minimum checks, yt-dlp age, JS runtimes, overall `ok` |
 | `POST /api/health/recheck` | – | `Health`, probed now (e.g. after installing yt-dlp) |
 | `POST /api/resolve` | `ResolveRequest`: `{ url, mode?: 'auto' \| 'track' \| 'collection' }` | `ResolveResult`. Errors: 400 `invalid_url`, 422 `unsupported_url` (DRM services, Spotify pages that aren't a track, album or playlist, unsupported sites) and the platform's refusals (a private or removed Spotify list: `unavailable`), 429, 502, 503 `engine_missing` (not for a Spotify link) |
-| `POST /api/resolve/entries` | `ResolveEntriesRequest`: `{ entries: { platform, id, url }[] }`, 1–25 partial rows | `{ results: EntryResult[] }`, one per distinct platform + id in request order: `{ status: 'ok', platform, id, track }` or `{ status: 'error', platform, id, error }`. A failed row never fails the batch; only a missing yt-dlp fails the request (503) |
+| `POST /api/resolve/links` | `ResolveLinksRequest`: `{ urls: string[] }`, 1–5,000 pasted links; body limit 1 MiB | `ResolveResult` with a `links` collection of the Spotify track links' partial rows (ADR-028). Errors: 400 `invalid_request`, 413, 422 `unsupported_url` (no Spotify track among them) |
+| `POST /api/resolve/entries` | `ResolveEntriesRequest`: `{ entries: { platform, id, url }[] }`, 1–25 partial rows | `{ results: EntryResult[] }`, one per distinct platform + id in request order: `{ status: 'ok', platform, id, track }` or `{ status: 'error', platform, id, error }`. A failed row never fails the batch; only a missing yt-dlp fails the request (503; Spotify rows need none) |
 | `POST /api/remixes` | `RemixRequest`: `{ title, artist?, uploader?, exclude?: { platform, id }, platforms?: ('youtube' \| 'soundcloud')[] }` | `RemixSuggestions`: `{ song, suggestions (≤ 20, most played first), searches: { youtube, soundcloud } }`, each search `{ status: 'ok', found }`, `{ status: 'error', error }` or `{ status: 'skipped' }`. A failed search never fails the request. Errors: 400 `invalid_request` (also a title with no words to search for), 503 `engine_missing`, 409 `canceled` (ADR-027) |
 | `POST /api/downloads` | `DownloadRequest`: `{ items: TrackRef[] (1–5,000), folder, options: DownloadOptions, label? }`, at most 8 MiB | `CreateDownloadsResponse`: `{ batchId?, jobIds, duplicates }`, one job id per item (a duplicate maps to its job). Items that can't download become jobs that fail at once (see Flows > Download). Errors: 400 `invalid_request` (a folder that isn't an absolute path, an unusable subfolder name, a path too long for the file names), 422 `folder_unavailable` (missing, not a folder, not writable, inside the data dir, or blocked by macOS privacy settings, which the message names), 503 `engine_missing` (no job is created), 503 while shutting down |
 | `GET /api/downloads` | – | `DownloadsSnapshot` (`{ serverId, jobs, batches, queue }`), for tests and tools; the web uses the event stream |
@@ -208,7 +210,7 @@ type CollectionEntry =
 
 type Collection = {
   id: string; platform: Platform; url: string   // identified by url: id repeats across a channel's tabs
-  kind: 'playlist' | 'album' | 'set' | 'channel' | 'likes' | 'mix' | 'other'  // SoundCloud release sets are 'album'
+  kind: 'playlist' | 'album' | 'set' | 'channel' | 'likes' | 'mix' | 'links' | 'other'  // SoundCloud release sets are 'album'; links: pasted track links (ADR-028)
   title: string; owner?: string; thumbnailUrl?: string   // owner may be derived (see Flows > Resolve)
   trackCount?: number         // the platform's own count (YouTube playlists/albums, SoundCloud sets)
   durationSec?: number        // the platform's total (SoundCloud sets)
@@ -227,6 +229,9 @@ type ResolveResult =
   | { kind: 'ambiguous'; track: Track; collectionUrl: string;          // watch?v=…&list=…
       collectionKind: 'playlist' | 'album' | 'mix' }
 
+// POST /api/resolve/links (ADR-028): answered with a ResolveResult of a 'links' collection
+type ResolveLinksRequest = { urls: string[] }   // 1..MAX_PASTED_LINKS
+
 // POST /api/resolve/entries
 type EntryRef = { platform: Platform; id: string; url: string }
 type EntryResult =
@@ -234,7 +239,8 @@ type EntryResult =
   | { status: 'error'; platform: Platform; id: string; error: ErrorInfo }
 
 // Limits: MAX_URL_LENGTH 2048, MAX_ID_LENGTH 256 (Track, EntryRef and EntryResult ids),
-// MAX_COLLECTION_ENTRIES 5000, MAX_MIX_ENTRIES 50, MAX_ENTRIES_PER_REQUEST 25
+// MAX_COLLECTION_ENTRIES 5000, MAX_MIX_ENTRIES 50, MAX_SPOTIFY_ENTRIES 100, MAX_PASTED_LINKS 5000,
+// MAX_ENTRIES_PER_REQUEST 25
 
 type ErrorCode =
   | 'invalid_url' | 'unsupported_url' | 'unavailable' | 'private' | 'geo_blocked'
@@ -422,6 +428,7 @@ The reasons are in ADR-013 and ADR-014.
 1. **Web.** `classifyUrl(text)` from shared gives an instant platform and type badge (`guess`: track, collection, ambiguous or unknown) and rejects invalid input: empty, too long, not http(s), or carrying a username or password.
 2. **Server: check.** The same `classifyUrl` validates the URL (400 `invalid_url`). DRM services (Apple Music, Amazon Music, Tidal, Deezer, Beatport) and Spotify pages that aren't a track, album or playlist get 422 `unsupported_url` without starting yt-dlp.
    - **Spotify** (ADR-026): a track, album or playlist link never reaches yt-dlp. The resolver reads `open.spotify.com/embed/<type>/<id>` (`spotify/client.ts`, inside the same limit of 4 at a time) and maps its entity (`spotify/embed.ts`): a `Track`, or a `Collection` of complete rows (title, artists joined with ", ", duration, an album's cover; never `partial`, no `source`, no `trackCount`). The page lists at most 100 rows: 100 means `truncated`. Podcast episodes count in `skippedEntries`, and a track listed twice is listed once. 404 is `unavailable` (private, removed or mistyped), 429 `rate_limited`, other failures `network`, and a page we can't read `unknown`.
+   - **Pasted Spotify track links** (ADR-028): the web sends a paste or drop with two or more Spotify track links to `POST /api/resolve/links` instead. `resolve/links.ts` checks each with `checkUrl`, keeps the `spotify_track` links in paste order (each track once) as partial rows, and counts the other links in `skippedEntries`. Nothing is read: the rows fill in through enrichment, one embed page each.
 3. **Server: plan** (`resolve/plan.ts`, pure). It decides the URL, the playlist flag, the entry cap and the timeout:
    - The entry cap is 5,000 (YouTube's own playlist limit) and 50 for a mix. yt-dlp is asked for one row more (`-I 1:<cap+1>`), and getting that extra row is what sets `truncated`. `playlist_count` can't tell, because it is null for channel tabs, mixes and SoundCloud user pages.
    - The timeout is 60 s for a track and 180 s for a list (5,001 rows took 38–56 s live).
@@ -441,6 +448,7 @@ The reasons are in ADR-013 and ADR-014.
    - Results are cached for 30 min (2,000 rows), and concurrent requests for the same row share one lookup. That lookup stops only when every request waiting on it is gone. Rows that are lists are refused.
    - Pacing, budget, cooldown and cache are keyed by the platform of the row's URL, not the `platform` the client sent. Results echo the request's platform and id.
    - Timers use a monotonic clock, so a wall-clock jump can't stall pacing or expire the cache.
+   - A Spotify row (from pasted links, ADR-028) is read from its embed page through the resolver's `SpotifyClient`, not yt-dlp: 2 at a time, 250 ms between starts, cached and cooled down like the others. A Spotify 429 pauses only Spotify's lookups.
 
 ### Remix suggestions
 The reasons are in ADR-027.
@@ -605,7 +613,7 @@ E2E (`pnpm test:e2e` = `playwright test` in `apps/web`; `pnpm test:e2e:install` 
 - Playwright's `webServer` first builds the UI into its own `node_modules/.e2e-dist`, never `dist`, which `pnpm start` may be serving. It then runs `apps/server/test/e2e-server.ts` on that build, on port 4849, so e2e can run beside `pnpm dev` and `pnpm start`.
 - That script serves the freshly built UI in production mode with a healthy fake engine (`writeFakeEngine`: fake yt-dlp at today's version, fake ffmpeg and ffprobe, and a `node` link for the fakes, as the whole PATH), and its own data dir and home folder; downloads land in the temp home's `Music/DJ Scraper`. Before the recorded rules, the fake gets e2e rules of its own: a download for every row of the e2e playlist and for the watch+list and mix tracks, made from the one recorded YouTube download with each row's id, names and duration and 250 ms between lines so the UI shows each stage; set row 6 by its API URL; a list that takes 20 s to load; a download that hangs until canceled; a private track inside a playlist; and for remix suggestions, empty `ytsearch30:`/`scsearch30:` answers for the other single tracks' songs (queries built with `songOf` and `remixQuery`), except the SoundCloud track's SoundCloud search, left without a rule so it fails, and a download of one SoundCloud remix of the mix track's song (Rick Astley's searches are recorded). Spotify is a `startSpotifyFixtures` server it starts and passes as `DJS_SPOTIFY_ORIGIN`: the recorded track, album and playlists resolve, the track's search answers after 1.5 s (so the UI shows the DRM note and "Finding it on YouTube…"), and every row of the album downloads (rows 2 to 10 through synthetic track pages, searches and matches made from the recordings). `e2e/fake-urls.ts` lists every URL it answers. The script keeps the server child in its own process group, so Playwright's signals reach it, and it removes its temp dir on exit.
 - One server serves the whole run, so `workers: 1`: both browsers run one test at a time, since settings, jobs, pacing and files outlive a test. YouTube's pacing is real (10 downloads at once, then one per 12 s, counted over the run), and a Spotify download counts as YouTube's: the playlist, cancel and Spotify specs spend that burst (3 per browser each for playlist and Spotify), so the single-track and panel specs download the SoundCloud track, and a new spec that downloads from YouTube waits 12 s per extra download.
-- 11 specs, 29 tests per browser (58 per run, about 1.5 min). `spotify.spec.ts` pastes the Spotify track (the green badge, the DRM note, "Finding it on YouTube…", the match linked as "Audio from YouTube: …", "re-encoded from YouTube's …"), downloads 2 of the album's rows, and checks the truncated playlist's note; `resolve-states.spec.ts` refuses an Apple Music link as DRM and a Spotify artist page as "Spotify: not a track or list".
+- 13 specs, 32 tests per browser (64 per run, about 2 min). `spotify.spec.ts` pastes the Spotify track (the green badge, the DRM note, "Finding it on YouTube…", the match linked as "Audio from YouTube: …", "re-encoded from YouTube's …"), downloads 2 of the album's rows (then "Hide downloaded" takes them out and brings their checks back), and checks the truncated playlist's note; `spotify-links.spec.ts` pastes three Spotify track links (one as a `spotify:track:` URI) and sees one "Pasted links" list whose rows fill in (ADR-028); `resolve-states.spec.ts` refuses an Apple Music link as DRM and a Spotify artist page as "Spotify: not a track or list".
 - Specs import `test` and `expect` from `e2e/fixtures.ts`. Its automatic fixtures:
   - a console guard that fails a test on any console error, warning or page error. That includes the browser's own "Failed to load resource" lines (an error answer, or `/api/events` while the server is down), which a spec expects one by one with `expectConsoleError(failedLoad(status, path))`; an expected line that never comes fails too;
   - a network guard: a request that would leave the server's origin fails the test, except remote thumbnails, which get a 1×1 PNG;

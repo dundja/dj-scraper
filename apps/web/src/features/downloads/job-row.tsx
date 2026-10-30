@@ -83,7 +83,15 @@ export function JobRow({ job }: { job: Job }) {
               className="w-14 shrink-0 gap-0"
             />
           )}
-          <p id={lineId} className={cn('min-w-0 truncate tabular-nums', tone)} title={hover}>
+          <p
+            id={lineId}
+            className={cn(
+              'min-w-0 truncate tabular-nums',
+              percent !== undefined && 'font-mono',
+              tone,
+            )}
+            title={hover}
+          >
             {UNNAMED_PHASES.has(phase) && (
               <span className="sr-only">{statusLabel(job, now)}: </span>
             )}

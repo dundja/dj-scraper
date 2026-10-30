@@ -79,8 +79,9 @@ export function JobInline({ jobId, onDownloadAgain }: JobInlineProps) {
             <p
               className={cn(
                 'text-sm font-medium',
+                phase === 'done' && 'text-success',
                 phase === 'failed' && 'text-destructive',
-                phase === 'requeued' && 'text-warning',
+                (phase === 'requeued' || phase === 'waiting') && 'text-warning',
               )}
             >
               {label}
@@ -90,7 +91,9 @@ export function JobInline({ jobId, onDownloadAgain }: JobInlineProps) {
             )}
           </div>
           {progress !== undefined && (
-            <p className="text-sm text-muted-foreground tabular-nums">{progressText(progress)}</p>
+            <p className="font-mono text-sm text-muted-foreground tabular-nums">
+              {progressText(progress)}
+            </p>
           )}
           {/* Outside the live region: a paced platform's next start moves every few seconds. */}
           {queueNote !== undefined && (

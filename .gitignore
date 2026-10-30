@@ -40,3 +40,10 @@ CLAUDE.local.md
 
 # Local download output while developing
 /downloads/
+
+# Impeccable (design workflow): decision sketches and review captures are per session; the surface
+# briefs, DESIGN.md and .impeccable/design.json are committed
+**/.impeccable/mocks/
+**/.impeccable/review/
+**/.impeccable/build/
+**/.impeccable/config.local.json

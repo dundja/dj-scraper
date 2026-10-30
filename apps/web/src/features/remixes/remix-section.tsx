@@ -32,7 +32,7 @@ export function RemixSection({ track }: { track: Track }) {
     <section aria-labelledby={headingId} data-slot="remix-section">
       <Collapsible defaultOpen className="flex flex-col gap-3">
         <div className="flex flex-col gap-0.5">
-          <h2 id={headingId} className="text-sm font-medium">
+          <h2 id={headingId} className="text-base font-semibold tracking-tight">
             <CollapsibleTrigger className="group/trigger -mx-1 flex items-center gap-1 rounded-sm px-1 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
               <ChevronRight
                 aria-hidden

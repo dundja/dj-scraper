@@ -35,7 +35,11 @@ export function RemixRow({ suggestion, jobId, onQueued }: RemixRowProps) {
   return (
     <li
       aria-labelledby={titleId}
-      className="flex flex-col gap-2 border-b border-border/50 py-2.5 last:border-b-0"
+      className={cn(
+        'flex flex-col gap-2 border-b border-border/50 py-2.5 last:border-b-0',
+        // The row whose audio is on is one raised surface with its player strip.
+        preview.state.status !== 'idle' && '-mx-2 rounded-lg border-transparent bg-card px-2',
+      )}
     >
       <div className="flex items-start gap-3">
         <Artwork src={top.thumbnailUrl} size={40} />
@@ -56,7 +60,7 @@ export function RemixRow({ suggestion, jobId, onQueued }: RemixRowProps) {
               </PlatformBadge>
             ))}
             {top.durationSec !== undefined && (
-              <span className="tabular-nums">
+              <span className="font-mono tabular-nums">
                 <span className="sr-only">Duration </span>
                 {formatDuration(top.durationSec)}
               </span>

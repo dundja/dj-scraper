@@ -1,6 +1,7 @@
 import type { RemixPlatform, RemixSuggestions, RemixUpload } from '@dj-scraper/shared'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button.tsx'
+import { cn } from '@/lib/utils.ts'
 import { latestJobId, type RemixJobs } from './remix-jobs.ts'
 import { RemixNotes } from './remix-notes.tsx'
 import { RemixRow } from './remix-row.tsx'
@@ -96,13 +97,16 @@ function GenreFilter({ genres, total, active, onChange }: GenreFilterProps) {
         return (
           <Button
             key={name ?? ''}
-            variant={pressed ? 'secondary' : 'outline'}
+            variant={pressed ? 'default' : 'outline'}
             size="xs"
             aria-pressed={pressed}
             className="rounded-full"
             onClick={() => onChange(name)}
           >
-            {label} <span className="text-muted-foreground tabular-nums">{count}</span>
+            {label}{' '}
+            <span className={cn('tabular-nums', pressed ? 'opacity-70' : 'text-muted-foreground')}>
+              {count}
+            </span>
           </Button>
         )
       })}

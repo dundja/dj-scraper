@@ -3,7 +3,7 @@
 Vite SPA for DJ Scraper. It talks only to the local server through `/api` (Vite proxies it to the server in dev). UX flows are in `docs/product.md`.
 
 ## Stack
-React 19 · TypeScript (strict) · Vite 8 · TanStack Router (file-based routes in `src/routes/`) · TanStack Query · Tailwind CSS v4 (CSS-first config in `src/styles.css`) · shadcn/ui on Base UI, Nova preset (ADR-010) · lucide-react · TanStack Virtual (`@tanstack/react-virtual`) for long lists
+React 19 · TypeScript (strict) · Vite 8 · TanStack Router (file-based routes in `src/routes/`) · TanStack Query · Tailwind CSS v4 (CSS-first config in `src/styles.css`) · shadcn/ui on Base UI, Nova preset (ADR-010), our theme in `src/styles.css` (ADR-030) · lucide-react · TanStack Virtual (`@tanstack/react-virtual`) for long lists
 
 ## Layout
 ```
@@ -125,7 +125,8 @@ src/
 - Spotify (ADR-026): a Spotify job's audio is its YouTube match (`job.match`). Say so wherever its source or output shows ("Audio from YouTube: …", "copied from YouTube"), and read queue pauses and pacing for it with `pacingPlatform(job.track.platform)`.
 - Honest audio in the UI (`features/downloads/job-text.ts`): show a job's `output` next to its `source`, say copied or re-encoded ("from <source>" for a lossless output: it holds the source's quality, no more), and show a measured bitrate as the nominal one only when it is at most 3 % above it, never rounded up. A job offers at most one action at a time (`job-actions.ts`).
 - Use function components with named exports. Split a component once it passes ~150 lines or does two jobs.
-- Style with Tailwind utilities and the `cn()` helper. Dark theme first; respect `prefers-reduced-motion`.
+- Style with Tailwind utilities and the `cn()` helper. Dark only; respect `prefers-reduced-motion`.
+- The theme (ADR-030) is tokens only: `primary` is the one violet accent (primary actions, progress, the active control, checkboxes, switches, focus); status is `success` (done), `warning` (waiting, paused), `destructive` (failed), always with an icon and a word; a platform is `bg-platform-youtube|soundcloud|spotify`, as a dot beside its name. Never use Tailwind's palette colours (`bg-red-500`) in features. `font-mono` (Geist Mono) is for measurements standing on their own only: durations, playback times, speeds, live progress figures (not counts, sentences or a bitrate inside a prose line). `.impeccable/` holds the design workflow's surface brief (committed) and its session sketches and captures (gitignored).
 - Accessibility: everything keyboard-reachable, labelled inputs and checkboxes, visible focus, `aria-live` for progress and status. A control that removes itself hands focus on (`focusNextAfter`, or back to the link box). Base UI tooltips are visual only (no `role="tooltip"`, no `aria-describedby`), so every icon button has its own `aria-label`.
 - Customize shadcn/ui components through variants and props. Re-add a component rather than hand-patching its generated internals.
 - Tests: Vitest + Testing Library for non-trivial hooks and components (`*.test.tsx`); user flows in Playwright e2e (`e2e/*.spec.ts`, importing `test`/`expect` from `e2e/fixtures.ts`). In WebKit, Tab skips links, so keyboard specs use Option-Tab (Alt+Tab) there.

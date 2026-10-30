@@ -78,7 +78,7 @@ export const TrackRow = memo(function TrackRow({
           onFocus={() => onFocus(position)}
         />
       </div>
-      <div role="cell" className="text-right text-xs text-muted-foreground tabular-nums">
+      <div role="cell" className="text-right font-mono text-xs text-muted-foreground tabular-nums">
         {row.index + 1}
       </div>
       <div role="cell" className={cn(!selectable && 'opacity-50')}>
@@ -98,7 +98,7 @@ export const TrackRow = memo(function TrackRow({
       >
         {byline}
       </div>
-      <div role="cell" className="text-right text-xs text-muted-foreground tabular-nums">
+      <div role="cell" className="text-right font-mono text-xs text-muted-foreground tabular-nums">
         {entry.durationSec ? (
           formatDuration(entry.durationSec)
         ) : loading ? (

@@ -19,11 +19,11 @@ describe('PlatformBadge', () => {
 
   it('adds a decorative brand dot for YouTube, SoundCloud and Spotify only', () => {
     const { container, rerender } = render(<PlatformBadge platform="youtube" />)
-    expect(container.querySelector('[aria-hidden]')?.className).toContain('bg-red-500')
+    expect(container.querySelector('[aria-hidden]')?.className).toContain('bg-platform-youtube')
     rerender(<PlatformBadge platform="soundcloud" />)
-    expect(container.querySelector('[aria-hidden]')?.className).toContain('bg-orange-500')
+    expect(container.querySelector('[aria-hidden]')?.className).toContain('bg-platform-soundcloud')
     rerender(<PlatformBadge platform="spotify" />)
-    expect(container.querySelector('[aria-hidden]')?.className).toContain('bg-green-500')
+    expect(container.querySelector('[aria-hidden]')?.className).toContain('bg-platform-spotify')
     rerender(<PlatformBadge platform="other" />)
     expect(container.querySelector('[aria-hidden]')).toBeNull()
   })

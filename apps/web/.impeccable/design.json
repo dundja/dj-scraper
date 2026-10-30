@@ -1,0 +1,451 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-30T15:15:43.337Z",
+  "title": "Design System: DJ Scraper",
+  "extensions": {
+    "colorMeta": {
+      "violet-accent": {
+        "role": "primary",
+        "displayName": "Evening Violet",
+        "canonical": "oklch(0.7 0.155 285)",
+        "tonalRamp": [
+          "oklch(0.15 0.039 285)",
+          "oklch(0.26 0.067 285)",
+          "oklch(0.37 0.096 285)",
+          "oklch(0.48 0.124 285)",
+          "oklch(0.6 0.155 285)",
+          "oklch(0.72 0.124 285)",
+          "oklch(0.84 0.093 285)",
+          "oklch(0.95 0.065 285)"
+        ]
+      },
+      "violet-ink": {
+        "role": "primary",
+        "displayName": "Violet Ink",
+        "canonical": "oklch(0.19 0.04 285)",
+        "tonalRamp": [
+          "oklch(0.15 0.010 285)",
+          "oklch(0.26 0.017 285)",
+          "oklch(0.37 0.025 285)",
+          "oklch(0.48 0.032 285)",
+          "oklch(0.6 0.040 285)",
+          "oklch(0.72 0.032 285)",
+          "oklch(0.84 0.024 285)",
+          "oklch(0.95 0.017 285)"
+        ]
+      },
+      "violet-ring": {
+        "role": "primary",
+        "displayName": "Focus Violet",
+        "canonical": "oklch(0.66 0.15 285)",
+        "tonalRamp": [
+          "oklch(0.15 0.037 285)",
+          "oklch(0.26 0.065 285)",
+          "oklch(0.37 0.092 285)",
+          "oklch(0.48 0.120 285)",
+          "oklch(0.6 0.150 285)",
+          "oklch(0.72 0.120 285)",
+          "oklch(0.84 0.090 285)",
+          "oklch(0.95 0.062 285)"
+        ]
+      },
+      "charcoal-ground": {
+        "role": "neutral",
+        "displayName": "Charcoal Ground",
+        "canonical": "oklch(0.19 0.006 285)",
+        "tonalRamp": [
+          "oklch(0.15 0.002 285)",
+          "oklch(0.26 0.003 285)",
+          "oklch(0.37 0.004 285)",
+          "oklch(0.48 0.005 285)",
+          "oklch(0.6 0.006 285)",
+          "oklch(0.72 0.005 285)",
+          "oklch(0.84 0.004 285)",
+          "oklch(0.95 0.002 285)"
+        ]
+      },
+      "charcoal-surface": {
+        "role": "neutral",
+        "displayName": "Charcoal Surface",
+        "canonical": "oklch(0.218 0.007 285)",
+        "tonalRamp": [
+          "oklch(0.15 0.002 285)",
+          "oklch(0.26 0.003 285)",
+          "oklch(0.37 0.004 285)",
+          "oklch(0.48 0.006 285)",
+          "oklch(0.6 0.007 285)",
+          "oklch(0.72 0.006 285)",
+          "oklch(0.84 0.004 285)",
+          "oklch(0.95 0.003 285)"
+        ]
+      },
+      "charcoal-popover": {
+        "role": "neutral",
+        "displayName": "Charcoal Popover",
+        "canonical": "oklch(0.24 0.008 285)",
+        "tonalRamp": [
+          "oklch(0.15 0.002 285)",
+          "oklch(0.26 0.003 285)",
+          "oklch(0.37 0.005 285)",
+          "oklch(0.48 0.006 285)",
+          "oklch(0.6 0.008 285)",
+          "oklch(0.72 0.006 285)",
+          "oklch(0.84 0.005 285)",
+          "oklch(0.95 0.003 285)"
+        ]
+      },
+      "charcoal-muted": {
+        "role": "neutral",
+        "displayName": "Charcoal Muted",
+        "canonical": "oklch(0.27 0.009 285)",
+        "tonalRamp": [
+          "oklch(0.15 0.002 285)",
+          "oklch(0.26 0.004 285)",
+          "oklch(0.37 0.006 285)",
+          "oklch(0.48 0.007 285)",
+          "oklch(0.6 0.009 285)",
+          "oklch(0.72 0.007 285)",
+          "oklch(0.84 0.005 285)",
+          "oklch(0.95 0.004 285)"
+        ]
+      },
+      "charcoal-hover": {
+        "role": "neutral",
+        "displayName": "Charcoal Hover",
+        "canonical": "oklch(0.295 0.01 285)",
+        "tonalRamp": [
+          "oklch(0.15 0.003 285)",
+          "oklch(0.26 0.004 285)",
+          "oklch(0.37 0.006 285)",
+          "oklch(0.48 0.008 285)",
+          "oklch(0.6 0.010 285)",
+          "oklch(0.72 0.008 285)",
+          "oklch(0.84 0.006 285)",
+          "oklch(0.95 0.004 285)"
+        ]
+      },
+      "near-white": {
+        "role": "neutral",
+        "displayName": "Near-White",
+        "canonical": "oklch(0.95 0.004 285)",
+        "tonalRamp": [
+          "oklch(0.15 0.001 285)",
+          "oklch(0.26 0.002 285)",
+          "oklch(0.37 0.002 285)",
+          "oklch(0.48 0.003 285)",
+          "oklch(0.6 0.004 285)",
+          "oklch(0.72 0.003 285)",
+          "oklch(0.84 0.002 285)",
+          "oklch(0.95 0.002 285)"
+        ]
+      },
+      "ash-grey": {
+        "role": "neutral",
+        "displayName": "Ash Grey",
+        "canonical": "oklch(0.715 0.012 285)",
+        "tonalRamp": [
+          "oklch(0.15 0.003 285)",
+          "oklch(0.26 0.005 285)",
+          "oklch(0.37 0.007 285)",
+          "oklch(0.48 0.010 285)",
+          "oklch(0.6 0.012 285)",
+          "oklch(0.72 0.010 285)",
+          "oklch(0.84 0.007 285)",
+          "oklch(0.95 0.005 285)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(1 0 0 / 9%)",
+        "tonalRamp": [
+          "oklch(0.15 0.001 0)",
+          "oklch(0.26 0.002 0)",
+          "oklch(0.37 0.002 0)",
+          "oklch(0.48 0.003 0)",
+          "oklch(0.6 0.004 0)",
+          "oklch(0.72 0.003 0)",
+          "oklch(0.84 0.002 0)",
+          "oklch(0.95 0.002 0)"
+        ]
+      },
+      "input-stroke": {
+        "role": "neutral",
+        "displayName": "Input Stroke",
+        "canonical": "oklch(1 0 0 / 13%)",
+        "tonalRamp": [
+          "oklch(0.15 0.001 0)",
+          "oklch(0.26 0.002 0)",
+          "oklch(0.37 0.002 0)",
+          "oklch(0.48 0.003 0)",
+          "oklch(0.6 0.004 0)",
+          "oklch(0.72 0.003 0)",
+          "oklch(0.84 0.002 0)",
+          "oklch(0.95 0.002 0)"
+        ]
+      },
+      "status-done": {
+        "role": "secondary",
+        "displayName": "Done Green",
+        "canonical": "oklch(0.76 0.15 160)",
+        "tonalRamp": [
+          "oklch(0.15 0.037 160)",
+          "oklch(0.26 0.065 160)",
+          "oklch(0.37 0.092 160)",
+          "oklch(0.48 0.120 160)",
+          "oklch(0.6 0.150 160)",
+          "oklch(0.72 0.120 160)",
+          "oklch(0.84 0.090 160)",
+          "oklch(0.95 0.062 160)"
+        ]
+      },
+      "status-waiting": {
+        "role": "secondary",
+        "displayName": "Waiting Amber",
+        "canonical": "oklch(0.81 0.145 78)",
+        "tonalRamp": [
+          "oklch(0.15 0.036 78)",
+          "oklch(0.26 0.063 78)",
+          "oklch(0.37 0.089 78)",
+          "oklch(0.48 0.116 78)",
+          "oklch(0.6 0.145 78)",
+          "oklch(0.72 0.116 78)",
+          "oklch(0.84 0.087 78)",
+          "oklch(0.95 0.060 78)"
+        ]
+      },
+      "status-failed": {
+        "role": "secondary",
+        "displayName": "Failed Red",
+        "canonical": "oklch(0.69 0.18 22)",
+        "tonalRamp": [
+          "oklch(0.15 0.045 22)",
+          "oklch(0.26 0.078 22)",
+          "oklch(0.37 0.111 22)",
+          "oklch(0.48 0.144 22)",
+          "oklch(0.6 0.180 22)",
+          "oklch(0.72 0.144 22)",
+          "oklch(0.84 0.108 22)",
+          "oklch(0.95 0.075 22)"
+        ]
+      },
+      "platform-youtube": {
+        "role": "tertiary",
+        "displayName": "YouTube Red",
+        "canonical": "oklch(0.6 0.24 25)",
+        "tonalRamp": [
+          "oklch(0.15 0.060 25)",
+          "oklch(0.26 0.104 25)",
+          "oklch(0.37 0.148 25)",
+          "oklch(0.48 0.192 25)",
+          "oklch(0.6 0.240 25)",
+          "oklch(0.72 0.192 25)",
+          "oklch(0.84 0.144 25)",
+          "oklch(0.95 0.100 25)"
+        ]
+      },
+      "platform-soundcloud": {
+        "role": "tertiary",
+        "displayName": "SoundCloud Orange",
+        "canonical": "oklch(0.76 0.17 58)",
+        "tonalRamp": [
+          "oklch(0.15 0.043 58)",
+          "oklch(0.26 0.074 58)",
+          "oklch(0.37 0.105 58)",
+          "oklch(0.48 0.136 58)",
+          "oklch(0.6 0.170 58)",
+          "oklch(0.72 0.136 58)",
+          "oklch(0.84 0.102 58)",
+          "oklch(0.95 0.071 58)"
+        ]
+      },
+      "platform-spotify": {
+        "role": "tertiary",
+        "displayName": "Spotify Green",
+        "canonical": "oklch(0.76 0.19 149)",
+        "tonalRamp": [
+          "oklch(0.15 0.048 149)",
+          "oklch(0.26 0.082 149)",
+          "oklch(0.37 0.117 149)",
+          "oklch(0.48 0.152 149)",
+          "oklch(0.6 0.190 149)",
+          "oklch(0.72 0.152 149)",
+          "oklch(0.84 0.114 149)",
+          "oklch(0.95 0.079 149)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The track title and a collection's title; up to two lines."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings: Remixes, Downloads. Empty-state and prompt headings use it at 500."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Row titles, messages, buttons and status words (buttons and status words at 500)."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Metadata lines, badges, queue notes, the player strip."
+      },
+      "measure": {
+        "displayName": "Measure",
+        "purpose": "Geist Mono with tabular figures for standalone measurements: durations, playback times, speeds, live progress figures. 0.75-0.875rem."
+      }
+    },
+    "shadows": [
+      {
+        "name": "popover-float",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1), 0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent)",
+        "purpose": "shadcn's generated popovers, menus and selects only; everything else is flat."
+      }
+    ],
+    "motion": [
+      {
+        "name": "popover-enter",
+        "value": "fade + zoom-in-95 + 2px slide, 100ms",
+        "purpose": "shadcn's generated popover animation."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation and transition durations 0.01ms",
+        "purpose": "Applied globally under prefers-reduced-motion; spinners stop (motion-safe:animate-spin)."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "lg",
+        "value": "1024px",
+        "purpose": "Two columns (main + 384px downloads rail, each scrolling) at and above; stacked, page-scrolling below."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Go, Download: the one violet fill per action.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 17V3\"/><path d=\"m6 11 6 6 6-6\"/><path d=\"M19 21H5\"/></svg>Download</button>",
+      "css": ".ds-btn-primary { font-family: \"Geist Variable\", sans-serif; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 0.5rem; border: 1px solid transparent; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 150ms, transform 150ms; background: var(--primary); color: var(--primary-foreground); } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary) 80%, transparent); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-btn-primary:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Row actions: Download on a remix, Reveal in Finder, play.",
+      "html": "<button class=\"ds-btn-outline\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z\"/></svg></button> <button class=\"ds-btn-outline\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 17V3\"/><path d=\"m6 11 6 6 6-6\"/><path d=\"M19 21H5\"/></svg>Download</button>",
+      "css": ".ds-btn-outline { font-family: \"Geist Variable\", sans-serif; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 0.5rem; border: 1px solid transparent; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 150ms, transform 150ms; background: color-mix(in oklch, var(--input) 30%, var(--background)); border-color: var(--input); color: var(--foreground); } .ds-btn-outline:hover { background: color-mix(in oklch, var(--input) 50%, var(--background)); } .ds-btn-outline:focus-visible { border-color: var(--ring); outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-btn-outline:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Genre Filter Chips",
+      "kind": "chip",
+      "refersTo": "chip-filter",
+      "description": "Pill xs toggles with a muted count; the active one fills violet.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip\" aria-pressed=\"true\">All <span>20</span></button><button class=\"ds-chip\">Nu Disco <span>2</span></button><button class=\"ds-chip\">Deep House <span>1</span></button></div>",
+      "css": ".ds-chips { display: flex; gap: 6px; flex-wrap: wrap; } .ds-chip { font-family: \"Geist Variable\", sans-serif; height: 24px; padding: 0 8px; border-radius: 9999px; border: 1px solid var(--input); background: color-mix(in oklch, var(--input) 30%, var(--background)); color: var(--foreground); font-size: 0.75rem; font-weight: 500; cursor: pointer; } .ds-chip span { color: var(--muted-foreground); font-variant-numeric: tabular-nums; } .ds-chip:hover { background: var(--muted); } .ds-chip[aria-pressed=\"true\"] { background: var(--primary); color: var(--primary-foreground); border-color: transparent; } .ds-chip[aria-pressed=\"true\"] span { color: inherit; opacity: 0.7; } .ds-chip:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+    },
+    {
+      "name": "Platform Badge",
+      "kind": "chip",
+      "refersTo": "platform-badge",
+      "description": "A platform's brand dot beside its name, never a field of colour.",
+      "html": "<span class=\"ds-badge\"><i style=\"background: var(--platform-youtube)\"></i>YouTube · 579K views</span> <span class=\"ds-badge\"><i style=\"background: var(--platform-soundcloud)\"></i>SoundCloud</span> <span class=\"ds-badge\"><i style=\"background: var(--platform-spotify)\"></i>Spotify</span>",
+      "css": ".ds-badge { font-family: \"Geist Variable\", sans-serif; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 2px 8px; border-radius: 9999px; border: 1px solid var(--border); color: var(--muted-foreground); font-size: 0.75rem; font-variant-numeric: tabular-nums; } .ds-badge i { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; }"
+    },
+    {
+      "name": "Track Card",
+      "kind": "card",
+      "refersTo": "track-card",
+      "description": "The pasted track on the one surface step: artwork, headline title, metadata, then its status line.",
+      "html": "<article class=\"ds-card\"><div class=\"ds-art\"></div><div><h3>Porcelain</h3><p class=\"ds-muted\">Moby</p><p class=\"ds-meta\"><span class=\"ds-badge\"><i style=\"background: var(--platform-youtube)\"></i>YouTube</span><span class=\"ds-mono\">4:01</span><span>Source: AAC 128 kbps</span></p></div></article>",
+      "css": ".ds-card { font-family: \"Geist Variable\", sans-serif; display: flex; gap: 16px; padding: 16px; border-radius: 0.5rem; border: 1px solid var(--border); background: var(--card); color: var(--card-foreground); } .ds-art { width: 96px; height: 96px; border-radius: 0.4rem; background: var(--muted); flex-shrink: 0; } .ds-card h3 { margin: 0; font-size: 1.125rem; line-height: 1.375; font-weight: 600; letter-spacing: -0.025em; } .ds-muted { margin: 4px 0 0; font-size: 0.875rem; color: var(--muted-foreground); } .ds-meta { display: flex; gap: 12px; align-items: center; margin: 12px 0 0; font-size: 0.75rem; color: var(--muted-foreground); } .ds-mono { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; } .ds-badge { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 2px 8px; border-radius: 9999px; border: 1px solid var(--border); } .ds-badge i { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; }"
+    },
+    {
+      "name": "Status Line",
+      "kind": "custom",
+      "description": "A job's icon in its status hue beside its word; live figures in mono.",
+      "html": "<div class=\"ds-status\"><p class=\"ds-done\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m9 12 2 2 4-4\"/></svg>Done</p><p class=\"ds-wait\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 22h14\"/><path d=\"M5 2h14\"/><path d=\"M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22\"/><path d=\"M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2\"/></svg>Waiting</p><p class=\"ds-fail\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/><line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/></svg>Failed</p><div class=\"ds-dl\"><span class=\"ds-mono\">42% · 1.2 MB/s · 0:08 left</span><div class=\"ds-track\"><div style=\"width:42%\"></div></div></div></div>",
+      "css": ".ds-status { font-family: \"Geist Variable\", sans-serif; display: flex; flex-direction: column; gap: 6px; font-size: 0.875rem; font-weight: 500; color: var(--foreground); } .ds-status p { display: flex; align-items: center; gap: 6px; margin: 0; } .ds-done { color: var(--success); } .ds-wait { color: var(--warning); } .ds-fail { color: var(--destructive); } .ds-mono { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 400; color: var(--muted-foreground); } .ds-dl { display: flex; flex-direction: column; gap: 4px; width: 240px; } .ds-track { height: 4px; border-radius: 9999px; background: var(--muted); overflow: hidden; } .ds-track div { height: 100%; background: var(--primary); transition: width 150ms; }"
+    },
+    {
+      "name": "Playing Remix Row",
+      "kind": "custom",
+      "refersTo": "remix-row-playing",
+      "description": "The one raised row, with its player strip and the violet active speed preset.",
+      "html": "<div class=\"ds-row\"><div class=\"ds-top\"><div class=\"ds-art\"></div><div class=\"ds-txt\"><p>Porcelain (Krysiek Remix)</p><span class=\"ds-mono\">3:27</span></div><button class=\"ds-play\" aria-label=\"Pause\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><rect x=\"14\" y=\"4\" width=\"4\" height=\"16\" rx=\"1\"/><rect x=\"6\" y=\"4\" width=\"4\" height=\"16\" rx=\"1\"/></svg></button></div><div class=\"ds-strip\"><div class=\"ds-time\"><span class=\"ds-mono\">0:42</span><input type=\"range\" aria-label=\"Position\" value=\"20\"><span class=\"ds-mono\">3:27</span></div><div class=\"ds-presets\"><button class=\"ds-pre\">0.94x</button><button class=\"ds-pre\" aria-pressed=\"true\">1x</button><button class=\"ds-pre\">1.06x</button></div></div></div>",
+      "css": ".ds-row { font-family: \"Geist Variable\", sans-serif; display: flex; flex-direction: column; gap: 8px; padding: 10px 8px; border-radius: 0.5rem; background: var(--card); color: var(--foreground); width: 420px; } .ds-top { display: flex; gap: 12px; align-items: flex-start; } .ds-art { width: 40px; height: 40px; border-radius: 0.3rem; background: var(--muted); } .ds-txt { flex: 1; } .ds-txt p { margin: 0 0 4px; font-size: 0.875rem; } .ds-mono { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 0.75rem; color: var(--muted-foreground); } .ds-play { width: 32px; height: 32px; border-radius: 0.5rem; border: none; background: var(--primary); color: var(--primary-foreground); display: grid; place-items: center; cursor: pointer; } .ds-play:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-strip { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 0.4rem; background: color-mix(in oklch, var(--muted) 60%, transparent); } .ds-time { display: flex; align-items: center; gap: 8px; } .ds-time input { flex: 1; accent-color: var(--primary); } .ds-presets { display: flex; gap: 4px; } .ds-pre { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; height: 24px; padding: 0 8px; border-radius: 0.4rem; border: 1px solid var(--input); background: color-mix(in oklch, var(--input) 30%, var(--background)); color: var(--foreground); font-size: 0.75rem; cursor: pointer; } .ds-pre:hover { background: var(--muted); } .ds-pre[aria-pressed=\"true\"] { background: var(--primary); color: var(--primary-foreground); border-color: transparent; } .ds-pre:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+    },
+    {
+      "name": "Header",
+      "kind": "nav",
+      "description": "The 48px sticky header: name, folder picker, engine status.",
+      "html": "<header class=\"ds-head\"><span class=\"ds-name\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M6 12c0-1.7.7-3.2 1.8-4.2\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/><path d=\"M18 12c0 1.7-.7 3.2-1.8 4.2\"/></svg>DJ Scraper</span><button class=\"ds-ghost\">~/Music/DJ</button><button class=\"ds-ghost ds-end\"><span style=\"color: var(--success); display: inline-flex\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m9 12 2 2 4-4\"/></svg></span>Engine ready</button></header>",
+      "css": ".ds-head { font-family: \"Geist Variable\", sans-serif; display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); } .ds-name { display: flex; align-items: center; gap: 8px; font-size: 0.875rem; font-weight: 600; letter-spacing: -0.025em; } .ds-name svg { color: var(--muted-foreground); } .ds-ghost { font-family: \"Geist Variable\", sans-serif; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: none; border-radius: 0.4rem; background: transparent; color: var(--foreground); font-size: 0.8rem; font-weight: 500; cursor: pointer; } .ds-ghost:hover { background: color-mix(in oklch, var(--muted) 50%, transparent); } .ds-ghost:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-end { margin-left: auto; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Evening Desk",
+    "overview": "A dark music app played straight, at the craft of Spotify's desktop app and Rekordbox. The artwork carries the colour; the chrome carries only state. Everything sits on a charcoal ground with a barely cool cast, one lighter surface step and hairline borders, so a DJ can work through a long evening of pasting links, auditioning remixes and watching downloads without glare.\n\nColour is rationed by meaning. One violet accent marks what is primary, in progress, active or focused. Three status hues say done, waiting and failed, and always come with an icon and a word. Three platform hues appear only as small brand dots beside a platform's name. Nothing else is coloured. The density is a working tool's: 14 px body, 12 px metadata, one heading step, and measurements set in Geist Mono with tabular figures so they line up and hold still while they change.\n\nThe system is tokens only. The generated shadcn components are never hand-patched; they take the world through `src/styles.css`, so a component added later from the CLI arrives already themed. Confirmed rejections (ADR-030): the anonymous neutral-grey shadcn default, any DJ or club costume (neon), a blue-primary dashboard, and too much colour.",
+    "keyCharacteristics": [
+      "Dark only (`color-scheme: dark`); no light tokens.",
+      "Charcoal ground, one surface step, white hairlines at 9 %.",
+      "One violet accent; status and platform hues carry meaning only.",
+      "Geist for the UI, Geist Mono for standalone measurements.",
+      "Flat surfaces; depth by tonal step, shadow only on floating popovers.",
+      "Browser chrome (range inputs, caret, selection, scrollbars) wears the theme."
+    ],
+    "rules": [
+      {
+        "name": "The One Voice Rule",
+        "body": "Violet means primary, in progress, active or focused. If an element is none of those, it is not violet.",
+        "section": "colors"
+      },
+      {
+        "name": "The Icon-And-Word Rule",
+        "body": "A status hue never travels alone: every green, amber or red status carries its icon and its word. Colour only speeds up scanning.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dot Not Field Rule",
+        "body": "A platform's brand colour is a 6 px dot beside its name, never a fill, border or text colour, so it can never be mistaken for a status.",
+        "section": "colors"
+      },
+      {
+        "name": "The Measurement Rule",
+        "body": "Geist Mono sets a measurement standing on its own. Counts, sentences and a bitrate inside a prose line (\"MP3 · 320 kbps · re-encoded from …\") stay in Geist with tabular figures.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Step Rule",
+        "body": "There is one heading step above body text. No display sizes, no uppercase labels, no eyebrows above headings.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Raised Row Rule",
+        "body": "In a list, only the row whose audio is on rises to the surface step, together with its player strip. Every other row lies on the ground.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do change the look through tokens in `src/styles.css`; take shadcn components from the CLI as generated.",
+      "Do keep violet to primary actions, progress, the active control, checkboxes, switches and focus.",
+      "Do pair every status hue with its icon and its word.",
+      "Do show a platform as its brand dot (6 px) beside its name.",
+      "Do set standalone measurements in Geist Mono with tabular figures.",
+      "Do raise only the playing remix row to Charcoal Surface."
+    ],
+    "donts": [
+      "Don't use Tailwind palette colours (`bg-red-500`) in features; use the role tokens.",
+      "Don't fill, border or colour text with a platform hue.",
+      "Don't use pure white text or a black ground.",
+      "Don't set counts, sentences or prose bitrates in monospace.",
+      "Don't add a light theme by inheriting shadcn's defaults; a light theme would have to be designed.",
+      "Don't add neon, glow or club styling, or make the primary blue."
+    ]
+  }
+}

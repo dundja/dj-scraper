@@ -33,10 +33,10 @@ export function RemixSpeed({ rate, preservesPitch, onRate, onPitchLock }: RemixS
           return (
             <Button
               key={preset}
-              variant={pressed ? 'secondary' : 'outline'}
+              variant={pressed ? 'default' : 'outline'}
               size="xs"
               aria-pressed={pressed}
-              className="tabular-nums"
+              className="font-mono tabular-nums"
               onClick={() => onRate(preset)}
             >
               {presetLabel(preset)}
@@ -74,7 +74,10 @@ export function RemixSpeed({ rate, preservesPitch, onRate, onPitchLock }: RemixS
         >
           <Plus aria-hidden />
         </Button>
-        <output aria-label="Current speed" className="w-12 text-right text-sm tabular-nums">
+        <output
+          aria-label="Current speed"
+          className="w-12 text-right font-mono text-sm tabular-nums"
+        >
           {formatRate(rate)}
         </output>
         <Button

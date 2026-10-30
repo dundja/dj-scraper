@@ -43,7 +43,7 @@ export function RemixPlayer({
   return (
     <section
       aria-label={`Preview of ${upload.title}`}
-      className="flex flex-col gap-2 rounded-md bg-muted/40 p-2.5 text-xs text-muted-foreground"
+      className="flex flex-col gap-2 rounded-md bg-muted/60 p-2.5 text-xs text-muted-foreground"
     >
       <p role="status" className="flex items-center gap-2">
         {status === 'preparing' && (
@@ -67,7 +67,7 @@ export function RemixPlayer({
       {(status === 'playing' || status === 'paused') && (
         <>
           <div className="flex items-center gap-2">
-            <span className="w-10 text-right tabular-nums">
+            <span className="w-10 text-right font-mono tabular-nums">
               {formatClockTime(state.currentTime)}
             </span>
             <input
@@ -82,7 +82,7 @@ export function RemixPlayer({
               onChange={(event) => onSeek(event.currentTarget.valueAsNumber)}
               className="h-4 min-w-24 flex-1 accent-primary"
             />
-            <span className="w-10 tabular-nums">
+            <span className="w-10 font-mono tabular-nums">
               {duration === undefined ? '–:––' : formatClockTime(duration)}
             </span>
           </div>

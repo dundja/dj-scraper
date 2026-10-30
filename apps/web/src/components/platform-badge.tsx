@@ -4,10 +4,10 @@ import { Badge } from '@/components/ui/badge.tsx'
 import { cn } from '@/lib/utils.ts'
 
 const PLATFORMS: Record<Platform, { label: string; dot?: string }> = {
-  youtube: { label: 'YouTube', dot: 'bg-red-500' },
-  soundcloud: { label: 'SoundCloud', dot: 'bg-orange-500' },
+  youtube: { label: 'YouTube', dot: 'bg-platform-youtube' },
+  soundcloud: { label: 'SoundCloud', dot: 'bg-platform-soundcloud' },
   // A track list only: its audio is matched on YouTube (ADR-026).
-  spotify: { label: 'Spotify', dot: 'bg-green-500' },
+  spotify: { label: 'Spotify', dot: 'bg-platform-spotify' },
   // Anything else yt-dlp handles (Bandcamp, Mixcloud, …): no brand to hint at.
   other: { label: 'Web' },
 }

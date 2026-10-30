@@ -22,10 +22,10 @@ type PhaseIcon = { icon: LucideIcon; tone: string; spin?: true }
 const PHASE_ICONS: Record<JobIconPhase, PhaseIcon> = {
   queued: { icon: Clock, tone: 'text-muted-foreground' },
   requeued: { icon: Hourglass, tone: 'text-warning' },
-  waiting: { icon: Hourglass, tone: 'text-muted-foreground' },
+  waiting: { icon: Hourglass, tone: 'text-warning' },
   starting: { icon: LoaderCircle, tone: 'text-muted-foreground', spin: true },
-  downloading: { icon: ArrowDownToLine, tone: 'text-foreground' },
-  processing: { icon: LoaderCircle, tone: 'text-foreground', spin: true },
+  downloading: { icon: ArrowDownToLine, tone: 'text-primary' },
+  processing: { icon: LoaderCircle, tone: 'text-primary', spin: true },
   canceling: { icon: LoaderCircle, tone: 'text-muted-foreground', spin: true },
   done: { icon: CircleCheck, tone: 'text-success' },
   skipped: { icon: FileCheck, tone: 'text-muted-foreground' },

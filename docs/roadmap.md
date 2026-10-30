@@ -111,6 +111,11 @@ Done when the full flow works in the browser: paste → (track: auto-download | 
 - [x] Play a remix in the app: a Play button per remix row, the upload's stream fetched into the server's own preview cache and served with ranges (`POST/GET /api/previews`), and a speed grid under the playing row: presets 0.75x to 1.5x, a 0.01 slider, nudges, reset and a pitch lock (ADR-029)
 - [ ] Waveform with a beat grid (BPM detection) in the preview player; play from the track card and the playlist table too
 - [ ] Preview: remember the speed per track, and start playback at a chosen point (drop in at the drop)
+- [x] Our own theme on shadcn (ADR-030): dark only, charcoal surfaces, one violet accent, status and platform colours as tokens, Geist Mono for measurements; chosen in an Impeccable design round (surface brief in `apps/web/.impeccable/surfaces/`, the system in `apps/web/DESIGN.md`)
+- [ ] UI and UX pass on the layout (the shell, track card, remixes, collection, downloads rail), on the ADR-030 theme
+  - Coloured status words for every downloads-rail row (today only the icon carries the colour; the track card's word already does)
+  - Failure lines without their icon (the remix player, the track card's download, the job line) break ADR-030's icon-and-word rule
+  - Headings: the empty state, the ambiguous-link prompt and Not found use 500 where Remixes and Downloads use 600
 - [ ] Remix suggestions for a playlist row ("Find remixes" in the track table), and for a pasted list's selected tracks
 - [ ] Remix searches find bootlegs and extended mixes only when their titles also match "remix": consider a second query per platform (`<song> bootleg`, `<song> extended mix`) if they are missed in practice
 - [ ] Remix heuristics, seen in the recordings and live: a mashup with a remix note passes ("[remix] (Clubbed to death)"); a remix of a remix is grouped under the first remixer ("(Lexer Remix) Moratto' Edit"); words after a name stay in it ("ElvisK - Hard Remix" → "ElvisK Hard"); a more specific genre in the title ("Liquid DnB Remix") loses to SoundCloud's broader field ("Drum & Bass"), and SoundCloud's "Disco" reads as Nu Disco

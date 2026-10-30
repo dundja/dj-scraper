@@ -25,7 +25,7 @@ export function RemixPreviewButton({ upload, status, onToggle }: RemixPreviewBut
   else if (preparing) icon = <Spinner aria-hidden className="motion-reduce:animate-none" />
   return (
     <Button
-      variant={status === 'idle' ? 'outline' : 'secondary'}
+      variant={status === 'playing' ? 'default' : status === 'idle' ? 'outline' : 'secondary'}
       size="icon-sm"
       aria-label={label}
       title={preparing ? 'Preparing audio… Click to cancel' : undefined}

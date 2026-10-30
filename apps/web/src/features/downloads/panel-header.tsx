@@ -50,13 +50,13 @@ export function PanelHeader({
         <h2
           ref={headingRef}
           tabIndex={-1}
-          className="rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded-sm text-base font-semibold tracking-tight outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Downloads
         </h2>
         <div className="ml-auto flex items-center gap-1">
           {working && (
-            <span aria-hidden className="text-xs text-muted-foreground tabular-nums">
+            <span aria-hidden className="font-mono text-xs text-muted-foreground tabular-nums">
               {percent} %
             </span>
           )}

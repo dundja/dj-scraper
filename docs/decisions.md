@@ -649,3 +649,29 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 - The first play waits for the whole stream to download (a few seconds for a typical track); the row says "Preparing audio…".
 - A preview is the upload's stream, not our finished file: it says so and makes no claim about the quality of a download.
 - Previews spend YouTube's and SoundCloud's request budgets like any fetch.
+
+## ADR-030 — The theme: the dark music-app standard, one violet accent, status and platforms as tokens
+*2026-10-30 · accepted · amends ADR-010 (no light tokens; Geist Mono added)*
+
+**Context.** The UI ran on shadcn's default neutral tokens: correct, but grey and anonymous, with colour only in the platform dots and status icons. The user asked for a theme of our own on the existing shadcn/Base UI setup, dark only, and left its colours to the assistant. In a design round (Impeccable's direction roll: a "Dead Wax" record-pressing world, an obi-strip world, a departure board, a Factory-catalogue world, and the category standard), the user chose the category standard: a dark music app played straight, at the craft of Spotify's desktop app and Rekordbox. They wanted artwork to lead, states readable at a glance, platforms told apart, and no glare over long evenings; neon, the grey default, too much colour and a blue-primary dashboard felt wrong. They picked violet for the one accent.
+
+**Decision.**
+- **Tokens in `src/styles.css`, dark only.** One set on `:root` with `color-scheme: dark`; shadcn's light set is gone (`<html class="dark">` stays for the generated `dark:` variants). Charcoal ground `oklch(0.19 0.006 285)`, one lighter surface step for cards and popovers, hairline borders (white at 9 %), a text ramp from `oklch(0.95…)` to the muted `oklch(0.715…)`. The near-white is not pure white, and the ground not black.
+- **One accent, violet** (`--primary`, `oklch(0.7 0.155 285)`, with dark violet text on it): primary buttons, progress, the active speed preset and a playing remix's button, checkboxes and switches, and focus (`--ring`). Nothing else is violet. shadcn's `accent` stays the hover surface.
+- **Status colours carry meaning only and always come with an icon and a word:** done `--success`, waiting and paused `--warning` (waiting now shows amber like a pause), failed `--destructive`, downloading and processing the accent.
+- **Platforms are tokens** (`--platform-youtube`, `-soundcloud`, `-spotify`, as `bg-platform-*`): a small brand dot beside the name, never a fill, so they never read as a status.
+- **Type:** Geist for the UI; Geist Mono (`@fontsource-variable/geist-mono`, bundled, offline) is `font-mono` and sets measurements standing on their own: durations, playback times, speeds and live progress figures (percent, rate, time left). Counts, sentences and a bitrate inside a prose output line stay in Geist with tabular figures. One heading step: the track title (`text-lg`), Remixes and Downloads (`text-base`), semibold. Radius 0.5 rem.
+- **State surfaces:** the active control takes the accent (a speed preset, the genre filter, a playing remix's button); the playing remix row is one raised `card` surface with its player strip; the track card's status word takes its status colour.
+- **Browser surfaces wear the theme:** `accent-color` (the player's range inputs), the caret, text selection and scrollbars.
+- Contrast was checked: body text about 16:1 on the ground, secondary text 6–7:1, the accent 5.4–6.9:1 on every surface, dark text on the accent 6.7:1.
+
+**Rejected.**
+- *The four record-culture and catalogue worlds*: distinctive, but the user chose the familiar standard for this step.
+- *Blue as the accent*: the generic dashboard the user ruled out. *Green, red or orange*: taken by done, failed and the platforms.
+- *Keeping the light tokens for later*: the app is dark only; a light theme would be designed, not inherited from shadcn's defaults.
+- *Monospace for every number*: counts and status sentences in mono read as a costume; only measurements take it.
+
+**Consequences.**
+- The generated shadcn components are untouched; everything changes through tokens. A component added later from the CLI takes the theme as it is.
+- Waiting jobs are now amber, so amber means "not running yet, and why", whether YouTube asked us to wait or a platform's queue is paused.
+- The layout and experience pass is the next step; this one changed tokens, two state tones and the measurements' font.

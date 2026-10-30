@@ -16,6 +16,7 @@ Phase 4 (DJ polish) is under way: remix rows can be played in the app with a spe
 | What to build, user flows, non-goals | `docs/product.md` |
 | Modules, API, domain model, security, testing | `docs/architecture.md` |
 | Why it's built this way (ADRs); don't silently re-litigate | `docs/decisions.md` |
+| The visual system: tokens, type, state colours, rules (ADR-030) | `apps/web/DESIGN.md`; product truth for design work in `PRODUCT.md` |
 | What's next | `docs/roadmap.md` |
 | yt-dlp/ffmpeg flags, output parsing, platform quirks | `ytdlp` skill (`.claude/skills/ytdlp/`) |
 | Package conventions | `apps/web/CLAUDE.md`, `apps/server/CLAUDE.md`, `packages/shared/CLAUDE.md` |

@@ -54,7 +54,7 @@ test('a pasted Spotify track says where its audio comes from, downloads its YouT
   // The badge: Spotify, green, a track.
   await expect(linkBox(page)).toHaveValue(SPOTIFY_TRACK)
   await expect(linkBox(page)).toHaveAccessibleDescription(/Spotify.*Track/)
-  await expect(pasteBadge(page).locator('.bg-green-500')).toHaveCount(1)
+  await expect(pasteBadge(page).locator('.bg-platform-spotify')).toHaveCount(1)
 
   // The card: why its audio comes from YouTube while the match is found. Auto-download: queued
   // without a click, then searching YouTube (the e2e search takes 1.5 s).

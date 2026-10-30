@@ -36,7 +36,7 @@ export function TrackCard({ track, autoStart }: TrackCardProps) {
           <h2
             id={titleId}
             title={track.title}
-            className="line-clamp-2 text-base leading-snug font-medium [overflow-wrap:anywhere]"
+            className="line-clamp-2 text-lg leading-snug font-semibold tracking-tight [overflow-wrap:anywhere]"
           >
             {track.title}
           </h2>
@@ -46,7 +46,7 @@ export function TrackCard({ track, autoStart }: TrackCardProps) {
           <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-muted-foreground">
             <PlatformBadge platform={track.platform} />
             {track.durationSec !== undefined && (
-              <span className="tabular-nums">
+              <span className="font-mono tabular-nums">
                 <span className="sr-only">Duration </span>
                 {formatDuration(track.durationSec)}
               </span>

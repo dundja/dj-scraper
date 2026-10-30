@@ -93,6 +93,8 @@ export function PasteBox({
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
+            // ⌘D downloads a shown track from here too (features/track/download-shortcut.ts).
+            data-download-shortcut=""
             aria-invalid={refused || undefined}
             aria-describedby={describedBy.length > 0 ? describedBy.join(' ') : undefined}
             onChange={(event) => onTextChange(event.target.value)}

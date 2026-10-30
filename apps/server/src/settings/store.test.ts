@@ -40,7 +40,6 @@ const custom: Settings = {
   sourceUrlComment: false,
   playlistSubfolder: true,
   concurrency: 5,
-  autoDownloadSingles: false,
 }
 
 const folders = (count: number, prefix = '/Users/dj/Music/Set'): string[] =>
@@ -149,6 +148,19 @@ describe('createSettingsStore: reading settings.json', () => {
     expect(await exists(badFile())).toBe(false)
     expect(log.warn).not.toHaveBeenCalled()
   })
+
+  it.each([true, false])(
+    'loads a file that still holds the retired autoDownloadSingles: %s, and drops it (ADR-031)',
+    async (value) => {
+      await seed({ ...custom, autoDownloadSingles: value })
+      const { store, log } = await openStore()
+      expect(store.get()).toStrictEqual(custom)
+      expect(await exists(badFile())).toBe(false)
+      expect(log.warn).not.toHaveBeenCalled()
+      await store.update({ format: 'wav' })
+      expect(await savedSettings()).toStrictEqual({ ...custom, format: 'wav' })
+    },
+  )
 
   it('defaults only the invalid fields, keeps the original as settings.json.bad and logs paths, not values', async () => {
     const original = await seed({

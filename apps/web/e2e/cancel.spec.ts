@@ -15,14 +15,14 @@ test('a running download cancels in one click from the card, retries, and cancel
   downloadFolder,
 }) => {
   await page.goto('/')
-  // The card queues the download as soon as it shows, before any check below: the cleanup covers
-  // them all.
+  // The cleanup covers every download this queues, whichever check fails.
   try {
-    const created = nextDownloads(page)
     await linkBox(page).fill(YOUTUBE_HANGING_TRACK)
     await linkBox(page).press('Enter')
     const card = trackCard(page, TITLE)
     await expect(card).toContainText('DJ Scraper e2e')
+    const created = nextDownloads(page)
+    await card.getByRole('button', { name: 'Download' }).click()
     const {
       jobIds: [jobId = ''],
     } = await created

@@ -2,20 +2,39 @@ import type { PreviewRequest, RemixUpload } from '@dj-scraper/shared'
 import { api } from '@/lib/api.ts'
 import { isAbortError } from '@/lib/error-text.ts'
 import { clampRate } from './preview-rate.ts'
+import type { RemixJobsStore } from './remix-jobs.ts'
 
 /**
  * The one remix player of the app (ADR-029): a single `<audio>` element and its state, outside React
  * so that only one upload plays at a time wherever its row is, and the speed and pitch lock the DJ
- * set stay for the session. Rows read it through `use-preview-player.ts`.
+ * set stay for the session. Rows read it through `use-preview-player.ts`, the now-playing bar
+ * (`now-playing-bar.tsx`) reads all of it.
  *
  * It plays the upload's own stream as the server cached it, not the file a download would make.
  */
 
 export type PreviewStatus = 'idle' | 'preparing' | 'playing' | 'paused' | 'error'
 
+/** What the now-playing bar shows and does for the upload being prepared or played. */
+export type NowPlayingDetails = {
+  /** What the version is and by whom: "Remix by Arty". */
+  credit?: string
+  /** The part of the title that tells the version apart ("Arty Remix"), as its row shows it. */
+  version?: string
+  /**
+   * The rows' jobs of the remix section that started it: the bar's Download records its job there,
+   * so the row shows it, and the section stops the player when it unmounts (`releasePreview`).
+   */
+  jobs: RemixJobsStore
+}
+
+export type NowPlaying = NowPlayingDetails & { upload: RemixUpload }
+
 export type PreviewState = {
   /** The upload being prepared or played (`platform:id`), or null. */
   key: string | null
+  /** That upload and what the bar shows of it; null exactly when `key` is. */
+  nowPlaying: NowPlaying | null
   status: PreviewStatus
   /** Why it failed, when `status` is `error`: an ApiError, or an Error for the element's own. */
   error: unknown
@@ -31,6 +50,7 @@ export type PreviewState = {
 /** What a row with no preview of its own sees: one constant, so it never re-renders for others. */
 export const IDLE_PREVIEW: PreviewState = {
   key: null,
+  nowPlaying: null,
   status: 'idle',
   error: null,
   currentTime: 0,
@@ -127,6 +147,7 @@ export function stopPreview() {
   }
   set({
     key: null,
+    nowPlaying: null,
     status: 'idle',
     error: null,
     currentTime: 0,
@@ -134,17 +155,21 @@ export function stopPreview() {
   })
 }
 
-/** Stops the player only if `key` is what it holds: a row leaving the page. */
-export function releasePreview(key: string) {
-  if (state.key === key) stopPreview()
+/**
+ * Stops the player only if the remix section whose rows' jobs are `jobs` started what it holds: that
+ * section leaving the page (a new paste). A row leaving (the genre filter, a new answer) doesn't stop
+ * it: the bar keeps playing.
+ */
+export function releasePreview(jobs: RemixJobsStore) {
+  if (state.nowPlaying?.jobs === jobs) stopPreview()
 }
 
-async function start(upload: RemixUpload) {
+async function start(upload: RemixUpload, details: NowPlayingDetails) {
   stopPreview()
   const key = previewKey(upload)
   const controller = new AbortController()
   request = controller
-  set({ key, status: 'preparing', error: null })
+  set({ key, nowPlaying: { ...details, upload }, status: 'preparing', error: null })
   const body: PreviewRequest = { platform: upload.platform, id: upload.id, url: upload.url }
   try {
     const ready = await api.createPreview(body, controller.signal)
@@ -159,18 +184,29 @@ async function start(upload: RemixUpload) {
   } catch (error) {
     if (controller.signal.aborted || isAbortError(error) || state.key !== key) return
     request = null
-    set({ status: 'error', error })
+    set({ status: 'error', error: playError(error) })
   }
 }
 
+/** `play()` rejects with the browser's own words ("no supported source was found"): say it ours. */
+function playError(error: unknown): unknown {
+  if (!(error instanceof DOMException)) return error
+  return new Error(
+    error.name === 'NotAllowedError'
+      ? 'The browser blocked playback. Press Play again.'
+      : "This audio can't be played.",
+  )
+}
+
 /**
- * What a row's button does: start this upload (stopping any other), cancel its preparation, pause
- * it, resume it, or try again after a failure.
+ * What a row's button and the bar's do: start this upload (stopping any other), cancel its
+ * preparation, pause it, resume it, or try again after a failure. `details` are what the bar shows
+ * and where its Download goes; a retry keeps the ones it started with.
  */
-export function togglePreview(upload: RemixUpload) {
+export function togglePreview(upload: RemixUpload, details: NowPlayingDetails) {
   const key = previewKey(upload)
   if (state.key !== key) {
-    void start(upload)
+    void start(upload, details)
     return
   }
   switch (state.status) {
@@ -182,11 +218,11 @@ export function togglePreview(upload: RemixUpload) {
       return
     case 'paused':
       audio?.play().catch((error: unknown) => {
-        if (state.key === key) set({ status: 'error', error })
+        if (state.key === key) set({ status: 'error', error: playError(error) })
       })
       return
     case 'error':
-      void start(upload)
+      void start(upload, state.nowPlaying ?? details)
       return
     case 'idle':
       return

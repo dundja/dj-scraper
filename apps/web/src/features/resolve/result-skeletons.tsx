@@ -1,18 +1,19 @@
 import { Skeleton } from '@/components/ui/skeleton.tsx'
 
-/** A track card while it loads: artwork, title, artist and details. */
+/** The track header while it loads: artwork, title, artist, details and the Download's place. */
 export function TrackSkeleton() {
   return (
     <div
       aria-hidden
       data-slot="track-skeleton"
-      className="flex gap-4 rounded-lg border bg-card/40 p-4"
+      className="flex gap-4 rounded-lg border bg-card/40 p-4 md:gap-5"
     >
-      <Skeleton className="size-24 shrink-0 rounded-lg" />
+      <Skeleton className="size-24 shrink-0 rounded-lg md:size-40" />
       <div className="flex min-w-0 flex-1 flex-col gap-2.5 pt-1">
         <Skeleton className="h-4 w-3/5" />
         <Skeleton className="h-3.5 w-2/5" />
-        <Skeleton className="mt-auto h-3 w-1/3" />
+        <Skeleton className="h-3 w-1/3" />
+        <Skeleton className="mt-auto h-8 w-36 self-end max-md:hidden" />
       </div>
     </div>
   )

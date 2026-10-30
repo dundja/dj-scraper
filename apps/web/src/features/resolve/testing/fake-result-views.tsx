@@ -21,13 +21,9 @@ function useLogMount(mount: ViewMount) {
   })
 }
 
-export function TrackCard({ track, autoStart }: { track: Track; autoStart: boolean }) {
-  useLogMount({ view: 'track', id: track.id, autoStart })
-  return (
-    <article aria-label={`Track card: ${track.title}`} data-auto-start={String(autoStart)}>
-      {track.title}
-    </article>
-  )
+export function TrackCard({ track }: { track: Track }) {
+  useLogMount({ view: 'track', id: track.id })
+  return <article aria-label={`Track card: ${track.title}`}>{track.title}</article>
 }
 
 export function CollectionView({

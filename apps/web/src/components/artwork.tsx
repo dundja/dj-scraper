@@ -9,6 +9,11 @@ type ArtworkProps = {
   alt?: string
   /** Width and height in px: the artwork is square, cropped to fill (YouTube's are 16:9). */
   size: number
+  /**
+   * Size classes that replace `size` on screen, for artwork that changes with the breakpoint
+   * (`size-24 md:size-40`); `size` stays the image's intrinsic size and sets the corner radius.
+   */
+  sizeClassName?: string
   className?: string
 }
 
@@ -16,19 +21,20 @@ type ArtworkProps = {
  * A track's or list's artwork, loaded lazily. No referrer goes to the image host, so YouTube and
  * SoundCloud don't learn which local page shows their thumbnails.
  */
-export function Artwork({ src, alt = '', size, className }: ArtworkProps) {
+export function Artwork({ src, alt = '', size, sizeClassName, className }: ArtworkProps) {
   // The src that failed, so a new src gets its own try without an effect.
   const [failedSrc, setFailedSrc] = useState<string>()
   const box = cn(
     'shrink-0 bg-muted',
     size <= 40 ? 'rounded-sm' : size <= 96 ? 'rounded-md' : 'rounded-lg',
+    sizeClassName,
     className,
   )
+  const style = sizeClassName === undefined ? { width: size, height: size } : undefined
 
   if (src === undefined || src === failedSrc) {
-    const style = { width: size, height: size }
     const placeholder = cn(box, 'flex items-center justify-center text-muted-foreground')
-    const icon = <Music aria-hidden style={{ width: size / 2.5, height: size / 2.5 }} />
+    const icon = <Music aria-hidden className="size-2/5" />
     return alt === '' ? (
       <div aria-hidden data-slot="artwork" className={placeholder} style={style}>
         {icon}
@@ -51,7 +57,7 @@ export function Artwork({ src, alt = '', size, className }: ArtworkProps) {
       draggable={false}
       data-slot="artwork"
       className={cn(box, 'object-cover')}
-      style={{ width: size, height: size }}
+      style={style}
       onError={() => setFailedSrc(src)}
     />
   )

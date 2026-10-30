@@ -19,10 +19,8 @@ async function load(page: Page, url: string) {
 
 test('a track in a playlist asks first: This track shows its card at once, Whole playlist lists the playlist', async ({
   page,
-  settings,
 }) => {
-  // The card shows a Download button instead of downloading: no YouTube download from this spec.
-  await settings.set({ autoDownloadSingles: false })
+  // The card waits for Download (ADR-031): no YouTube download from this spec.
   const resolves: Request[] = []
   page.on('request', (request) => {
     if (new URL(request.url()).pathname === '/api/resolve') resolves.push(request)

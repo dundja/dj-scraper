@@ -313,7 +313,7 @@ describe('paste anywhere', () => {
     const [first, second] = resolveCalls()
     expect(first?.signal?.aborted).toBe(true)
     expect(second?.signal?.aborted).toBe(false)
-    expect(viewMounts).toEqual([{ view: 'track', id: scTrack.id, autoStart: true }])
+    expect(viewMounts).toEqual([{ view: 'track', id: scTrack.id }])
   })
 
   it('leaves a running resolve alone when the paste is refused', async () => {
@@ -670,7 +670,7 @@ describe('under StrictMode', () => {
     expect(await screen.findByRole('article', { name: 'Track card: The Chill Zone' })).toBeTruthy()
     expect(resolveCalls()).toHaveLength(1)
     // The doubles don't count StrictMode's simulated remount, so a second entry is a real one
-    // (which would queue the auto-download again).
-    expect(viewMounts).toEqual([{ view: 'track', id: 'XNEnEBrHws8', autoStart: true }])
+    // (which would lose the card's download state).
+    expect(viewMounts).toEqual([{ view: 'track', id: 'XNEnEBrHws8' }])
   })
 })

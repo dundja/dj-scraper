@@ -1,7 +1,6 @@
 import type { Platform } from '@dj-scraper/shared'
 import { Button } from '@/components/ui/button.tsx'
 import { Spinner } from '@/components/ui/spinner.tsx'
-import { cn } from '@/lib/utils.ts'
 import {
   bigListNote,
   SLOW_AFTER_SECONDS,
@@ -31,12 +30,8 @@ export function ResolveLoading({ submission, startedAt, onCancel }: ResolveLoadi
   const platform = platformOf(submission)
 
   return (
-    // A list spans the column, as the collection it turns into does; a track card doesn't.
-    <div
-      aria-busy="true"
-      data-shape={shape}
-      className={cn('flex w-full flex-col gap-3 px-4 pb-6', shape !== 'list' && 'max-w-3xl')}
-    >
+    // It spans the column, as the track header or collection it turns into does.
+    <div aria-busy="true" data-shape={shape} className="flex w-full flex-col gap-3 px-4 pb-6">
       <div className="flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
         <Spinner aria-hidden />
         <span>{submissionLoadingLabel(submission)}</span>

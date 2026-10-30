@@ -1,5 +1,5 @@
 import type { RemixUpload } from '@dj-scraper/shared'
-import { ChevronDown, Download } from 'lucide-react'
+import { ChevronDown, CircleAlert, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button.tsx'
 import {
   DropdownMenu,
@@ -21,27 +21,42 @@ type RemixDownloadProps = {
   /** The job of the upload downloaded last, once the server has answered. */
   jobId: string | undefined
   onQueued: (upload: RemixUpload, jobId: string) => void
+  /** The Download button's accessible name; "Download <title>" by default. */
+  label?: string
+  /** Leave out the room a missing upload menu keeps (that lines Download up down a list). */
+  alone?: boolean
+  /** Show the job's status beside the button (a row shows it under its title instead). */
+  showStatus?: boolean
 }
 
 /**
  * A suggestion's download: Download takes its most played upload, and with more than one upload a
- * menu picks another. Once the server has answered, the job's status shows beside it; a failure to
- * add it shows below for a few seconds. Nothing downloads by itself.
+ * menu picks another. Once the server has answered, the job's status shows beside it (unless the
+ * caller shows it elsewhere); a failure to add it shows below for a few seconds. Nothing downloads
+ * by itself.
  */
-export function RemixDownload({ uploads, jobId, onQueued }: RemixDownloadProps) {
-  const { download, pending, error } = useRemixDownload(onQueued)
+export function RemixDownload({
+  uploads,
+  jobId,
+  onQueued,
+  label,
+  alone = false,
+  showStatus = true,
+}: RemixDownloadProps) {
+  const { download, pending, added, error } = useRemixDownload(onQueued)
   const top = uploads[0]
   if (top === undefined) return null
   const failure = error === null ? undefined : describeError(error)
   let progress = ''
   if (pending) progress = 'Adding to downloads…'
-  else if (jobId !== undefined) progress = 'Added to downloads'
+  // Only where it was pressed: the row and the bar both show the playing upload's Download.
+  else if (added) progress = 'Added to downloads'
 
   return (
     <div className="flex shrink-0 flex-col items-end gap-1">
       {/* The job's chip on the button's line: a starting download doesn't grow the row. */}
       <div className="flex items-center gap-1">
-        {jobId !== undefined && (
+        {showStatus && jobId !== undefined && (
           <span className="mr-1 max-w-24">
             <TrackJobStatus jobId={jobId} />
           </span>
@@ -49,7 +64,7 @@ export function RemixDownload({ uploads, jobId, onQueued }: RemixDownloadProps) 
         <Button
           variant="outline"
           size="sm"
-          aria-label={`Download ${top.title}`}
+          aria-label={label ?? `Download ${top.title}`}
           disabled={pending}
           focusableWhenDisabled
           onClick={() => download(top)}
@@ -67,15 +82,16 @@ export function RemixDownload({ uploads, jobId, onQueued }: RemixDownloadProps) 
           />
         ) : (
           // The menu's room, so the Download buttons line up down the list.
-          <span aria-hidden className="size-7 shrink-0" />
+          !alone && <span aria-hidden className="size-7 shrink-0" />
         )}
       </div>
       <span role="status" className="sr-only">
         {progress}
       </span>
       {failure !== undefined && (
-        <p role="alert" className="max-w-48 text-right text-xs text-destructive">
-          {failure.message}
+        <p role="alert" className="flex max-w-48 items-start gap-1 text-xs text-destructive">
+          <CircleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
+          <span>{failure.message}</span>
         </p>
       )}
     </div>

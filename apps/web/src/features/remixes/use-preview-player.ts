@@ -1,14 +1,11 @@
 import type { RemixUpload } from '@dj-scraper/shared'
-import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 import {
   getPreviewState,
   IDLE_PREVIEW,
+  type NowPlayingDetails,
   type PreviewState,
   previewKey,
-  releasePreview,
-  seekPreview,
-  setPreviewPitchLock,
-  setPreviewRate,
   subscribePreview,
   togglePreview,
 } from './preview-player.ts'
@@ -19,9 +16,10 @@ export type PreviewSettings = Pick<PreviewState, 'rate' | 'preservesPitch'>
 /**
  * A row's view of the one app-wide player: its state while this upload is the one being prepared or
  * played, `IDLE_PREVIEW` (one constant) otherwise, so a row re-renders only for its own playback.
- * The upload stops when the row unmounts. `toggle` starts, cancels, pauses, resumes or retries.
+ * `toggle` starts (with what the now-playing bar shows of it), cancels, pauses, resumes or retries.
+ * The row leaving doesn't stop it (the bar plays on); its section leaving does (`releasePreview`).
  */
-export function usePreviewPlayer(upload: RemixUpload) {
+export function usePreviewPlayer(upload: RemixUpload, details: NowPlayingDetails) {
   const key = previewKey(upload)
   const state = useSyncExternalStore(
     subscribePreview,
@@ -31,13 +29,15 @@ export function usePreviewPlayer(upload: RemixUpload) {
     },
     () => IDLE_PREVIEW,
   )
-  useEffect(() => () => releasePreview(key), [key])
-  const toggle = useCallback(() => togglePreview(upload), [upload])
-  return {
-    state,
-    toggle,
-    seek: seekPreview,
-    setRate: setPreviewRate,
-    setPitchLock: setPreviewPitchLock,
-  }
+  const { credit, version, jobs } = details
+  const toggle = useCallback(
+    () => togglePreview(upload, { credit, version, jobs }),
+    [upload, credit, version, jobs],
+  )
+  return { state, toggle }
+}
+
+/** The whole player's state, for the now-playing bar: it re-renders as the time moves. */
+export function usePreviewState(): PreviewState {
+  return useSyncExternalStore(subscribePreview, getPreviewState, () => IDLE_PREVIEW)
 }

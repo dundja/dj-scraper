@@ -6,7 +6,7 @@ import { SOUNDCLOUD_TRACK, YOUTUBE_MIX } from './fake-urls.ts'
 import { expect, test } from './fixtures.ts'
 
 // Remix suggestions under a single track's card (ADR-027), on the recorded searches of the mix's
-// seed track (fake-urls.ts). The track itself never downloads here (auto-download is off), and the
+// seed track (fake-urls.ts). The track itself never downloads here (nothing does by itself, ADR-031), and the
 // remix downloaded is a SoundCloud upload: this spec spends none of YouTube's pacing.
 
 const MIX_TRACK = 'Never Gonna Give You Up (Official Video) (4K Remaster)'
@@ -16,16 +16,15 @@ const KRYSIEK = 'Rick Astley - Never Gonna Give You Up (Krysiek Remix)'
 const section = (page: Page) => page.getByRole('region', { name: /^Remixes/ })
 const rows = (page: Page) =>
   section(page).getByRole('list', { name: 'Remixes' }).getByRole('listitem')
+/** A row by its upload's whole title, which names it (it shows only what tells it apart). */
 const row = (page: Page, title: string) =>
-  rows(page).filter({ has: page.getByText(title, { exact: true }) })
+  section(page)
+    .getByRole('list', { name: 'Remixes' })
+    .getByRole('listitem', { name: title, exact: true })
 
-/** The rows' titles, in order: each row is named by its title. */
+/** The rows' titles, in order: each row is named by its upload's whole title. */
 const titles = (list: Locator) =>
-  list.evaluateAll((items) =>
-    items.map(
-      (item) => document.getElementById(item.getAttribute('aria-labelledby') ?? '')?.textContent,
-    ),
-  )
+  list.evaluateAll((items) => items.map((item) => item.getAttribute('aria-label')))
 
 /** Loads `url` as typed: fill the box, then Enter. */
 async function load(page: Page, url: string) {
@@ -35,10 +34,8 @@ async function load(page: Page, url: string) {
 
 test("a pasted track's remixes show under its card, most played first, and one downloads", async ({
   page,
-  settings,
   downloadFolder,
 }) => {
-  await settings.set({ autoDownloadSingles: false })
   await page.goto('/')
   await load(page, YOUTUBE_MIX)
   const remixRequests = nextPost(page, '/api/remixes')
@@ -140,9 +137,7 @@ test("a pasted track's remixes show under its card, most played first, and one d
 
 test('a platform whose remix search failed says so, and Try again searches again', async ({
   page,
-  settings,
 }) => {
-  await settings.set({ autoDownloadSingles: false })
   await page.goto('/')
   await load(page, SOUNDCLOUD_TRACK)
   await expect(trackCard(page, /^Dl Test Video/)).toBeVisible()

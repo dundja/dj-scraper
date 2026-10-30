@@ -25,7 +25,9 @@ src/
   main.tsx          QueryClient (createQueryClient) + router (context { queryClient }), StrictMode; starts
                     the event stream once (startEvents) at module level, not in an effect
   routes/           __root.tsx (the shell, ADR-020: header with FolderPicker and EngineStatus, EngineBanner,
-                    then <main> beside <aside aria-label="Downloads">; one TooltipProvider, 300 ms),
+                    then <main> beside <aside aria-label="Downloads">, then NowPlayingBar (ADR-031) while a
+                    remix preview is on: in flow, a 72 px row on lg+, sticky at the bottom below lg, so it
+                    covers nothing; one TooltipProvider, 300 ms),
                     index.tsx (ResolvePage); -root.test.tsx (the '-' keeps the router plugin off it).
                     Later settings.tsx (Phase 4)
   features/<name>/  components + hooks per feature:
@@ -35,28 +37,44 @@ src/
                     isEditableTarget; and pasted Spotify track links, ADR-028: findSpotifyTrackLinks,
                     spotifyTrackList, dropSpotifyTrackList), useResolve (a useMutation per load with its own
                     AbortController; a `link` or `links` Submission, resolveLinks),
-                    loading / error / ambiguous views, ResolvedResult (keyed by the load's number; autoStart
-                    frozen at mount; a single track gets the RemixSection below its card). testing/ =
-                    vi.mock doubles of TrackCard, CollectionView and RemixSection for this folder's tests;
-                    resolve-autostart.test.tsx runs the real TrackCard instead
-    track/          TrackCard, useTrackDownload (queues once when autoStart), track-source.tsx (the job's
-                    source once known), track-download.tsx, track-match.tsx (a Spotify track: the DRM note,
-                    then the job's YouTube match as a link; ADR-026)
+                    loading / error / ambiguous views, ResolvedResult (keyed by the load's number; a single
+                    track gets the RemixSection below its card). testing/ = vi.mock doubles of TrackCard,
+                    CollectionView and RemixSection for this folder's tests; resolve-track-download.test.tsx
+                    runs the real TrackCard instead
+    track/          TrackCard (a wide header across the main column: 160 px artwork, 96 below md; the
+                    download along its bottom), useTrackDownload (queues only when asked, ADR-031), track-source.tsx (the
+                    job's source once known), track-download.tsx (Download with its ⌘D hint, then the job),
+                    download-shortcut.ts (isDownloadShortcut: ⌘D or Ctrl+D outside text fields, ⌘D in the
+                    link box, marked data-download-shortcut) + use-download-shortcut.ts, track-match.tsx (a
+                    Spotify track: the DRM note, then the job's YouTube match as a link; ADR-026)
     remixes/        RemixSection under a single track's card (ADR-027): useRemixes runs two queries at
                     once, YouTube alone (quick) and both platforms (full), merged by the pure
                     remix-merge.ts (the quick rows until the full answer; "Searching SoundCloud…"; a failed
                     full search becomes SoundCloud's note; the whole error only when both failed);
-                    remix-results (genre filter, rows), remix-notes ("Searching SoundCloud…", a failed
-                    platform's note with Try again), remix-row, remix-download
-                    (Download + "Choose upload" menu, useRemixDownload, never automatic), remix-states
-                    (skeleton, error + Try again); remix-jobs.ts (the rows' jobs by upload, held in the
-                    section so they survive remounts), remix-request.ts (remixRequestFor, uploadRef),
-                    remix-text.ts (wording, genre counts); playing a remix (ADR-029): preview-player.ts (the one
-                    app-wide player outside React: a hidden `<audio data-slot="preview-audio">`, one remix at a time,
-                    speed and pitch lock kept for the session, reset by resetPreviewPlayer in tests),
-                    use-preview-player.ts (a row's slice; releases on unmount), remix-preview-button,
-                    remix-player (the strip), remix-speed (presets, slider, nudges, Reset, Keep pitch),
-                    preview-rate.ts (pure: clamp, format, nudge, clock text)
+                    remix-results (genre filter, column header, rows), remix-layout.ts (the list's grid:
+                    header and rows are subgrids; a container query on the section moves genre, platforms
+                    and length from under the title into columns at @4xl, each part in the DOM once),
+                    remix-notes ("Searching SoundCloud…", a failed platform's note with Try again),
+                    remix-row (the playing/paused/preparing/failed row is the one raised row,
+                    data-preview), remix-download (Download + "Choose upload" menu, useRemixDownload,
+                    never automatic), remix-states (skeleton, error + Try again); remix-jobs.ts (the rows'
+                    jobs by upload: a store per section, createRemixJobs, read with useRemixJobId; the bar
+                    records its downloads there too), remix-request.ts (remixRequestFor, uploadRef),
+                    remix-text.ts (wording, genre counts, previewMessage); playing a remix (ADR-029,
+                    ADR-031): preview-player.ts (the one app-wide player outside React: a hidden
+                    `<audio data-slot="preview-audio">`, one remix at a time, `nowPlaying` = the upload,
+                    its credit and the starting section's jobs store; speed and pitch lock kept for the
+                    session; releasePreview(jobs) stops it when that section unmounts, a row's unmount
+                    doesn't; resetPreviewPlayer in tests), use-preview-player.ts (usePreviewPlayer: a row's
+                    slice and toggle; usePreviewState: the whole state, for the bar), remix-preview-button,
+                    now-playing-bar.tsx + now-playing-parts.tsx (the bar: cover and names, play/pause,
+                    seek, the speed grid inline from 1400 px and as a popover below, Download for the
+                    playing upload, Close, the error with Try again; its status region
+                    [data-slot="now-playing-status"] stays mounted beside the bar, empty while idle, so
+                    "Preparing audio…" is announced; now-playing-focus.ts hands focus on when the bar
+                    goes), remix-speed (layout inline | stacked: presets,
+                    nudges, value, Reset, Keep pitch; the slider in stacked), preview-rate.ts (pure:
+                    clamp, format, nudge, clock text)
     collection/     CollectionView (keyed by the collection object: instance-key.ts), header and lists,
                     selection-toolbar (with hide-downloaded-toggle.tsx), track-table + track-row
                     (virtualized div table with ARIA roles; roving focus in use-row-focus.ts), selection.ts (pure reducer) + use-selection.ts, download-bar;
@@ -110,14 +128,14 @@ src/
   - After `api.createDownloads` succeeds, invalidate `['settings']`: the server adds the folder to `recentFolders`.
   - Don't wait for a 100 % progress event: a short track may send one `job.progress` and go straight to processing.
   - Read `['downloads']` through the hooks in `features/downloads/use-downloads.ts`; they select, so one job's progress re-renders only what shows it.
-- Remix suggestions (ADR-027) are queries keyed by the request (read-only searches the server caches for 30 min; `gcTime` matches, and `staleTime` too unless a search in the answer failed: the server caches no failure, so that answer is stale at once and a new paste searches again), never retried automatically. They never download by themselves, and a row's job is kept above the rows (`remix-jobs.ts`), since a row remounts when the filter hides it or the full answer changes its default upload.
-- Resolve is a `useMutation` per load (`useResolve`), never a query: a paste of the same link resolves again, nothing is cached, and the result view is keyed by the load's number (ADR-020). The track card's `autoStart` is frozen at mount.
+- Remix suggestions (ADR-027) are queries keyed by the request (read-only searches the server caches for 30 min; `gcTime` matches, and `staleTime` too unless a search in the answer failed: the server caches no failure, so that answer is stale at once and a new paste searches again), never retried automatically. They never download by themselves, and a row's job is kept above the rows (`remix-jobs.ts`, a store per section), since a row remounts when the filter hides it or the full answer changes its default upload. The now-playing bar lives in the shell, outside the section: what it shows and where its Download's job goes come with the preview (`nowPlaying` in `preview-player.ts`), and the section stops the player when it unmounts.
+- Resolve is a `useMutation` per load (`useResolve`), never a query: a paste of the same link resolves again, nothing is cached, and the result view is keyed by the load's number (ADR-020). The track card never downloads by itself: Download or ⌘D queues it (ADR-031). ⌘D is the app's while the card shows (preventDefault, so no bookmark dialog), and starts a download only while the Download (or Try again) button shows.
 - Settings changes go through `useUpdateSettings`: optimistic, rolled back (and refetched) on error, and sent one at a time in the order they were made (mutation scope `settings`), so a slow folder check can't let an older choice be saved last.
 - Every QueryClient uses `queryClientDefaults` (`lib/query-client.ts`, `networkMode: 'always'`): the API is local, so the browser's online state must not pause a query or mutation.
 - Enrichment of partial rows bypasses TanStack Query: `useEnrichment` reads a session store with `useSyncExternalStore` (ADR-022).
 - A paste or drop holding 2+ Spotify track links (`https://open.spotify.com/track/…` or `spotify:track:…`) loads them as one `links` list through `POST /api/resolve/links`, wherever it lands, except that a paste into another text field stays there (ADR-028). The paste box then empties and says how many links it took. Anything else loads its first link.
 - "Hide downloaded" (the track table's toolbar) takes out the rows whose track's newest job is `done` or `skipped` (`useDownloadedTrackKeys`, a sorted array that keeps its identity through progress events) before the text filter, and out of the summary and the download bar. The selection reducer still gets every row, so their checks come back when it is turned off. A row that leaves while focused hands the focus to the row now at its position (`use-row-focus.ts`, whose tab stop follows its row by collection index).
-- Page-wide paste and ⌘V ignore events inside other text fields (`isEditableTarget` in `features/resolve/paste-text.ts`). Drops: a file is refused (the browser would open it in place of the app), text without a link dropped on another text field goes into that field, and a link loads wherever it is dropped.
+- Page-wide paste, ⌘V and ⌘D ignore events inside other text fields (`isEditableTarget` in `features/resolve/paste-text.ts`); ⌘D still works in the link box (`data-download-shortcut`), where it edits nothing. Drops: a file is refused (the browser would open it in place of the app), text without a link dropped on another text field goes into that field, and a link loads wherever it is dropped.
 - Show folder paths with `FolderPath` (`components/folder-path.tsx`): `~` for the home folder, cut at the start when they don't fit, so the folders that tell them apart stay visible.
 - UI-only state (selection, filters, dialogs) stays local to its feature (`useState`/`useReducer`). Add a store only when distant features really share state.
 - Playlist selection is a `Set` of `TrackKey`s (`platform:id`, so a track listed twice is one key) in a pure reducer (`features/collection/selection.ts`), with select all/none/invert over the rows the filter shows and shift-click ranges. Filtering keeps the selection, and unavailable entries can't be selected (ADR-021).

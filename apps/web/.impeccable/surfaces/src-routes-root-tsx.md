@@ -5,24 +5,26 @@ primary_target: "src/routes/__root.tsx"
 related_targets: ["src/styles.css"]
 ---
 
-# Surface: app shell (whole working UI) — theme step
+# Surface: app shell (whole working UI)
 
-Scope: theme only (tokens, type, status and platform colour roles) on the existing shadcn/Base UI shell. Visitor mode: Operate. Layout and UX pass follows as a separate step.
+Scope: the layout and UX pass, inside the ADR-030 world recorded in apps/web/DESIGN.md (theme step shipped 2026-10-30). Visitor mode: Operate.
 
-Audience and job: one DJ at a home desk in the evening, preparing sets for Rekordbox: paste links, audition remixes, watch downloads. Constraints: dark only, offline (bundled fonts), shadcn components never hand-patched (ADR-010), AA contrast kept although no formal bar.
+Audience and job: one DJ at a home desk in the evening, preparing sets for Rekordbox. Main jobs (user): digging remixes, picking from playlists, quick single grabs. Pains (user): wasted width, remixes feel buried. Keep (user): downloads always visible, paste box on top. Behaviour change (user): a pasted track no longer downloads by itself; its card leads with Download, so the remixes can be looked at first (ADR-031).
 
-Unresolved: whether "familiar music-app look" is a standing brand commitment (asked, not answered; not recorded).
+Constraints: dark only, offline, shadcn components never hand-patched (ADR-010), tokens and named rules from DESIGN.md, AA contrast, keyboard-complete.
+
+Unresolved: whether "familiar music-app look" is a standing brand commitment (asked, not answered; not recorded). The downloads rail keeps today's rows (coloured status words for every row remain a roadmap item).
 
 ## Direction contract
 
-THESIS: The category standard played straight: a dark music app at Spotify-desktop and Rekordbox craft, where artwork carries the colour and the chrome only carries state. It refuses today's anonymous neutral-grey shadcn default and any DJ/club costume.
+THESIS: Auditioning gets its own home: a now-playing bar across the bottom of the whole window, as in a music app, while the main column spends its full width on the pasted track and its remixes. It refuses the narrow centred card with a long list buried under it.
 
-OWN-WORLD: Charcoal ground with a barely cool cast, one lighter surface step, hairline borders, a white-to-grey text ramp; one violet/indigo accent only for primary actions, progress, the active speed preset, switches and focus; status hues (done green, waiting/paused amber, failed red; downloading = accent) always paired with an icon and a word; platforms as brand dot + name, never a field. Geist for UI, Geist Mono with tabular figures for measurements set on their own: durations, playback times, speeds and live progress figures (percent, rate, time left); a bitrate inside a prose output line ("MP3 · 320 kbps · re-encoded from …") stays in Geist for readability. One heading step (track title, Remixes, Downloads) above body text. The playing remix row is one raised surface with its player strip.
+OWN-WORLD: The ADR-030 world unchanged (DESIGN.md): charcoal ground, one surface step, hairlines, one violet accent, status hues with icon and word, platform dots, Geist with Geist Mono for measurements, one heading step.
 
-STORY: The DJ sees the cover art first, reads every job's state from the downloads rail at a glance, tells YouTube from SoundCloud from Spotify instantly, and works for hours without glare.
+STORY: The DJ pastes a link, sees the track large with its source quality and one Download (⌘D), scans twenty remixes in aligned columns, plays one and keeps it playing in the bar while scrolling, sets its speed there, and downloads the ones they want from the row or the bar.
 
-FIRST VIEWPORT: Unchanged shell: 48 px header (name, folder picker, engine status), paste bar with the violet Go, the track card, the remixes list with the playing row's player strip and violet active speed, and the 384 px downloads rail whose rows carry their status icon in its colour (a failed or paused row's words in theirs) and violet progress bars; the track card's status word takes its colour. Coloured status words for every rail row wait for the layout pass, since this step changes no copy.
+FIRST VIEWPORT: 48 px header (name, folder picker, engine status); paste bar on top; a full-width track header (160 px cover, title, artist, platform · length · source, a status line, primary Download with its ⌘D hint, format select); Remixes heading with genre chips and a column header (Title, Genre, Platform, Length); remix rows across the full main width: 48 px cover, title and credit, genre chip, platform dot · plays, length in mono, Play, Download; the playing row raised with a violet pause; the downloads rail on the right ending above a 72 px now-playing bar spanning the window: cover, title, credit · platform, round violet play/pause, seek with mono times, speed presets, −/+ and the value, Keep pitch, Download. The bar is absent while nothing plays.
 
-FORM: The category standard (canon), chosen by the user over the roll; reference products Spotify desktop and Rekordbox; the chosen sketch is .impeccable/mocks/decision/canon.html. seed:bc2bf9c211d56ca7
+FORM: Surface structure "Now-playing bar", dealt position 2 of 3 (my ranked list's 4th), chosen by the user; the chosen sketch is .impeccable/mocks/decision/now-playing-bar.html. seed:b5b6cde93a4bae71
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

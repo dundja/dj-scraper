@@ -26,25 +26,24 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud, and from
 - Resolve on the server, showing a skeleton meanwhile, with Cancel. After 3 s it shows the seconds elapsed, and a list says that big ones take a while (on YouTube, 5,000 videos ≈ 1 min). Targets: a single track in under 3 s, and a 200-track YouTube playlist listed in under 10 s.
 - A watch URL that also carries a playlist (`watch?v=…&list=…`) asks: **This track** or **Whole playlist** (or **Whole album**). For a mix the track is the default, and the mix loads only its first 50. If the track itself can't be loaded (private, age-restricted…), the error still offers the list.
 
-### 2. Single track → download immediately
-- Show the track card: artwork, title, artist, duration, platform, and source quality (codec/bitrate when known; once the download starts, the stream it actually took).
-- Start downloading right away into the current target folder with the default format. The card then follows the download (queued, waiting, progress, done with what was written) with one button: Cancel, Retry or Reveal in Finder. Cancelling takes one click.
-- Setting: "Auto-download single tracks" (default on). When it's off, show a Download button instead.
+### 2. Single track → look, then download
+- Show the track card across the page: artwork, title, artist, duration, platform, and source quality (codec/bitrate when known; once the download starts, the stream it actually took).
+- Nothing downloads by itself (ADR-031): **Download** (or ⌘D while the track is shown) queues it into the current target folder in the chosen format, so you can look at its remixes first. The card then follows the download (queued, waiting, progress, done with what was written) with one button: Cancel, Retry or Reveal in Finder. Cancelling takes one click.
 
 ### 2b. Spotify links
-- A Spotify track, album or playlist link loads like any other: a track gets the track card (and downloads at once), a list gets the track list to pick from. Spotify's page gives the names, durations and covers; no Spotify account is involved.
+- A Spotify track, album or playlist link loads like any other: a track gets the track card (downloaded with Download, like any track), a list gets the track list to pick from. Spotify's page gives the names, durations and covers; no Spotify account is involved.
 - Spotify's streams are DRM-protected, so each track's audio comes from YouTube: the download searches YouTube for the artists and title and takes the upload whose length agrees and that isn't another version (live, remix, cover, …). The card and the downloads panel show which upload it took, and the file is tagged with Spotify's title, artists, year and cover.
 - The quality is YouTube's (see Quality), never dressed up: the source line shows the YouTube stream.
 - When no upload matches, the track fails with "No YouTube upload matches", and pasting a YouTube or SoundCloud link of the track instead is the way out.
 - Spotify's page lists only a playlist's first 100 tracks, and the list says so and how to get them all: in the Spotify desktop app, select every track of the playlist (⌘A), copy (⌘C) and paste. A paste or drop holding two or more Spotify track links loads as one list, "Pasted Spotify tracks", in the order they were pasted, each track once. Its rows fill in with names and durations as they scroll into view, and any row downloads, filled in or not (ADR-028). The paste box empties and says how many links it took.
 
 ### 2c. Remix suggestions
-- Under a single track's card (YouTube, SoundCloud or Spotify), a **Remixes** section lists up to 20 remixes of the song found on YouTube and SoundCloud, most played first. The card and its auto-download work as before; the section never holds them up.
+- Under a single track's card (YouTube, SoundCloud or Spotify), a **Remixes** section lists up to 20 remixes of the song found on YouTube and SoundCloud, most played first. The card works as before; the section never holds it up.
 - What counts: another producer's remix, rework, flip, VIP or dub; bootlegs and someone else's edits; the original artist's extended or club mix. Covers, live takes, sped-up or slowed re-uploads, karaoke, mashups and hour-long loops don't. A pasted remix finds the song's other remixes.
 - One row per version, even when it is uploaded on both platforms or by several channels: its title, who made it ("Remix by Arty", "Bootleg by X", "Extended mix"), a genre tag when one is known, a chip per platform with its views or plays, and the length.
 - The genre comes from SoundCloud's genre field when the uploader set one, or from a genre the title, tags or description name ("afro house remix"); a named genre is shown as such, and none is guessed beyond the words. Chips above the list filter by genre.
 - **Download** takes the version's most-played upload into the current folder and format, like any track; a menu picks another upload. The row then follows the job.
-- **Play** on a row fetches that upload's audio (the version's most-played, or the one chosen in the menu) and plays it in the app, so you can hear the remix before downloading it. Only one plays at a time. A strip under the playing row has a seek bar and a **speed grid**: presets from 0.75x to 1.5x, a fine slider and nudges in 0.01 steps, a reset, and a **Keep pitch** toggle (on: tempo changes without changing the key). It plays the upload's own stream, not the file a download would make; it is not a download and nothing is written to your folder (ADR-029).
+- **Play** on a row fetches that upload's audio (the version's most-played, or the one chosen in the menu) and plays it in the app, so you can hear the remix before downloading it. Only one plays at a time. The playing row is raised, and a **now-playing bar** across the bottom of the window (while a remix plays or is paused) has its cover and names, play/pause, a seek bar, Download, and a **speed grid**: presets from 0.75x to 1.5x, a fine slider and nudges in 0.01 steps, a reset, and a **Keep pitch** toggle (on: tempo changes without changing the key). It plays the upload's own stream, not the file a download would make; it is not a download and nothing is written to your folder (ADR-029).
 - YouTube's results show within a few seconds; SoundCloud's search can take ten, and its rows join the list when they arrive. A failed search on one platform leaves the other's rows and says why.
 - SoundCloud's search spends a request from the same budget as SoundCloud lookups and downloads. Results are kept for 30 minutes, so pasting the song again searches nothing.
 
@@ -87,7 +86,6 @@ One DJ on their own Mac, collecting tracks from YouTube and SoundCloud, and from
 - Embed artwork (on). Write the source URL into the comment tag (on): the track's public page only, never a secret, short or unlisted link.
 - Skip already-downloaded tracks (on).
 - Parallel downloads (default 3).
-- Auto-download single tracks (on).
 - Sign-ins, all off by default: browser cookies for age-restricted YouTube videos, and a SoundCloud login for original files and Go+ streams.
 
 ## Quality: be honest

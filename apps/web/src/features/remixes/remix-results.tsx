@@ -1,8 +1,9 @@
-import type { RemixPlatform, RemixSuggestions, RemixUpload } from '@dj-scraper/shared'
+import type { RemixPlatform, RemixSuggestions } from '@dj-scraper/shared'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button.tsx'
 import { cn } from '@/lib/utils.ts'
-import { latestJobId, type RemixJobs } from './remix-jobs.ts'
+import type { RemixJobsStore } from './remix-jobs.ts'
+import { REMIX_GRID, REMIX_ROW, WIDE_ONLY } from './remix-layout.ts'
 import { RemixNotes } from './remix-notes.tsx'
 import { RemixRow } from './remix-row.tsx'
 import {
@@ -17,9 +18,8 @@ type RemixResultsProps = {
   remixes: RemixSuggestions
   /** Platforms whose search is still running (the quick answer skipped them). */
   searching: readonly RemixPlatform[]
-  /** The jobs the section's downloads made, by upload. */
-  jobs: RemixJobs
-  onQueued: (upload: RemixUpload, jobId: string) => void
+  /** The jobs the section's downloads (and the now-playing bar's) made, by upload. */
+  jobs: RemixJobsStore
   /** A failed platform's search is running again. */
   retrying: boolean
   onRetry: () => void
@@ -27,12 +27,12 @@ type RemixResultsProps = {
 
 /**
  * An answer: the notes (a platform still being searched, or whose search failed, with Try again),
- * the genre filter when the suggestions name two genres or more, then a row per suggestion (at
- * most 20, so no virtualization) or why there is none. The filter is local; a genre a new answer
- * lacks counts as All.
+ * the genre filter when the suggestions name two genres or more, then the column header and a row
+ * per suggestion (at most 20, so no virtualization) or why there is none. The filter is local; a
+ * genre a new answer lacks counts as All.
  */
 export function RemixResults(props: RemixResultsProps) {
-  const { remixes, searching, jobs, onQueued, retrying, onRetry } = props
+  const { remixes, searching, jobs, retrying, onRetry } = props
   const [genre, setGenre] = useState<string | null>(null)
   const { suggestions, searches } = remixes
   const genres = genreCounts(suggestions)
@@ -59,18 +59,46 @@ export function RemixResults(props: RemixResultsProps) {
         />
       )}
       {shown.length > 0 && (
-        <ul aria-label="Remixes" className="flex flex-col">
-          {shown.map((suggestion) => (
-            <RemixRow
-              key={suggestionKey(suggestion)}
-              suggestion={suggestion}
-              jobId={latestJobId(jobs, suggestion.uploads)}
-              onQueued={onQueued}
-            />
-          ))}
-        </ul>
+        <div className={REMIX_GRID}>
+          <ColumnHeader />
+          <ul aria-label="Remixes" className="col-span-full grid grid-cols-subgrid">
+            {shown.map((suggestion) => (
+              <RemixRow
+                key={suggestionKey(suggestion)}
+                suggestion={suggestion}
+                song={remixes.song}
+                jobs={jobs}
+              />
+            ))}
+          </ul>
+        </div>
       )}
       {empty !== undefined && <p className="text-sm text-muted-foreground">{empty}</p>}
+    </div>
+  )
+}
+
+/**
+ * The columns' names over the rows, once the row is wide enough to have columns. Hidden from
+ * assistive tech: the list stays a list, and each row's parts say what they are.
+ */
+function ColumnHeader() {
+  return (
+    <div
+      aria-hidden
+      data-slot="remix-columns"
+      className={cn(
+        REMIX_ROW,
+        'hidden h-7 border-b text-xs text-muted-foreground @4xl:grid [&>span]:truncate',
+      )}
+    >
+      <span />
+      <span>Title</span>
+      <span className={WIDE_ONLY}>Genre</span>
+      <span className={WIDE_ONLY}>Platform</span>
+      <span className={cn(WIDE_ONLY, 'text-right')}>Length</span>
+      <span />
+      <span />
     </div>
   )
 }

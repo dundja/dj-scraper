@@ -1,12 +1,14 @@
-// A remix row's player (ADR-029): the Play button, the strip with the seek bar and the speed grid,
-// one row at a time, and what an unmount does. The server is the fake fetch; the element's play and
-// pause are the stand-ins from src/test/setup.ts.
+// A remix row's Play button (ADR-029, ADR-031): preparing, playing, one row at a time, the one
+// raised row, and what an unmount does. The player's controls are the now-playing bar's
+// (now-playing-bar.test.tsx). The server is the fake fetch; the element's play and pause are the
+// stand-ins from src/test/setup.ts.
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { fakeApi, json, noAnswer } from '@/test/fake-api.ts'
-import { artyRemix, artyYoutube, extendedMix, extendedUpload } from '@/test/remixes.ts'
+import { artyRemix, artyYoutube, extendedMix, extendedUpload, remixes } from '@/test/remixes.ts'
 import { renderWithQueryClient } from '@/test/render.tsx'
-import { previewAudio, resetPreviewPlayer } from './preview-player.ts'
+import { getPreviewState, previewAudio, resetPreviewPlayer } from './preview-player.ts'
+import { createRemixJobs } from './remix-jobs.ts'
 import { RemixRow } from './remix-row.tsx'
 
 const PREVIEWS = 'POST /api/previews'
@@ -29,14 +31,15 @@ afterEach(() => {
   expect(server.unhandled).toEqual([])
 })
 
-const noop = () => {}
 function renderRows() {
-  return renderWithQueryClient(
+  const jobs = createRemixJobs()
+  const rendered = renderWithQueryClient(
     <ul>
-      <RemixRow suggestion={artyRemix} jobId={undefined} onQueued={noop} />
-      <RemixRow suggestion={extendedMix} jobId={undefined} onQueued={noop} />
+      <RemixRow suggestion={artyRemix} song={remixes.song} jobs={jobs} />
+      <RemixRow suggestion={extendedMix} song={remixes.song} jobs={jobs} />
     </ul>,
   )
+  return { ...rendered, jobs }
 }
 /**
  * A click inside act(), with time for the fake server and the player to answer: they update the
@@ -48,6 +51,19 @@ const click = (element: HTMLElement) =>
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 const play = (title: string) => screen.getByRole('button', { name: `Play ${title}` })
+const rowOf = (title: string) => screen.getByRole('listitem', { name: title })
+
+describe('the title', () => {
+  it('shows what tells the version apart, on one line from @4xl; the whole title names the row', () => {
+    renderRows()
+    const row = rowOf(artyYoutube.title)
+
+    const title = within(row).getByText('Arty Remix')
+    expect(title.getAttribute('title')).toBe(artyYoutube.title)
+    expect(title.className).toContain('@4xl:line-clamp-1')
+    expect(within(rowOf(extendedUpload.title)).getByText('Extended Mix')).toBeTruthy()
+  })
+})
 
 describe('the Play button', () => {
   it('sits left of Download, named for the default upload', () => {
@@ -60,38 +76,47 @@ describe('the Play button', () => {
     )
   })
 
-  it('prepares, then plays and offers Pause with the honest source line', async () => {
-    renderRows()
+  it('prepares, then plays as the one raised row, telling the player what the bar shows', async () => {
+    const { jobs } = renderRows()
 
     await click(play(artyYoutube.title))
 
     expect(await screen.findByRole('button', { name: `Pause ${artyYoutube.title}` })).toBeTruthy()
-    const strip = screen.getByRole('region', { name: `Preview of ${artyYoutube.title}` })
-    expect(strip.textContent).toContain('Preview: YouTube stream')
+    expect(rowOf(artyYoutube.title).dataset.preview).toBe('playing')
+    expect(rowOf(artyYoutube.title).className).toContain('bg-card')
+    expect(rowOf(extendedUpload.title).dataset.preview).toBe('idle')
+    expect(rowOf(extendedUpload.title).className).not.toContain('bg-card')
+    expect(getPreviewState().nowPlaying).toEqual({
+      upload: artyYoutube,
+      credit: 'Remix by Arty',
+      version: 'Arty Remix',
+      jobs,
+    })
   })
 
-  it('shows "Preparing audio…" and a click cancels it', async () => {
+  it('shows a spinner while the audio is prepared, and a click cancels it', async () => {
     server.on(PREVIEWS, noAnswer)
     renderRows()
 
     await click(play(artyYoutube.title))
-    expect(screen.getByText('Preparing audio…')).toBeTruthy()
+    expect(rowOf(artyYoutube.title).dataset.preview).toBe('preparing')
     await click(screen.getByRole('button', { name: `Cancel preparing ${artyYoutube.title}` }))
 
     expect(server.callsTo(PREVIEWS)[0]?.signal?.aborted).toBe(true)
-    expect(screen.queryByText('Preparing audio…')).toBeNull()
+    expect(rowOf(artyYoutube.title).dataset.preview).toBe('idle')
     expect(play(artyYoutube.title)).toBeTruthy()
   })
 
-  it('pauses on a second click and plays again on a third', async () => {
+  it('pauses on a second click and plays again on a third, staying raised', async () => {
     renderRows()
     await click(play(artyYoutube.title))
 
     await click(await screen.findByRole('button', { name: `Pause ${artyYoutube.title}` }))
-    expect(await screen.findByText(/^Paused\./)).toBeTruthy()
+    expect(rowOf(artyYoutube.title).dataset.preview).toBe('paused')
+    expect(rowOf(artyYoutube.title).className).toContain('bg-card')
     await click(play(artyYoutube.title))
 
-    expect(await screen.findByText(/^Playing\./)).toBeTruthy()
+    expect(rowOf(artyYoutube.title).dataset.preview).toBe('playing')
     expect(server.callsTo(PREVIEWS)).toHaveLength(1)
   })
 
@@ -106,32 +131,29 @@ describe('the Play button', () => {
       await screen.findByRole('button', { name: `Pause ${extendedUpload.title}` }),
     ).toBeTruthy()
     expect(play(artyYoutube.title)).toBeTruthy()
-    expect(screen.queryByRole('region', { name: `Preview of ${artyYoutube.title}` })).toBeNull()
+    expect(rowOf(artyYoutube.title).dataset.preview).toBe('idle')
   })
 
-  it('stops the audio when the row unmounts', async () => {
+  it('keeps the audio playing when the row unmounts: the bar plays on', async () => {
     const { unmount } = renderRows()
     await click(play(artyYoutube.title))
     await screen.findByRole('button', { name: `Pause ${artyYoutube.title}` })
-    const audio = previewAudio()
 
     unmount()
 
-    expect(audio.paused).toBe(true)
-    expect(audio.hasAttribute('src')).toBe(false)
+    expect(previewAudio().paused).toBe(false)
+    expect(getPreviewState().status).toBe('playing')
   })
 
-  it('shows a failure with its hint and Try again', async () => {
+  it('stays raised after a failure, which the bar shows; the button tries again', async () => {
     server.on(PREVIEWS, () =>
       json({ error: { code: 'rate_limited', message: 'YouTube is limiting requests.' } }, 429),
     )
     renderRows()
 
     await click(play(artyYoutube.title))
-
-    const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toContain('YouTube is limiting requests.')
-    expect(alert.textContent).toContain('Limits usually lift within a few minutes')
+    expect(rowOf(artyYoutube.title).dataset.preview).toBe('error')
+    expect(screen.queryByRole('alert')).toBeNull()
 
     server.on(PREVIEWS, () =>
       json({
@@ -141,99 +163,7 @@ describe('the Play button', () => {
         sizeBytes: 1,
       }),
     )
-    await click(within(alert).getByRole('button', { name: 'Try again' }))
-    expect(await screen.findByRole('button', { name: `Pause ${artyYoutube.title}` })).toBeTruthy()
-  })
-})
-
-describe('the strip', () => {
-  async function playing() {
-    renderRows()
     await click(play(artyYoutube.title))
-    await screen.findByRole('button', { name: `Pause ${artyYoutube.title}` })
-  }
-
-  it('shows elapsed time and duration, and a seek bar the keyboard moves', async () => {
-    await playing()
-    const audio = previewAudio()
-    Object.defineProperty(audio, 'duration', { configurable: true, value: 214 })
-    act(() => audio.dispatchEvent(new Event('durationchange')))
-
-    const seek = screen.getByRole('slider', { name: 'Seek' })
-    expect(seek.getAttribute('aria-valuetext')).toBe('0:00 of 3:34')
-    fireEvent.change(seek, { target: { value: '12' } })
-
-    expect(audio.currentTime).toBe(12)
-    expect(seek.getAttribute('aria-valuetext')).toBe('0:12 of 3:34')
-    expect(screen.getByText('0:12')).toBeTruthy()
-  })
-
-  it('has preset speeds, one pressed, that set the element’s speed', async () => {
-    await playing()
-    const strip = screen.getByRole('region', { name: `Preview of ${artyYoutube.title}` })
-
-    expect(within(strip).getByRole('button', { name: '1x' }).getAttribute('aria-pressed')).toBe(
-      'true',
-    )
-    await click(within(strip).getByRole('button', { name: '1.25x' }))
-
-    expect(previewAudio().playbackRate).toBe(1.25)
-    expect(within(strip).getByRole('button', { name: '1.25x' }).getAttribute('aria-pressed')).toBe(
-      'true',
-    )
-    expect(within(strip).getByRole('button', { name: '1x' }).getAttribute('aria-pressed')).toBe(
-      'false',
-    )
-    expect(within(strip).getByLabelText('Current speed').textContent).toBe('1.25x')
-  })
-
-  it('nudges by 0.01, shows the exact value and resets to 1x', async () => {
-    await playing()
-
-    await click(screen.getByRole('button', { name: 'Faster by 0.01x' }))
-    await click(screen.getByRole('button', { name: 'Faster by 0.01x' }))
-    await click(screen.getByRole('button', { name: 'Faster by 0.01x' }))
-    expect(screen.getByLabelText('Current speed').textContent).toBe('1.03x')
-    expect(screen.getByRole('slider', { name: 'Speed' }).getAttribute('aria-valuetext')).toBe(
-      '1.03x',
-    )
-    expect(previewAudio().playbackRate).toBe(1.03)
-    // Between presets: none is pressed.
-    expect(screen.queryAllByRole('button', { pressed: true })).toEqual([])
-
-    await click(screen.getByRole('button', { name: 'Reset to 1x' }))
-    expect(previewAudio().playbackRate).toBe(1)
-  })
-
-  it('moves the speed with the slider', async () => {
-    await playing()
-
-    fireEvent.change(screen.getByRole('slider', { name: 'Speed' }), { target: { value: '0.87' } })
-
-    expect(previewAudio().playbackRate).toBe(0.87)
-    expect(screen.getByLabelText('Current speed').textContent).toBe('0.87x')
-  })
-
-  it('binds Keep pitch to the element, on by default', async () => {
-    await playing()
-    const lock = screen.getByRole('switch', { name: 'Keep pitch' })
-
-    expect(lock.getAttribute('aria-checked')).toBe('true')
-    expect(previewAudio().preservesPitch).toBe(true)
-    await click(lock)
-
-    expect(previewAudio().preservesPitch).toBe(false)
-    expect(lock.getAttribute('aria-checked')).toBe('false')
-  })
-
-  it('keeps the speed for the next row', async () => {
-    await playing()
-    await click(screen.getByRole('button', { name: '1.1x' }))
-
-    await click(play(extendedUpload.title))
-    await screen.findByRole('button', { name: `Pause ${extendedUpload.title}` })
-
-    expect(previewAudio().playbackRate).toBe(1.1)
-    expect(screen.getByLabelText('Current speed').textContent).toBe('1.10x')
+    expect(await screen.findByRole('button', { name: `Pause ${artyYoutube.title}` })).toBeTruthy()
   })
 })

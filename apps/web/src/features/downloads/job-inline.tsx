@@ -1,5 +1,5 @@
 import { pacingPlatform } from '@dj-scraper/shared'
-import { Download } from 'lucide-react'
+import { CircleAlert, Download } from 'lucide-react'
 import { useState } from 'react'
 import { FolderPath } from '@/components/folder-path.tsx'
 import { Button } from '@/components/ui/button.tsx'
@@ -137,13 +137,16 @@ export function JobInline({ jobId, onDownloadAgain }: JobInlineProps) {
         />
       )}
       {control.error !== undefined && (
-        <div role="alert" className="text-sm">
-          <p className="text-destructive">{control.error.message}</p>
-          {control.error.hint !== undefined && (
-            <p className="text-xs text-muted-foreground">
-              <ProblemText message={control.error.hint} />
-            </p>
-          )}
+        <div role="alert" className="flex items-start gap-2 text-sm">
+          <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <div className="min-w-0">
+            <p className="text-destructive">{control.error.message}</p>
+            {control.error.hint !== undefined && (
+              <p className="text-xs text-muted-foreground">
+                <ProblemText message={control.error.hint} />
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

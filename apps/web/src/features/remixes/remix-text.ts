@@ -8,12 +8,38 @@ import {
   type RemixUpload,
 } from '@dj-scraper/shared'
 import { formatCount } from '@/lib/format.ts'
+import type { PreviewStatus } from './preview-player.ts'
 
 // Wording and grouping for the remix suggestions (ADR-027).
 
 export const REMIX_PLATFORM_NAMES: Record<RemixPlatform, string> = {
   youtube: 'YouTube',
   soundcloud: 'SoundCloud',
+}
+
+/** Each platform's brand dot (DESIGN.md, Dot Not Field): beside its name, never alone. */
+export const REMIX_PLATFORM_DOTS: Record<RemixPlatform, string> = {
+  youtube: 'bg-platform-youtube',
+  soundcloud: 'bg-platform-soundcloud',
+}
+
+/**
+ * What the player says it plays: "Playing. Preview: YouTube stream". The upload's own stream, not
+ * the file a download would write, so it claims no quality (ADR-029).
+ */
+export function previewMessage(status: PreviewStatus, platform: RemixPlatform): string {
+  const source = `Preview: ${REMIX_PLATFORM_NAMES[platform]} stream`
+  switch (status) {
+    case 'preparing':
+      return 'Preparing audio…'
+    case 'playing':
+      return `Playing. ${source}`
+    case 'paused':
+      return `Paused. ${source}`
+    case 'error':
+    case 'idle':
+      return ''
+  }
 }
 
 /** "YouTube and SoundCloud", "YouTube": the platforms in a sentence. */
@@ -125,4 +151,90 @@ export function searchingText(platforms: readonly RemixPlatform[]): string {
 /** "1 remix", "12 remixes": the count for the heading and the status line. */
 export function remixCount(count: number): string {
   return `${count} ${count === 1 ? 'remix' : 'remixes'}`
+}
+
+/**
+ * The part of an upload's title that tells the version apart, for its row and the now-playing bar:
+ * "Moby - Porcelain (Arty Remix)" → "Arty Remix" when the song is Moby's "Porcelain". The song's
+ * artist and title (or the title alone) must open the upload's title, matched without case,
+ * accents or punctuation (any dash, quotes); one pair of brackets around the rest goes. When the
+ * title doesn't start with the song, or nothing that tells it apart is left ("Porcelain remix"),
+ * it is the whole title.
+ */
+export function versionTitle(title: string, song: RemixSuggestions['song']): string {
+  const needles =
+    song.artist === undefined ? [song.title] : [`${song.artist} ${song.title}`, song.title]
+  for (const needle of needles) {
+    const end = matchedPrefixEnd(title, needle)
+    if (end === undefined) continue
+    const rest = unwrap(title.slice(end))
+    if (distinctive(rest)) return rest
+  }
+  return title
+}
+
+/** Words that alone don't tell a version apart (an "Extended Mix" or a "VIP" does). */
+const GENERIC_WORDS = new Set([
+  'remix',
+  'mix',
+  'edit',
+  'version',
+  'bootleg',
+  'rework',
+  'official',
+  'video',
+  'audio',
+  'lyrics',
+  'lyric',
+  'music',
+  'hd',
+  'hq',
+])
+
+const fold = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+const isWordChar = (char: string) => /[\p{L}\p{N}]/u.test(char)
+
+/**
+ * Where `needle`'s letters and digits end once they open `text` in order, with only other
+ * characters between them, and the match ends a word; undefined when they don't.
+ */
+function matchedPrefixEnd(text: string, needle: string): number | undefined {
+  const wanted = [...fold(needle)].filter(isWordChar)
+  if (wanted.length === 0) return undefined
+  let matched = 0
+  let index = 0
+  for (const char of text) {
+    for (const folded of fold(char)) {
+      if (!isWordChar(folded)) continue
+      if (folded !== wanted[matched]) return undefined
+      matched += 1
+    }
+    index += char.length
+    if (matched === wanted.length) {
+      const next = text.slice(index).at(0)
+      return next !== undefined && isWordChar(fold(next)) ? undefined : index
+    }
+  }
+  return undefined
+}
+
+const CLOSING: Record<string, string> = { '(': ')', '[': ']', '{': '}' }
+
+/** " - (Arty Remix) [Afro House]" → "Arty Remix [Afro House]": no leading dash, the brackets go. */
+function unwrap(rest: string): string {
+  const trimmed = rest.replace(/^[\s\p{Pd}|:~·,.]+/u, '').trim()
+  const close = CLOSING[trimmed.charAt(0)]
+  if (close === undefined) return trimmed
+  const end = trimmed.indexOf(close)
+  if (end === -1) return trimmed.slice(1).trim()
+  const inside = trimmed.slice(1, end).trim()
+  const after = trimmed.slice(end + 1).trim()
+  return after === '' ? inside : `${inside} ${after}`
+}
+
+function distinctive(rest: string): boolean {
+  const words = fold(rest)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word !== '')
+  return words.some((word) => !GENERIC_WORDS.has(word))
 }

@@ -7,12 +7,15 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { resetPreviewPlayer, togglePreview } from '@/features/remixes/preview-player.ts'
+import { createRemixJobs } from '@/features/remixes/remix-jobs.ts'
 import { settings } from '@/test/downloads.ts'
 import { fakeApi, json } from '@/test/fake-api.ts'
 import { healthy } from '@/test/health.ts'
+import { artyYoutube } from '@/test/remixes.ts'
 import { createTestQueryClient } from '@/test/render.tsx'
 import { Route as rootRoute } from './__root.tsx'
 
@@ -35,6 +38,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  act(() => resetPreviewPlayer())
   expect(server.unhandled).toEqual([])
 })
 
@@ -65,6 +69,31 @@ describe('the shell', () => {
       await within(header).findByRole('button', { name: 'Engine status: Engine ready' }),
     ).toBeTruthy()
     expect(screen.getByRole('complementary', { name: 'Downloads' })).toBeTruthy()
+  })
+
+  it('has the now-playing bar under the page and the downloads only while a remix plays', async () => {
+    server.on('POST /api/previews', () =>
+      json({
+        id: 'a'.repeat(32),
+        src: `/api/previews/${'a'.repeat(32)}`,
+        mime: 'audio/mp4',
+        sizeBytes: 1,
+      }),
+    )
+    renderShell('/')
+    const main = await screen.findByRole('main')
+    expect(screen.queryByRole('region', { name: 'Now playing' })).toBeNull()
+
+    await act(async () => {
+      togglePreview(artyYoutube, { credit: 'Remix by Arty', jobs: createRemixJobs() })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    const bar = screen.getByRole('region', { name: 'Now playing' })
+    const downloads = screen.getByRole('complementary', { name: 'Downloads' })
+    expect(main.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(downloads.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(main.contains(bar) || downloads.contains(bar)).toBe(false)
   })
 
   it('shows Page not found for an unknown address, with a way back', async () => {

@@ -1,6 +1,7 @@
 // From a paste to its download with the real TrackCard (no doubles, unlike resolve-page.test.tsx):
-// under StrictMode each paste queues the track exactly once, and the ['settings'] refetch that a
-// created download sets off doesn't queue it again. A Spotify track goes the same way (ADR-026).
+// a pasted track waits for Download or ⌘D (ADR-031), under StrictMode one press queues it exactly
+// once, and the ['settings'] refetch that a created download sets off doesn't queue it again. A
+// Spotify track goes the same way (ADR-026).
 // The remix search under the card never answers here: remix-section.test.tsx covers it.
 import { type CreateDownloadsResponse, DownloadRequestSchema } from '@dj-scraper/shared'
 import { testUuid } from '@dj-scraper/shared/test-helpers'
@@ -41,10 +42,11 @@ afterEach(() => {
 
 const urlBox = (): HTMLInputElement =>
   screen.getByRole('textbox', { name: 'YouTube, SoundCloud or Spotify link' })
-const cardStatus = () =>
-  within(screen.getByRole('article', { name: track.title })).getByRole('status')
+const card = () => screen.getByRole('article', { name: track.title })
+const cardStatus = () => within(card()).getByRole('status')
+const settle = () => act(() => new Promise<void>((resolve) => setTimeout(resolve, 50)))
 
-it('queues a pasted track once per paste under StrictMode, also after the settings refetch', async () => {
+it('waits for Download, then queues the track once under StrictMode, also after the settings refetch', async () => {
   const user = userEvent.setup()
   renderWithQueryClient(
     <StrictMode>
@@ -54,6 +56,13 @@ it('queues a pasted track once per paste under StrictMode, also after the settin
   act(() => urlBox().blur())
 
   await user.paste(urls.track)
+  const download = await within(
+    await screen.findByRole('article', { name: track.title }),
+  ).findByRole('button', { name: 'Download' })
+  await settle()
+  expect(server.callsTo(CREATE)).toEqual([])
+
+  await user.click(download)
   await waitFor(() => expect(cardStatus().textContent).toBe('Queued…'))
   expect(server.callsTo('POST /api/resolve')).toHaveLength(1)
   expect(server.callsTo(CREATE)).toHaveLength(1)
@@ -64,18 +73,35 @@ it('queues a pasted track once per paste under StrictMode, also after the settin
   // The created download invalidates ['settings'] (recent folders): the refetch re-renders the
   // result, which must not queue the track again.
   await waitFor(() => expect(server.callsTo(SETTINGS).length).toBeGreaterThanOrEqual(2))
-  await act(() => new Promise<void>((resolve) => setTimeout(resolve, 50)))
+  await settle()
   expect(server.callsTo(CREATE)).toHaveLength(1)
 
-  // The same link pasted again is a new load with a new card: one more download, not two.
+  // The same link pasted again is a new load with a new card, which waits for Download again.
   act(() => urlBox().blur())
   await user.paste(urls.track)
   await waitFor(() => expect(server.callsTo('POST /api/resolve')).toHaveLength(2))
-  await waitFor(() => expect(server.callsTo(CREATE)).toHaveLength(2))
-  await waitFor(() => expect(server.callsTo(SETTINGS).length).toBeGreaterThanOrEqual(3))
-  await act(() => new Promise<void>((resolve) => setTimeout(resolve, 50)))
-  expect(server.callsTo(CREATE)).toHaveLength(2)
+  await within(card()).findByRole('button', { name: 'Download' })
+  await settle()
+  expect(server.callsTo(CREATE)).toHaveLength(1)
   expect(screen.getAllByRole('article', { name: track.title })).toHaveLength(1)
+})
+
+it('downloads with ⌘D right after a paste, while the focus is still in the link box', async () => {
+  const user = userEvent.setup()
+  renderWithQueryClient(<ResolvePage />)
+  act(() => urlBox().blur())
+
+  await user.paste(urls.track)
+  await within(await screen.findByRole('article', { name: track.title })).findByRole('button', {
+    name: 'Download',
+  })
+  expect(document.activeElement).toBe(urlBox())
+
+  await user.keyboard('{Meta>}d{/Meta}')
+
+  await waitFor(() => expect(cardStatus().textContent).toBe('Queued…'))
+  expect(server.callsTo(CREATE)).toHaveLength(1)
+  expect(document.activeElement).toBe(urlBox())
 })
 
 it('downloads a pasted Spotify track like any other, and shows the YouTube upload it matched', async () => {
@@ -88,6 +114,7 @@ it('downloads a pasted Spotify track like any other, and shows the YouTube uploa
   await user.paste(`${urls.spotifyTrack}?si=1b2c3d4e5f6a7b8c`)
   const card = await screen.findByRole('article', { name: 'Never Gonna Give You Up' })
   expect(jsonBody(server.callsTo('POST /api/resolve')[0])).toEqual({ url: urls.spotifyTrack })
+  await user.click(within(card).getByRole('button', { name: 'Download' }))
   await waitFor(() => expect(server.callsTo(CREATE)).toHaveLength(1))
   expect(DownloadRequestSchema.parse(jsonBody(server.callsTo(CREATE)[0])).items).toEqual([
     toTrackRef(spotifyTrack),

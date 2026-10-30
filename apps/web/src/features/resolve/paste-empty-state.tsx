@@ -8,16 +8,9 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty.tsx'
 import { Kbd, KbdGroup } from '@/components/ui/kbd.tsx'
-import { useSettings } from '@/features/settings/use-settings.ts'
 
 /** Under the paste box before anything is loaded: what a paste does, and how to paste. */
 export function PasteEmptyState() {
-  const settings = useSettings()
-  const single =
-    settings.data?.autoDownloadSingles === false
-      ? 'A single track shows a Download button'
-      : 'A single track downloads right away'
-
   return (
     <Empty className="px-6 pb-24">
       <EmptyHeader>
@@ -25,10 +18,13 @@ export function PasteEmptyState() {
           <Link2 aria-hidden />
         </EmptyMedia>
         <EmptyTitle>
-          <h2 className="text-base font-medium">Paste a YouTube, SoundCloud or Spotify link</h2>
+          <h2 className="text-base font-semibold tracking-tight">
+            Paste a YouTube, SoundCloud or Spotify link
+          </h2>
         </EmptyTitle>
         <EmptyDescription className="text-pretty">
-          {single}; for a playlist, set or album you pick the tracks first.
+          A single track shows its card and remixes, and downloads when you press Download (⌘D); for
+          a playlist, set or album you pick the tracks first.
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>

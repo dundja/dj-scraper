@@ -11,6 +11,12 @@ async function load(page: Page, url: string) {
   await linkBox(page).press('Enter')
 }
 
+/** Loads `url` and presses its card's Download: a pasted track waits for it (ADR-031). */
+async function download(page: Page, url: string) {
+  await load(page, url)
+  await trackCard(page, TITLE).getByRole('button', { name: 'Download' }).click()
+}
+
 test('Clear finished empties the finished jobs, done and skipped, from the panel and the server', async ({
   page,
   server,
@@ -22,9 +28,9 @@ test('Clear finished empties the finished jobs, done and skipped, from the panel
   await expect(panel.getByText('Nothing downloading yet')).toBeVisible()
 
   // Two finished jobs: the track, then the same track again, which finds its file there.
-  await load(page, SOUNDCLOUD_TRACK)
+  await download(page, SOUNDCLOUD_TRACK)
   await expect(inlineJob(trackCard(page, TITLE))).toHaveAttribute('data-status', 'done')
-  await load(page, SOUNDCLOUD_TRACK)
+  await download(page, SOUNDCLOUD_TRACK)
   const card = trackCard(page, TITLE)
   await expect(inlineJob(card)).toHaveAttribute('data-status', 'skipped')
   await expect(inlineJob(card)).toContainText('Already in the folder')

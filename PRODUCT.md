@@ -25,7 +25,7 @@ A local, single-user front end over yt-dlp and ffmpeg, made for DJ crate buildin
 - Used at home, at a desk, while preparing sets: digging for tracks and remixes and building crates before a gig.
 - The files go into **Rekordbox** (Pioneer gear). What happens after the folder is Rekordbox's job: library management is a non-goal.
 - Runs only on this machine: a browser tab on `localhost` plus a local Node server, started with `pnpm start`. macOS (the native folder picker, Reveal in Finder, protected-folder prompts).
-- Sessions mix single tracks (paste → auto-download) and long lists (playlists up to 5,000 rows, picked and downloaded in batches paced against platform rate limits).
+- Sessions mix single tracks (paste → look at the card and its remixes → Download or ⌘D) and long lists (playlists up to 5,000 rows, picked and downloaded in batches paced against platform rate limits).
 
 ## Capabilities and Constraints
 - Sources: YouTube and SoundCloud first-class; other yt-dlp sites best effort; Spotify only as track lists matched on YouTube (ADR-026, ADR-028). DRM services are refused by URL.
@@ -45,7 +45,7 @@ A local, single-user front end over yt-dlp and ffmpeg, made for DJ crate buildin
 
 ## Product Principles
 1. **Truth over polish.** Show what the source and the file really are; a guess is shown as a guess (e.g. a genre from a title).
-2. **One paste, then out of the way.** The common path (paste a track → it downloads) takes no extra decisions; choices appear only where they matter (playlist or track, which tracks, which upload).
+2. **One paste, then out of the way.** The common path (paste a track → one Download or ⌘D) takes one decision, so a remix can be chosen instead of the original; choices appear only where they matter (playlist or track, which tracks, which upload).
 3. **Never lose or clobber the user's files.** Writes go only where they said, nothing is overwritten, and every failure says why and what to do next.
 4. **Respect the platforms.** Pace requests within their budgets, back off when limited, and never circumvent DRM or access controls.
 5. **Fast with big lists.** Thousands of rows stay smooth; slow platform work fills in progressively instead of blocking.

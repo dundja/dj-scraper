@@ -6,6 +6,7 @@ import { DownloadsPanel } from '@/features/downloads/downloads-panel.tsx'
 import { EngineBanner } from '@/features/engine/engine-banner.tsx'
 import { EngineStatus } from '@/features/engine/engine-status.tsx'
 import { FolderPicker } from '@/features/folder/folder-picker.tsx'
+import { NowPlayingBar } from '@/features/remixes/now-playing-bar.tsx'
 
 export type RouterContext = { queryClient: QueryClient }
 
@@ -16,9 +17,11 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 /**
  * The shell: header (app name, target folder, engine status), the engine banner, then the page on
- * the left and the downloads on the right. On lg+ the shell is exactly the window's height and each
- * column scrolls on its own, so a long collection and the downloads list stay side by side; below
- * lg the columns stack and the page scrolls (virtualized lists then need a bounded height).
+ * the left and the downloads on the right, and under both the now-playing bar while a remix plays
+ * (ADR-031). On lg+ the shell is exactly the window's height and each column scrolls on its own, so
+ * a long collection and the downloads list stay side by side, and the bar takes its 72 px from
+ * them; below lg the columns stack, the page scrolls (virtualized lists then need a bounded
+ * height) and the bar sticks to the window's bottom as the page's last part, so it hides nothing.
  */
 function RootLayout() {
   return (
@@ -52,6 +55,7 @@ function RootLayout() {
             <DownloadsPanel />
           </aside>
         </div>
+        <NowPlayingBar />
       </div>
     </TooltipProvider>
   )
@@ -60,7 +64,7 @@ function RootLayout() {
 function NotFound() {
   return (
     <section className="mx-auto flex max-w-md flex-1 flex-col items-center justify-center gap-2 px-6 pb-24 text-center">
-      <h1 className="text-base font-medium">Page not found</h1>
+      <h1 className="text-base font-semibold tracking-tight">Page not found</h1>
       <p className="text-sm text-muted-foreground">
         There's nothing at this address.{' '}
         <Link

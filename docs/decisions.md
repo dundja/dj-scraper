@@ -675,3 +675,17 @@ ffmpeg's exit code proves nothing either: it exits 0 on truncated or corrupt inp
 - The generated shadcn components are untouched; everything changes through tokens. A component added later from the CLI takes the theme as it is.
 - Waiting jobs are now amber, so amber means "not running yet, and why", whether YouTube asked us to wait or a platform's queue is paused.
 - The layout and experience pass is the next step; this one changed tokens, two state tones and the measurements' font.
+
+## ADR-031 — A pasted track waits for Download, and a now-playing bar holds the remix player
+*2026-10-30 · accepted · amends ADR-020 (no auto-download from the track card) and ADR-029 (the player moves from under its row into a bar)*
+
+**Context.** A pasted single track started downloading at once (`autoDownloadSingles`, default on, ADR-020). Since remix suggestions (ADR-027) and playing them (ADR-029), the user often pastes a song to find a remix of it and doesn't want the original: they asked to remove the automatic download. In the layout pass's design round the user chose the "now-playing bar" structure: the main column uses its full width for the track and its remixes in aligned columns, and the remix player lives in a bar across the bottom of the window, as in a music app. Downloads stay visible beside the page and the paste box on top (the user's terms).
+
+**Decision.**
+- **No auto-download.** The track card shows the track with its source quality and one primary **Download**, with ⌘D as its shortcut while a single track is shown (not inside a text field, except ⌘D, not Ctrl+D, in the link box: focus is there after every paste, and Ctrl+D deletes forward in a macOS text field). The page swallows ⌘D while a download is being added or runs, so the browser's bookmark dialog never opens. `autoDownloadSingles` leaves the settings contract; a settings file that still holds it loads as before and drops it. Quick grabs cost one click or ⌘D.
+- **A now-playing bar** spans the window under the main column and the downloads rail while a remix plays or is paused (absent otherwise): cover, title, credit and platform, play/pause, seek, the speed grid (presets, −/+, the value, Keep pitch) and Download for that remix. The playing row stays raised with a violet pause in its Play slot; the strip under the row goes.
+- **The main column uses its full width:** a wide track header (large cover, names, platform · length · source, Download and format), then remix rows in aligned columns (cover, title and credit, genre, platform · plays, length, Play, Download) under a column header.
+
+**Rejected.** *Keeping the setting, default off*: a switch nobody needs once Download is one key away; the settings page is still to come. *The cover grid and the dig desk* (the other dealt structures): the user chose the bar.
+
+**Consequences.** A pasted track downloads only when asked, so pasting to dig spends nothing from YouTube's budget. The bar takes 72 px at the bottom while something plays; the page leaves room for it so nothing hides behind it.

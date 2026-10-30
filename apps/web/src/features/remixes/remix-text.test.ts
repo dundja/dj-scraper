@@ -26,6 +26,7 @@ import {
   suggestionKey,
   uploadsByPlatform,
   uploadText,
+  versionTitle,
 } from './remix-text.ts'
 
 const failed = (message: string) =>
@@ -149,5 +150,58 @@ describe('searchingText and remixCount', () => {
     expect(remixCount(1)).toBe('1 remix')
     expect(remixCount(0)).toBe('0 remixes')
     expect(remixCount(12)).toBe('12 remixes')
+  })
+})
+
+describe('versionTitle', () => {
+  const moby = { title: 'Porcelain', artist: 'Moby' }
+  const rick = { title: 'Never Gonna Give You Up', artist: 'Rick Astley' }
+
+  it('keeps what tells the version apart once the song opens the title', () => {
+    expect(versionTitle(artyYoutube.title, moby)).toBe('Arty Remix')
+    expect(versionTitle('Rick Astley - Never Gonna Give You Up (Cake Mix)', rick)).toBe('Cake Mix')
+    expect(
+      versionTitle(
+        'Rick Astley - Never Gonna Give You Up (Stephen Gilham - PHD Extended Mix)',
+        rick,
+      ),
+    ).toBe('Stephen Gilham - PHD Extended Mix')
+    expect(versionTitle('Moby - Porcelain (Extended Mix)', moby)).toBe('Extended Mix')
+  })
+
+  it('keeps what follows the brackets', () => {
+    expect(versionTitle('Moby - Porcelain (Night Ferry Bootleg) [Afro House]', moby)).toBe(
+      'Night Ferry Bootleg [Afro House]',
+    )
+    expect(versionTitle(artyReupload.title, moby)).toBe('Arty Remix [Trance Classics]')
+  })
+
+  it('ignores case, accents and the kind of dash or separator', () => {
+    expect(versionTitle('MOBY – porcelain [Krysiek Remix]', moby)).toBe('Krysiek Remix')
+    expect(versionTitle('Mobý — Porcélain: Krysiek Remix', moby)).toBe('Krysiek Remix')
+    expect(
+      versionTitle('RÜFÜS DU SOL - Innerbloom (What So Not Remix)', {
+        title: 'Innerbloom',
+        artist: 'Rufus Du Sol',
+      }),
+    ).toBe('What So Not Remix')
+  })
+
+  it('takes the song title alone, as does a song without an artist', () => {
+    expect(versionTitle('Porcelain (Arty Remix)', moby)).toBe('Arty Remix')
+    expect(versionTitle('Porcelain - Arty Remix', { title: 'Porcelain' })).toBe('Arty Remix')
+  })
+
+  it('is the whole title when it doesn’t open with the song, or nothing distinctive is left', () => {
+    expect(versionTitle('Arty - Porcelain Remix', moby)).toBe('Arty - Porcelain Remix')
+    // A word that only starts like the title.
+    expect(versionTitle('Moby - Porcelains (Arty Remix)', moby)).toBe(
+      'Moby - Porcelains (Arty Remix)',
+    )
+    expect(versionTitle(bareUpload.title, moby)).toBe('Porcelain remix')
+    expect(versionTitle('Moby - Porcelain (Official Video)', moby)).toBe(
+      'Moby - Porcelain (Official Video)',
+    )
+    expect(versionTitle('Moby - Porcelain', moby)).toBe('Moby - Porcelain')
   })
 })

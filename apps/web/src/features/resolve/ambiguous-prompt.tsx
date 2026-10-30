@@ -39,7 +39,7 @@ export function AmbiguousPrompt({ result, onTrack, onList }: AmbiguousPromptProp
       className="flex flex-col gap-4 rounded-lg border bg-card/40 p-4"
     >
       <div className="flex flex-col gap-1">
-        <h2 id={titleId} className="text-base font-medium">
+        <h2 id={titleId} className="text-base font-semibold tracking-tight">
           {wording.question}
         </h2>
         <p className="text-xs text-pretty text-muted-foreground">{wording.note}</p>

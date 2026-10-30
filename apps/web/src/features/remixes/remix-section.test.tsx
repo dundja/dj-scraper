@@ -79,7 +79,7 @@ const list = () => screen.getByRole('list', { name: 'Remixes' })
 const rowTitles = () =>
   within(list())
     .getAllByRole('listitem')
-    .map((row) => document.getElementById(row.getAttribute('aria-labelledby') ?? '')?.textContent)
+    .map((row) => row.getAttribute('aria-label'))
 const row = (title: string) => within(list()).getByRole('listitem', { name: title })
 const toggle = (name: string | RegExp) => screen.getByRole('button', { name })
 /** The section's own status line: each row has one too, for its download. */

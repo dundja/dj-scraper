@@ -1,11 +1,9 @@
 import type { ResolveMode, ResolveResult, Track } from '@dj-scraper/shared'
-import { type ReactNode, useState } from 'react'
+import { useState } from 'react'
 import { CollectionView } from '@/features/collection/collection-view.tsx'
 import { RemixSection } from '@/features/remixes/remix-section.tsx'
-import { useSettings } from '@/features/settings/use-settings.ts'
 import { TrackCard } from '@/features/track/track-card.tsx'
 import { AmbiguousPrompt } from './ambiguous-prompt.tsx'
-import { TrackSkeleton } from './result-skeletons.tsx'
 
 type ResolvedResultProps = {
   result: ResolveResult
@@ -17,7 +15,7 @@ type ResolvedResultProps = {
 
 /**
  * What a link resolved to. Keyed by the paste's number, so each paste mounts a fresh track card
- * (whose auto-download fires once) or collection (whose selection starts over).
+ * (whose download waits for Download, ADR-031) or collection (whose selection starts over).
  */
 export function ResolvedResult({ result, onLoad, onTrackChosen }: ResolvedResultProps) {
   // For an ambiguous link: the user chose the track it opens.
@@ -25,28 +23,23 @@ export function ResolvedResult({ result, onLoad, onTrackChosen }: ResolvedResult
 
   switch (result.kind) {
     case 'track':
-      return (
-        <Padded>
-          <SingleTrack track={result.track} />
-        </Padded>
-      )
+      return <SingleTrack track={result.track} />
     case 'ambiguous':
-      return (
-        <Padded>
-          {trackChosen ? (
-            <SingleTrack track={result.track} />
-          ) : (
-            <AmbiguousPrompt
-              result={result}
-              // The track is already in the answer: no second resolve.
-              onTrack={() => {
-                setTrackChosen(true)
-                onTrackChosen()
-              }}
-              onList={() => onLoad(result.collectionUrl, 'collection')}
-            />
-          )}
-        </Padded>
+      return trackChosen ? (
+        <SingleTrack track={result.track} />
+      ) : (
+        // A question reads best at a line's length, unlike the track it opens.
+        <div className="w-full max-w-3xl px-4 pb-6">
+          <AmbiguousPrompt
+            result={result}
+            // The track is already in the answer: no second resolve.
+            onTrack={() => {
+              setTrackChosen(true)
+              onTrackChosen()
+            }}
+            onList={() => onLoad(result.collectionUrl, 'collection')}
+          />
+        </div>
       )
     case 'collection':
       return (
@@ -60,40 +53,16 @@ export function ResolvedResult({ result, onLoad, onTrackChosen }: ResolvedResult
   }
 }
 
-function Padded({ children }: { children: ReactNode }) {
-  return <div className="w-full max-w-3xl px-4 pb-6">{children}</div>
-}
-
 /**
- * A single track: its card, then its song's remixes below it (ADR-027). The search starts with the
- * card and runs beside its download; below the card, it never moves it.
+ * A single track across the main column's full width (ADR-031): its card, then its song's remixes
+ * below it (ADR-027). The search starts with the card and runs beside its download; below the
+ * card, it never moves it.
  */
 function SingleTrack({ track }: { track: Track }) {
   return (
-    <div className="flex flex-col gap-6">
-      <TrackResult track={track} />
+    <div className="flex w-full flex-col gap-5 px-4 pb-6">
+      <TrackCard track={track} />
       <RemixSection track={track} />
     </div>
   )
-}
-
-/**
- * The track card, auto-downloading when the setting says so. It waits for the settings (normally
- * loaded already: the header's folder picker reads them), so it never mounts with the wrong value.
- */
-function TrackResult({ track }: { track: Track }) {
-  const settings = useSettings()
-  if (settings.isPending) return <TrackSkeleton />
-  const autoStart =
-    settings.data?.autoDownloadSingles === true && track.availability !== 'unavailable'
-  return <SettledTrackCard track={track} autoStart={autoStart} />
-}
-
-/**
- * Keeps the `autoStart` the card mounted with: settings that change or arrive later (after an
- * error) must not start a download the user has been looking at for a while.
- */
-function SettledTrackCard({ track, autoStart }: { track: Track; autoStart: boolean }) {
-  const [initialAutoStart] = useState(autoStart)
-  return <TrackCard track={track} autoStart={initialAutoStart} />
 }

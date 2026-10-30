@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { artyReupload, artySoundcloud, artyYoutube, bareUpload } from '@/test/remixes.ts'
-import { latestJobId, type RemixJobs, rememberJob } from './remix-jobs.ts'
+import { createRemixJobs, latestJobId, type RemixJobs, rememberJob } from './remix-jobs.ts'
 
 const none: RemixJobs = new Map()
 
@@ -32,5 +32,28 @@ describe('latestJobId', () => {
     const jobs = rememberJob(none, bareUpload, 'job-1')
     expect(latestJobId(jobs, [artyYoutube, artySoundcloud])).toBeUndefined()
     expect(latestJobId(none, [artyYoutube])).toBeUndefined()
+  })
+})
+
+describe('createRemixJobs', () => {
+  it('remembers jobs as rememberJob does and tells its listeners', () => {
+    const store = createRemixJobs()
+    let heard = 0
+    const stop = store.subscribe(() => heard++)
+
+    store.remember(artyYoutube, 'job-1')
+    store.remember(artySoundcloud, 'job-2')
+    expect(latestJobId(store.get(), [artyYoutube, artySoundcloud])).toBe('job-2')
+    expect(heard).toBe(2)
+
+    stop()
+    store.remember(artyYoutube, 'job-3')
+    expect(heard).toBe(2)
+    expect(latestJobId(store.get(), [artyYoutube])).toBe('job-3')
+  })
+
+  it('starts empty for each section', () => {
+    createRemixJobs().remember(artyYoutube, 'job-1')
+    expect(createRemixJobs().get().size).toBe(0)
   })
 })

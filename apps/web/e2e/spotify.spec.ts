@@ -44,7 +44,7 @@ test('a pasted Spotify track says where its audio comes from, downloads its YouT
   downloadFolder,
   server,
 }) => {
-  await settings.set({ format: 'mp3', autoDownloadSingles: true })
+  await settings.set({ format: 'mp3' })
   await page.goto('/')
   await expect(linkBox(page)).toBeFocused()
   await emptyState(page).click()
@@ -56,13 +56,14 @@ test('a pasted Spotify track says where its audio comes from, downloads its YouT
   await expect(linkBox(page)).toHaveAccessibleDescription(/Spotify.*Track/)
   await expect(pasteBadge(page).locator('.bg-platform-spotify')).toHaveCount(1)
 
-  // The card: why its audio comes from YouTube while the match is found. Auto-download: queued
-  // without a click, then searching YouTube (the e2e search takes 1.5 s).
+  // The card: why its audio comes from YouTube while the match is found. Download queues it,
+  // then it searches YouTube (the e2e search takes 1.5 s).
   const card = trackCard(page, TITLE)
   const note = card.locator('[data-slot="track-match"]')
   await expect(note).toHaveText(
     'Spotify streams are DRM-protected: DJ Scraper finds this track on YouTube and downloads it from there.',
   )
+  await card.getByRole('button', { name: 'Download' }).click()
   const status = inlineJob(card)
   await expect(status).toContainText('Finding it on YouTube…')
   const {

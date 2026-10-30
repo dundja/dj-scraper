@@ -30,7 +30,7 @@ async function expectFileIn(server: ServerApi, jobId: string, folder: string) {
   return job
 }
 
-test('a track pasted anywhere downloads at once, shows done in the card and the panel, and Reveal in Finder asks the server', async ({
+test('a track pasted anywhere waits for ⌘D, then shows done in the card and the panel, and Reveal in Finder asks the server', async ({
   page,
   downloadFolder,
   revealRequests,
@@ -38,11 +38,19 @@ test('a track pasted anywhere downloads at once, shows done in the card and the 
 }) => {
   await page.goto('/')
   await expect(linkBox(page)).toBeFocused()
+  await expect(
+    page.getByText(
+      'A single track shows its card and remixes, and downloads when you press Download (⌘D)',
+    ),
+  ).toBeVisible()
   // A paste with the focus outside any text field (Edit › Paste): the page takes the link from the
   // pasted text.
   await emptyState(page).click()
   await expect(linkBox(page)).not.toBeFocused()
-  const created = nextDownloads(page)
+  const downloadRequests: string[] = []
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/downloads') downloadRequests.push(request.url())
+  })
   await pasteAnywhere(page, `  ${SOUNDCLOUD_TRACK}\nshared from the SoundCloud app`)
 
   // The link lands in the box with what it is, and the card shows the track and its source.
@@ -53,7 +61,18 @@ test('a track pasted anywhere downloads at once, shows done in the card and the 
   await expect(card).toContainText('0:10')
   await expect(card).toContainText('Source: MP3 128 kbps')
 
-  // Auto-download: queued without a click, then done, with what the file really is.
+  // Nothing downloads by itself (ADR-031): the card waits, with Download and its ⌘D hint.
+  const download = card.getByRole('button', { name: 'Download' })
+  await expect(download).toBeVisible()
+  await expect(download).toContainText('⌘D')
+  await expect(download).toHaveAttribute('aria-keyshortcuts', 'Meta+D')
+  expect(downloadRequests).toEqual([])
+
+  // ⌘D with the focus still in the link box (where the paste put it) downloads, and the focus
+  // stays there; then done, with what the file really is.
+  await expect(linkBox(page)).toBeFocused()
+  const created = nextDownloads(page)
+  await page.keyboard.press('Meta+D')
   const {
     jobIds: [jobId],
   } = await created
@@ -61,7 +80,9 @@ test('a track pasted anywhere downloads at once, shows done in the card and the 
   await expect(status).toHaveAttribute('data-status', 'done')
   await expect(status.getByRole('status')).toContainText('Done')
   await expect(status).toContainText('MP3 · 128 kbps · copied')
-  await expect(card.getByRole('button', { name: 'Download' })).toHaveCount(0)
+  await expect(download).toHaveCount(0)
+  await expect(linkBox(page)).toBeFocused()
+  expect(downloadRequests).toHaveLength(1)
 
   // The panel shows the same job, done, under its own batch.
   const panel = downloadsPanel(page)
@@ -90,10 +111,7 @@ test('a track pasted anywhere downloads at once, shows done in the card and the 
 
 test('⌘V with nothing focused pastes into the link box, over its old text, and loads the link once', async ({
   page,
-  settings,
 }) => {
-  // Nothing downloads: the key press is what this checks.
-  await settings.set({ autoDownloadSingles: false })
   await page.goto('/')
   await expect(linkBox(page)).toBeFocused()
   await linkBox(page).fill('old text')
@@ -131,15 +149,14 @@ test('⌘V with nothing focused pastes into the link box, over its old text, and
   expect(resolves.map((body) => JSON.parse(body))).toEqual([{ url: SOUNDCLOUD_TRACK }])
 })
 
-test('with auto-download off, a typed track waits for Download, in the format picked beside it', async ({
+test('a typed track waits for Download, in the format picked beside it', async ({
   page,
   settings,
   downloadFolder,
   server,
 }) => {
-  await settings.set({ autoDownloadSingles: false, format: 'mp3' })
+  await settings.set({ format: 'mp3' })
   await page.goto('/')
-  await expect(page.getByText('A single track shows a Download button')).toBeVisible()
 
   // Typing shows the badge; Enter loads the link.
   await linkBox(page).fill(SOUNDCLOUD_TRACK)

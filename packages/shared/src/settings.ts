@@ -25,8 +25,6 @@ export const SettingsSchema = z.object({
   playlistSubfolder: z.boolean(),
   /** How many tracks download at once. */
   concurrency: z.int().min(1).max(MAX_CONCURRENCY),
-  /** Start downloading a pasted single track at once. */
-  autoDownloadSingles: z.boolean(),
 })
 export type Settings = z.infer<typeof SettingsSchema>
 
@@ -39,7 +37,6 @@ export const DEFAULT_SETTINGS = {
   sourceUrlComment: true,
   playlistSubfolder: false,
   concurrency: DEFAULT_CONCURRENCY,
-  autoDownloadSingles: true,
 } as const satisfies Omit<Settings, 'folder'>
 
 /** `PUT /api/settings`: the fields to change. `recentFolders` is the server's to keep. */

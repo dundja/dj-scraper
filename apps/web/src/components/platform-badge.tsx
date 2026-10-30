@@ -12,10 +12,19 @@ const PLATFORMS: Record<Platform, { label: string; dot?: string }> = {
   other: { label: 'Web' },
 }
 
+/** The plain look: the dot and the words, no pill (the platform column of a remix row). */
+const PLAIN = 'h-auto rounded-none border-transparent px-0'
+const PLAIN_WIDE = '@4xl:h-auto @4xl:rounded-none @4xl:border-transparent @4xl:px-0'
+
 type PlatformBadgeProps = {
   platform: Platform
   /** More after the name, e.g. a remix upload's "908K views". */
   children?: ReactNode
+  /**
+   * `badge` (the default): a bordered pill. `plain`: the dot and the words alone. `plain-wide`: a
+   * pill, plain once its container is `@4xl` wide (where it stands in a column of its own).
+   */
+  variant?: 'badge' | 'plain' | 'plain-wide'
   className?: string
 }
 
@@ -23,10 +32,23 @@ type PlatformBadgeProps = {
  * Where a track or list comes from: the platform's name with a dot in its brand color. Text, not
  * a logo: lucide has no brand icons, and a made-up one would be worse than none.
  */
-export function PlatformBadge({ platform, children, className }: PlatformBadgeProps) {
+export function PlatformBadge({
+  platform,
+  children,
+  variant = 'badge',
+  className,
+}: PlatformBadgeProps) {
   const { label, dot } = PLATFORMS[platform]
   return (
-    <Badge variant="outline" className={cn('font-normal text-muted-foreground', className)}>
+    <Badge
+      variant="outline"
+      className={cn(
+        'font-normal text-muted-foreground',
+        variant === 'plain' && PLAIN,
+        variant === 'plain-wide' && PLAIN_WIDE,
+        className,
+      )}
+    >
       {dot !== undefined && <span aria-hidden className={cn('size-1.5 rounded-full', dot)} />}
       {label}
       {children !== undefined && (

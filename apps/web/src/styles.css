@@ -118,6 +118,10 @@
     caret-color: var(--primary);
     scrollbar-color: oklch(1 0 0 / 18%) transparent;
   }
+  /* Below lg the now-playing bar sticks to the window's bottom: keep what is focused clear of it. */
+  html:has([data-slot="now-playing"]) {
+    @apply max-lg:scroll-pb-24;
+  }
   ::selection {
     background-color: oklch(0.7 0.155 285 / 35%);
     color: var(--foreground);
@@ -134,5 +138,63 @@
     animation-duration: 0.01ms;
     animation-iteration-count: 1;
     transition-duration: 0.01ms;
+  }
+}
+
+/* A range input in the theme (the player's seek bar and speed slider): a muted 4 px track, filled
+   with primary up to the value, a foreground thumb and the focus ring on it. Firefox fills the
+   track itself (::-moz-range-progress); WebKit and Blink paint the fill from `--value`, the
+   filled share as a percentage, set inline (rangeFill in lib/range.ts). */
+@utility range-input {
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  &:focus-visible {
+    outline: none;
+  }
+  &:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+  &::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 9999px;
+    background: linear-gradient(
+      to right,
+      var(--primary) var(--value, 0%),
+      var(--muted) var(--value, 0%)
+    );
+  }
+  &::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
+    border: 0;
+    border-radius: 9999px;
+    background: var(--foreground);
+  }
+  &:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 60%, transparent);
+  }
+  &::-moz-range-track {
+    height: 4px;
+    border-radius: 9999px;
+    background: var(--muted);
+  }
+  &::-moz-range-progress {
+    height: 4px;
+    border-radius: 9999px;
+    background: var(--primary);
+  }
+  &::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 0;
+    border-radius: 9999px;
+    background: var(--foreground);
+  }
+  &:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 60%, transparent);
   }
 }

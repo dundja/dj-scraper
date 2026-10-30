@@ -33,7 +33,6 @@ const customSettings = {
   sourceUrlComment: false,
   playlistSubfolder: true,
   concurrency: MAX_CONCURRENCY,
-  autoDownloadSingles: false,
 } satisfies Settings
 
 const settingsFields = [
@@ -45,7 +44,6 @@ const settingsFields = [
   'sourceUrlComment',
   'playlistSubfolder',
   'concurrency',
-  'autoDownloadSingles',
 ] as const
 
 const folders = (count: number): string[] =>
@@ -66,7 +64,6 @@ const invalidValues = [
   ['concurrency', MAX_CONCURRENCY + 1],
   ['concurrency', 2.5],
   ['concurrency', '3'],
-  ['autoDownloadSingles', 'yes'],
 ] as const
 
 describe('DEFAULT_SETTINGS', () => {
@@ -83,7 +80,6 @@ describe('DEFAULT_SETTINGS', () => {
       sourceUrlComment: true,
       playlistSubfolder: false,
       concurrency: 3,
-      autoDownloadSingles: true,
     })
     expect(DEFAULT_CONCURRENCY).toBe(DEFAULT_SETTINGS.concurrency)
   })
@@ -157,7 +153,6 @@ describe('SettingsSchema', () => {
       sourceUrlComment: boolean
       playlistSubfolder: boolean
       concurrency: number
-      autoDownloadSingles: boolean
     }>()
     expectTypeOf<z.input<typeof SettingsSchema>>().toEqualTypeOf<Settings>()
   })
@@ -178,6 +173,17 @@ describe('SettingsUpdateSchema', () => {
     ['every field it takes', fullUpdate],
   ])('parses %s unchanged', (_label, update) => {
     expect(SettingsUpdateSchema.parse(update)).toStrictEqual(update)
+  })
+
+  it('drops the retired autoDownloadSingles without an error (ADR-031)', () => {
+    expect(SettingsUpdateSchema.parse({ autoDownloadSingles: true, concurrency: 2 })).toStrictEqual(
+      {
+        concurrency: 2,
+      },
+    )
+    expect(SettingsSchema.parse({ ...customSettings, autoDownloadSingles: false })).toStrictEqual(
+      customSettings,
+    )
   })
 
   it('drops recentFolders without an error: the server keeps that list itself', () => {

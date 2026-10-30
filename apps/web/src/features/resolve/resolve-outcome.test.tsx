@@ -81,15 +81,15 @@ describe('while a link loads', () => {
     expect(skeleton('track')).not.toBeNull()
     expect(skeleton('list')).toBeNull()
     expect(status().textContent).toBe('Loading the track…')
-    // A track card is as wide as the card it turns into.
-    expect(skeleton('track')?.closest('[aria-busy]')?.className).toContain('max-w-3xl')
+    // The track header spans the column (ADR-031), so its skeleton does too.
+    expect(skeleton('track')?.closest('[aria-busy]')?.className).not.toContain('max-w-')
 
     await load(user, urls.playlist)
     expect(await screen.findByText('Loading the list…', { selector: 'span' })).toBeTruthy()
     expect(skeleton('list')).not.toBeNull()
     expect(skeleton('track')).toBeNull()
     // A list spans the column like the collection it turns into, so nothing jumps sideways.
-    expect(skeleton('list')?.closest('[aria-busy]')?.className).not.toContain('max-w-3xl')
+    expect(skeleton('list')?.closest('[aria-busy]')?.className).not.toContain('max-w-')
   })
 
   it('replaces the last result with the skeleton while the next link loads', async () => {
@@ -155,15 +155,14 @@ describe('while a link loads', () => {
 })
 
 describe('a track', () => {
-  it('shows the track card, auto-downloading when the setting says so', async () => {
+  it('shows the track card', async () => {
     server.on('POST /api/resolve', () => json(trackResult()))
     const user = userEvent.setup()
     renderWithQueryClient(<ResolvePage />)
 
     await load(user, urls.track)
 
-    const card = await screen.findByRole('article', { name: 'Track card: The Chill Zone' })
-    expect(card.dataset.autoStart).toBe('true')
+    expect(await screen.findByRole('article', { name: 'Track card: The Chill Zone' })).toBeTruthy()
     expect(status().textContent).toBe('Track: The Chill Zone')
   })
 
@@ -192,7 +191,7 @@ describe('a track', () => {
     expect(await screen.findByRole('region', { name: 'Remixes of World On Fire' })).toBeTruthy()
   })
 
-  it('shows the remixes while the card waits for the settings', async () => {
+  it('shows the card and its remixes without waiting for the settings (nothing auto-downloads)', async () => {
     server.on('GET /api/settings', noAnswer)
     server.on('POST /api/resolve', () => json(trackResult()))
     const user = userEvent.setup()
@@ -200,31 +199,9 @@ describe('a track', () => {
 
     await load(user, urls.track)
 
-    expect(await screen.findByRole('region', { name: 'Remixes of The Chill Zone' })).toBeTruthy()
-    expect(skeleton('track')).not.toBeNull()
-  })
-
-  it("doesn't auto-download when the setting is off", async () => {
-    server.on('GET /api/settings', () => json({ ...settings, autoDownloadSingles: false }))
-    server.on('POST /api/resolve', () => json(trackResult()))
-    const user = userEvent.setup()
-    renderWithQueryClient(<ResolvePage />)
-
-    await load(user, urls.track)
-
-    const card = await screen.findByRole('article', { name: 'Track card: The Chill Zone' })
-    expect(card.dataset.autoStart).toBe('false')
-  })
-
-  it('never auto-downloads an unavailable track', async () => {
-    server.on('POST /api/resolve', () => json(trackResult(previewTrack)))
-    const user = userEvent.setup()
-    renderWithQueryClient(<ResolvePage />)
-
-    await load(user, 'https://soundcloud.com/the-concept-band/world-on-fire-1')
-
-    const card = await screen.findByRole('article', { name: 'Track card: World On Fire' })
-    expect(card.dataset.autoStart).toBe('false')
+    expect(await screen.findByRole('article', { name: 'Track card: The Chill Zone' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Remixes of The Chill Zone' })).toBeTruthy()
+    expect(skeleton('track')).toBeNull()
   })
 
   it('mounts a fresh card for every paste, even of the same link', async () => {
@@ -237,32 +214,11 @@ describe('a track', () => {
     await user.click(screen.getByRole('button', { name: 'Go' }))
     await waitFor(() => expect(viewMounts).toHaveLength(2))
 
-    const mount = { view: 'track', id: 'XNEnEBrHws8', autoStart: true }
+    const mount = { view: 'track', id: 'XNEnEBrHws8' }
     expect(viewMounts).toEqual([mount, mount])
   })
 
-  it('waits for the settings before mounting the card', async () => {
-    let answerSettings = (_response: Response) => {}
-    server.on(
-      'GET /api/settings',
-      () => new Promise<Response>((resolve) => (answerSettings = resolve)),
-    )
-    server.on('POST /api/resolve', () => json(trackResult()))
-    const user = userEvent.setup()
-    renderWithQueryClient(<ResolvePage />)
-
-    await load(user, urls.track)
-    await waitFor(() => expect(status().textContent).toBe('Track: The Chill Zone'))
-    expect(skeleton('track')).not.toBeNull()
-    expect(screen.queryByRole('article')).toBeNull()
-
-    answerSettings(json(settings))
-
-    const card = await screen.findByRole('article', { name: 'Track card: The Chill Zone' })
-    expect(card.dataset.autoStart).toBe('true')
-  })
-
-  it('keeps the auto-download it mounted with when the settings change later', async () => {
+  it('keeps its card when the settings change later', async () => {
     server.on('POST /api/resolve', () => json(trackResult()))
     const user = userEvent.setup()
     const { queryClient } = renderWithQueryClient(<ResolvePage />)
@@ -272,13 +228,13 @@ describe('a track', () => {
     await act(async () => {
       queryClient.setQueryData<Settings>(settingsQueryKey, {
         ...settings,
-        autoDownloadSingles: false,
+        format: 'wav',
       })
       // TanStack Query tells React on a 0 ms timer.
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
 
-    expect(screen.getByRole('article').dataset.autoStart).toBe('true')
+    expect(screen.getByRole('article')).toBeTruthy()
     expect(viewMounts).toHaveLength(1)
   })
 })
@@ -378,10 +334,9 @@ describe('a track in a list', () => {
     expect(remixMounts).toEqual([])
     await user.click(screen.getByRole('button', { name: 'This track' }))
 
-    const card = await screen.findByRole('article', {
+    await screen.findByRole('article', {
       name: 'Track card: dlp test video title primary (en-GB)',
     })
-    expect(card.dataset.autoStart).toBe('true')
     expect(remixMounts).toEqual([ambiguous.playlist.track.id])
     expect(screen.queryByRole('region', { name: /^This track or/ })).toBeNull()
     expect(resolveCalls()).toHaveLength(1)
@@ -553,13 +508,12 @@ describe('a link that fails', () => {
 })
 
 describe('before anything loads', () => {
-  it('says what a paste does, by the auto-download setting', async () => {
-    server.on('GET /api/settings', () => json({ ...settings, autoDownloadSingles: false }))
+  it('says what a paste does: a single track waits for Download', async () => {
     renderWithQueryClient(<ResolvePage />)
 
     expect(
       await screen.findByText(
-        'A single track shows a Download button; for a playlist, set or album you pick the tracks first.',
+        'A single track shows its card and remixes, and downloads when you press Download (⌘D); for a playlist, set or album you pick the tracks first.',
       ),
     ).toBeTruthy()
   })

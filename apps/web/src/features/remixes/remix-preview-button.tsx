@@ -2,7 +2,7 @@ import type { RemixUpload } from '@dj-scraper/shared'
 import { Pause, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button.tsx'
 import { Spinner } from '@/components/ui/spinner.tsx'
-import type { PreviewStatus } from './preview-player.ts'
+import { type PreviewStatus, previewKey } from './preview-player.ts'
 
 type RemixPreviewButtonProps = {
   upload: RemixUpload
@@ -20,14 +20,16 @@ export function RemixPreviewButton({ upload, status, onToggle }: RemixPreviewBut
   let label = `Play ${upload.title}`
   if (playing) label = `Pause ${upload.title}`
   else if (preparing) label = `Cancel preparing ${upload.title}`
-  let icon = <Play aria-hidden />
-  if (playing) icon = <Pause aria-hidden />
+  let icon = <Play aria-hidden className="fill-current" />
+  if (playing) icon = <Pause aria-hidden className="fill-current" />
   else if (preparing) icon = <Spinner aria-hidden className="motion-reduce:animate-none" />
   return (
     <Button
       variant={status === 'playing' ? 'default' : status === 'idle' ? 'outline' : 'secondary'}
       size="icon-sm"
       aria-label={label}
+      // The now-playing bar's Close hands the focus back here.
+      data-remix-play={previewKey(upload)}
       title={preparing ? 'Preparing audio… Click to cancel' : undefined}
       onClick={onToggle}
     >

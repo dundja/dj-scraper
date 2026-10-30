@@ -1,11 +1,12 @@
 // The one app-wide remix player (ADR-029): preparing, playing, one at a time, cancel, errors, and
 // the speed and pitch lock that outlive a source. fetch is the fake server; the element is jsdom's
 // with the play/pause stand-in from src/test/setup.ts.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeApi, json, jsonBody, noAnswer } from '@/test/fake-api.ts'
 import { artyReupload, artySoundcloud, artyYoutube } from '@/test/remixes.ts'
 import {
   getPreviewState,
+  type NowPlayingDetails,
   previewAudio,
   releasePreview,
   resetPreviewPlayer,
@@ -15,6 +16,7 @@ import {
   stopPreview,
   togglePreview,
 } from './preview-player.ts'
+import { createRemixJobs } from './remix-jobs.ts'
 
 const PREVIEWS = 'POST /api/previews'
 const ready = (n: number) => ({
@@ -26,6 +28,8 @@ const ready = (n: number) => ({
 
 let server: ReturnType<typeof fakeApi>
 let served = 0
+/** What a row passes: the credit is optional, its section's jobs store is not. */
+const details: NowPlayingDetails = { jobs: createRemixJobs() }
 
 beforeEach(() => {
   server = fakeApi()
@@ -43,7 +47,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('starting', () => {
   it('asks for the upload, shows preparing, then plays the answer’s src', async () => {
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
 
     expect(getPreviewState()).toMatchObject({ key: 'youtube:Kp7eSUU9oy8', status: 'preparing' })
     await settle()
@@ -58,9 +62,9 @@ describe('starting', () => {
   })
 
   it('plays one upload at a time: starting another stops the first', async () => {
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     await settle()
-    togglePreview(artySoundcloud)
+    togglePreview(artySoundcloud, details)
 
     expect(getPreviewState()).toMatchObject({ key: 'soundcloud:279991262', status: 'preparing' })
     await settle()
@@ -76,8 +80,8 @@ describe('starting', () => {
       }
       return json(ready(2))
     })
-    togglePreview(artyYoutube)
-    togglePreview(artySoundcloud)
+    togglePreview(artyYoutube, details)
+    togglePreview(artySoundcloud, details)
     await settle()
     release(json(ready(1)))
     await settle()
@@ -87,24 +91,63 @@ describe('starting', () => {
   })
 })
 
+describe('what plays', () => {
+  it('holds the upload and what the bar shows of it, until the player stops', async () => {
+    const jobs = createRemixJobs()
+    togglePreview(artyYoutube, { credit: 'Remix by Arty', jobs })
+
+    expect(getPreviewState().nowPlaying).toEqual({
+      upload: artyYoutube,
+      credit: 'Remix by Arty',
+      jobs,
+    })
+    await settle()
+    const other = createRemixJobs()
+    togglePreview(artySoundcloud, { credit: 'Remix by Arty', jobs: other })
+    expect(getPreviewState().nowPlaying).toEqual({
+      upload: artySoundcloud,
+      credit: 'Remix by Arty',
+      jobs: other,
+    })
+
+    stopPreview()
+    expect(getPreviewState().nowPlaying).toBeNull()
+  })
+
+  it('keeps them through a retry after a failure', async () => {
+    server.on(PREVIEWS, () => json({ error: { code: 'unavailable', message: 'Gone.' } }, 404))
+    const jobs = createRemixJobs()
+    togglePreview(artyYoutube, { credit: 'Remix by Arty', jobs })
+    await settle()
+    expect(getPreviewState().status).toBe('error')
+
+    server.on(PREVIEWS, () => json(ready(5)))
+    // A retry keeps what it started with, whatever the caller passes.
+    togglePreview(artyYoutube, details)
+    expect(getPreviewState().nowPlaying).toMatchObject({ credit: 'Remix by Arty', jobs })
+    await settle()
+    expect(getPreviewState().status).toBe('playing')
+  })
+})
+
 describe('pausing, resuming and cancelling', () => {
   it('pauses and resumes the same upload', async () => {
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     await settle()
 
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     expect(getPreviewState().status).toBe('paused')
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     expect(getPreviewState().status).toBe('playing')
     expect(server.callsTo(PREVIEWS)).toHaveLength(1)
   })
 
   it('cancels while preparing: the request is aborted and the player is idle', async () => {
     server.on(PREVIEWS, noAnswer)
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     const [call] = server.callsTo(PREVIEWS)
 
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
 
     expect(call?.signal?.aborted).toBe(true)
     expect(getPreviewState()).toMatchObject({ key: null, status: 'idle' })
@@ -112,19 +155,20 @@ describe('pausing, resuming and cancelling', () => {
     expect(getPreviewState().status).toBe('idle')
   })
 
-  it('stops only when the releasing row holds the audio', async () => {
-    togglePreview(artyYoutube)
+  it('stops only when the releasing section started what plays', async () => {
+    const section = createRemixJobs()
+    togglePreview(artyYoutube, { credit: 'Remix by Arty', jobs: section })
     await settle()
 
-    releasePreview('youtube:other')
+    releasePreview(createRemixJobs())
     expect(getPreviewState().status).toBe('playing')
-    releasePreview('youtube:Kp7eSUU9oy8')
-    expect(getPreviewState().status).toBe('idle')
+    releasePreview(section)
+    expect(getPreviewState()).toMatchObject({ status: 'idle', nowPlaying: null })
     expect(previewAudio().hasAttribute('src')).toBe(false)
   })
 
   it('shows a finished upload as paused at the start', async () => {
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     await settle()
 
     previewAudio().dispatchEvent(new Event('ended'))
@@ -138,7 +182,7 @@ describe('failures', () => {
     server.on(PREVIEWS, () =>
       json({ error: { code: 'unavailable', message: 'This upload was removed.' } }, 404),
     )
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     await settle()
 
     expect(getPreviewState()).toMatchObject({
@@ -147,13 +191,43 @@ describe('failures', () => {
     })
 
     server.on(PREVIEWS, () => json(ready(9)))
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     await settle()
     expect(getPreviewState().status).toBe('playing')
   })
 
+  it('words a rejected play() ours, not the browser’s', async () => {
+    vi.spyOn(previewAudio(), 'play').mockRejectedValueOnce(
+      new DOMException(
+        'Failed to load because no supported source was found.',
+        'NotSupportedError',
+      ),
+    )
+    togglePreview(artyYoutube, details)
+    await settle()
+
+    expect(getPreviewState().status).toBe('error')
+    expect((getPreviewState().error as Error).message).toBe("This audio can't be played.")
+  })
+
+  it('says a blocked play() can be pressed again', async () => {
+    togglePreview(artyYoutube, details)
+    await settle()
+    togglePreview(artyYoutube, details)
+    vi.spyOn(previewAudio(), 'play').mockRejectedValueOnce(
+      new DOMException('play() can only be initiated by a user gesture.', 'NotAllowedError'),
+    )
+
+    togglePreview(artyYoutube, details)
+    await settle()
+
+    expect((getPreviewState().error as Error).message).toBe(
+      'The browser blocked playback. Press Play again.',
+    )
+  })
+
   it('turns the element’s own error into a failure', async () => {
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     await settle()
 
     previewAudio().dispatchEvent(new Event('error'))
@@ -164,7 +238,7 @@ describe('failures', () => {
 
 describe('time', () => {
   it('follows the element and seeks within the duration', async () => {
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     await settle()
     const audio = previewAudio()
     Object.defineProperty(audio, 'duration', { configurable: true, value: 200 })
@@ -179,7 +253,7 @@ describe('time', () => {
 
 describe('speed and pitch lock', () => {
   it('applies the speed and lock to the element, clamped', async () => {
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     await settle()
 
     setPreviewRate(1.07)
@@ -194,12 +268,12 @@ describe('speed and pitch lock', () => {
   })
 
   it('keeps them for the next upload, and sets them again on its new source', async () => {
-    togglePreview(artyYoutube)
+    togglePreview(artyYoutube, details)
     await settle()
     setPreviewRate(1.25)
     setPreviewPitchLock(false)
 
-    togglePreview(artyReupload)
+    togglePreview(artyReupload, details)
     // Loading a source resets what the element holds, as a real one does.
     previewAudio().playbackRate = 1
     await settle()

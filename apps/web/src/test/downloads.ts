@@ -102,7 +102,6 @@ export const settings: Settings = SettingsSchema.parse({
   sourceUrlComment: true,
   playlistSubfolder: false,
   concurrency: 3,
-  autoDownloadSingles: true,
 })
 
 /**

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-30T15:15:43.337Z",
+  "generatedAt": "2026-10-30T19:38:47.312Z",
   "title": "Design System: DJ Scraper",
   "extensions": {
     "colorMeta": {
@@ -278,30 +278,30 @@
     "typographyMeta": {
       "headline": {
         "displayName": "Headline",
-        "purpose": "The track title and a collection's title; up to two lines."
+        "purpose": "The track title in the track header and a collection's title; up to two lines."
       },
       "title": {
         "displayName": "Title",
-        "purpose": "Section headings: Remixes, Downloads. Empty-state and prompt headings use it at 500."
+        "purpose": "Every heading at 600: Remixes, Downloads, the empty state, the ambiguous-link prompt, Page not found."
       },
       "body": {
         "displayName": "Body",
-        "purpose": "Row titles, messages, buttons and status words (buttons and status words at 500)."
+        "purpose": "Messages, buttons and status words (at 500), the remix version name (at 500), the now-playing name (at 600)."
       },
       "label": {
         "displayName": "Label",
-        "purpose": "Metadata lines, badges, queue notes, the player strip."
+        "purpose": "Metadata lines, credits, badges, the remix column header, queue notes, 'Not downloaded yet.'."
       },
       "measure": {
         "displayName": "Measure",
-        "purpose": "Geist Mono with tabular figures for standalone measurements: durations, playback times, speeds, live progress figures. 0.75-0.875rem."
+        "purpose": "Geist Mono with tabular figures for standalone measurements: durations, remix lengths, playback times, speeds, live progress figures. 0.75-0.875rem."
       }
     },
     "shadows": [
       {
         "name": "popover-float",
         "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1), 0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent)",
-        "purpose": "shadcn's generated popovers, menus and selects only; everything else is flat."
+        "purpose": "shadcn's generated popovers, menus and selects only (the speed popover included); everything else, the now-playing bar too, is flat."
       }
     ],
     "motion": [
@@ -318,9 +318,24 @@
     ],
     "breakpoints": [
       {
+        "name": "md",
+        "value": "768px",
+        "purpose": "Track header: 160px cover and the download beside the names at and above; 96px cover and the download full width under a hairline below."
+      },
+      {
         "name": "lg",
         "value": "1024px",
-        "purpose": "Two columns (main + 384px downloads rail, each scrolling) at and above; stacked, page-scrolling below."
+        "purpose": "Two columns (full-width main + 384px downloads rail, each scrolling) with the now-playing bar as a 72px in-flow row at and above; stacked, page-scrolling, bar sticky at the bottom in two rows below."
+      },
+      {
+        "name": "speed-inline",
+        "value": "1400px",
+        "purpose": "The now-playing bar's speed grid sits inline at and above; a popover with the slider below."
+      },
+      {
+        "name": "@4xl (container)",
+        "value": "56rem",
+        "purpose": "Remix section width at which genre, platform and length leave the line under the title for their own columns, and the column header appears."
       }
     ]
   },
@@ -329,7 +344,7 @@
       "name": "Primary Button",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "Go, Download: the one violet fill per action.",
+      "description": "Go, the track's Download (with its ⌘D hint): the one violet fill per action.",
       "html": "<button class=\"ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 17V3\"/><path d=\"m6 11 6 6 6-6\"/><path d=\"M19 21H5\"/></svg>Download</button>",
       "css": ".ds-btn-primary { font-family: \"Geist Variable\", sans-serif; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 0.5rem; border: 1px solid transparent; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 150ms, transform 150ms; background: var(--primary); color: var(--primary-foreground); } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary) 80%, transparent); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-btn-primary:active { transform: translateY(1px); }"
     },
@@ -337,7 +352,7 @@
       "name": "Outline Button",
       "kind": "button",
       "refersTo": "button-outline",
-      "description": "Row actions: Download on a remix, Reveal in Finder, play.",
+      "description": "Row actions: a remix's Download, Reveal in Finder, an idle Play.",
       "html": "<button class=\"ds-btn-outline\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z\"/></svg></button> <button class=\"ds-btn-outline\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 17V3\"/><path d=\"m6 11 6 6 6-6\"/><path d=\"M19 21H5\"/></svg>Download</button>",
       "css": ".ds-btn-outline { font-family: \"Geist Variable\", sans-serif; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 0.5rem; border: 1px solid transparent; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 150ms, transform 150ms; background: color-mix(in oklch, var(--input) 30%, var(--background)); border-color: var(--input); color: var(--foreground); } .ds-btn-outline:hover { background: color-mix(in oklch, var(--input) 50%, var(--background)); } .ds-btn-outline:focus-visible { border-color: var(--ring); outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-btn-outline:active { transform: translateY(1px); }"
     },
@@ -353,17 +368,17 @@
       "name": "Platform Badge",
       "kind": "chip",
       "refersTo": "platform-badge",
-      "description": "A platform's brand dot beside its name, never a field of colour.",
-      "html": "<span class=\"ds-badge\"><i style=\"background: var(--platform-youtube)\"></i>YouTube · 579K views</span> <span class=\"ds-badge\"><i style=\"background: var(--platform-soundcloud)\"></i>SoundCloud</span> <span class=\"ds-badge\"><i style=\"background: var(--platform-spotify)\"></i>Spotify</span>",
-      "css": ".ds-badge { font-family: \"Geist Variable\", sans-serif; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 2px 8px; border-radius: 9999px; border: 1px solid var(--border); color: var(--muted-foreground); font-size: 0.75rem; font-variant-numeric: tabular-nums; } .ds-badge i { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; }"
+      "description": "A platform's brand dot beside its name: a pill in metadata lines, plain (no border) where it stands in its own column.",
+      "html": "<span class=\"ds-badge\"><i style=\"background: var(--platform-youtube)\"></i>YouTube</span> <span class=\"ds-badge\"><i style=\"background: var(--platform-soundcloud)\"></i>SoundCloud · 556K plays</span> <span class=\"ds-badge ds-plain\"><i style=\"background: var(--platform-youtube)\"></i>YouTube · 579K views</span>",
+      "css": ".ds-badge { font-family: \"Geist Variable\", sans-serif; display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 2px 8px; border-radius: 9999px; border: 1px solid var(--border); color: var(--muted-foreground); font-size: 0.75rem; font-variant-numeric: tabular-nums; } .ds-badge i { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; } .ds-plain { height: auto; padding: 0; border-color: transparent; border-radius: 0; }"
     },
     {
-      "name": "Track Card",
+      "name": "Track Header",
       "kind": "card",
-      "refersTo": "track-card",
-      "description": "The pasted track on the one surface step: artwork, headline title, metadata, then its status line.",
-      "html": "<article class=\"ds-card\"><div class=\"ds-art\"></div><div><h3>Porcelain</h3><p class=\"ds-muted\">Moby</p><p class=\"ds-meta\"><span class=\"ds-badge\"><i style=\"background: var(--platform-youtube)\"></i>YouTube</span><span class=\"ds-mono\">4:01</span><span>Source: AAC 128 kbps</span></p></div></article>",
-      "css": ".ds-card { font-family: \"Geist Variable\", sans-serif; display: flex; gap: 16px; padding: 16px; border-radius: 0.5rem; border: 1px solid var(--border); background: var(--card); color: var(--card-foreground); } .ds-art { width: 96px; height: 96px; border-radius: 0.4rem; background: var(--muted); flex-shrink: 0; } .ds-card h3 { margin: 0; font-size: 1.125rem; line-height: 1.375; font-weight: 600; letter-spacing: -0.025em; } .ds-muted { margin: 4px 0 0; font-size: 0.875rem; color: var(--muted-foreground); } .ds-meta { display: flex; gap: 12px; align-items: center; margin: 12px 0 0; font-size: 0.75rem; color: var(--muted-foreground); } .ds-mono { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; } .ds-badge { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 2px 8px; border-radius: 9999px; border: 1px solid var(--border); } .ds-badge i { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; }"
+      "refersTo": "track-header",
+      "description": "The pasted track as a wide header on the surface step: 160px cover, names, metadata, then the download along its bottom, which waits for Download or ⌘D.",
+      "html": "<article class=\"ds-th\"><div class=\"ds-art\"></div><div class=\"ds-names\"><h2>Never Gonna Give You Up</h2><p class=\"ds-muted\">Rick Astley</p><p class=\"ds-meta\"><span class=\"ds-badge\"><i style=\"background: var(--platform-youtube)\"></i>YouTube</span><span class=\"ds-mono\">3:33</span><span>Source: Opus 128 kbps</span></p></div><div class=\"ds-dl\"><p class=\"ds-note\">Not downloaded yet.</p><span class=\"ds-actions\"><button class=\"ds-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 17V3\"/><path d=\"m6 11 6 6 6-6\"/><path d=\"M19 21H5\"/></svg>Download<kbd>⌘D</kbd></button><button class=\"ds-select\">MP3</button></span></div></article>",
+      "css": ".ds-th { font-family: \"Geist Variable\", sans-serif; display: grid; grid-template-columns: auto minmax(0,1fr); grid-template-rows: 1fr auto; column-gap: 20px; row-gap: 12px; padding: 16px; border-radius: 0.5rem; border: 1px solid var(--border); background: var(--card); color: var(--card-foreground); width: 720px; } .ds-art { width: 160px; height: 160px; border-radius: 0.4rem; background: var(--muted); grid-row: span 2; } .ds-names { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; } .ds-th h2 { margin: 0; font-size: 1.125rem; line-height: 1.375; font-weight: 600; letter-spacing: -0.025em; } .ds-muted { margin: 0; font-size: 0.875rem; color: var(--muted-foreground); } .ds-meta { display: flex; gap: 12px; align-items: center; margin: 0; padding-top: 6px; font-size: 0.75rem; color: var(--muted-foreground); } .ds-mono { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; } .ds-badge { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 2px 8px; border-radius: 9999px; border: 1px solid var(--border); } .ds-badge i { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; } .ds-dl { grid-column: 2; align-self: end; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; } .ds-note { margin: 0; font-size: 0.75rem; color: var(--muted-foreground); } .ds-actions { display: flex; gap: 8px; } .ds-primary { font-family: inherit; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 0.5rem; border: 0; background: var(--primary); color: var(--primary-foreground); font-size: 0.875rem; font-weight: 500; cursor: pointer; } .ds-primary:hover { background: color-mix(in oklch, var(--primary) 80%, transparent); } .ds-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-primary kbd { font-family: inherit; font-size: 0.75rem; padding: 0 4px; height: 20px; display: inline-flex; align-items: center; border-radius: 0.3rem; background: color-mix(in oklch, var(--primary-foreground) 15%, transparent); } .ds-select { font-family: inherit; height: 32px; padding: 0 10px; border-radius: 0.5rem; border: 1px solid var(--input); background: color-mix(in oklch, var(--input) 30%, var(--background)); color: var(--foreground); font-size: 0.875rem; cursor: pointer; } .ds-select:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
     },
     {
       "name": "Status Line",
@@ -373,12 +388,20 @@
       "css": ".ds-status { font-family: \"Geist Variable\", sans-serif; display: flex; flex-direction: column; gap: 6px; font-size: 0.875rem; font-weight: 500; color: var(--foreground); } .ds-status p { display: flex; align-items: center; gap: 6px; margin: 0; } .ds-done { color: var(--success); } .ds-wait { color: var(--warning); } .ds-fail { color: var(--destructive); } .ds-mono { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 400; color: var(--muted-foreground); } .ds-dl { display: flex; flex-direction: column; gap: 4px; width: 240px; } .ds-track { height: 4px; border-radius: 9999px; background: var(--muted); overflow: hidden; } .ds-track div { height: 100%; background: var(--primary); transition: width 150ms; }"
     },
     {
-      "name": "Playing Remix Row",
+      "name": "Remix Columns",
       "kind": "custom",
-      "refersTo": "remix-row-playing",
-      "description": "The one raised row, with its player strip and the violet active speed preset.",
-      "html": "<div class=\"ds-row\"><div class=\"ds-top\"><div class=\"ds-art\"></div><div class=\"ds-txt\"><p>Porcelain (Krysiek Remix)</p><span class=\"ds-mono\">3:27</span></div><button class=\"ds-play\" aria-label=\"Pause\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><rect x=\"14\" y=\"4\" width=\"4\" height=\"16\" rx=\"1\"/><rect x=\"6\" y=\"4\" width=\"4\" height=\"16\" rx=\"1\"/></svg></button></div><div class=\"ds-strip\"><div class=\"ds-time\"><span class=\"ds-mono\">0:42</span><input type=\"range\" aria-label=\"Position\" value=\"20\"><span class=\"ds-mono\">3:27</span></div><div class=\"ds-presets\"><button class=\"ds-pre\">0.94x</button><button class=\"ds-pre\" aria-pressed=\"true\">1x</button><button class=\"ds-pre\">1.06x</button></div></div></div>",
-      "css": ".ds-row { font-family: \"Geist Variable\", sans-serif; display: flex; flex-direction: column; gap: 8px; padding: 10px 8px; border-radius: 0.5rem; background: var(--card); color: var(--foreground); width: 420px; } .ds-top { display: flex; gap: 12px; align-items: flex-start; } .ds-art { width: 40px; height: 40px; border-radius: 0.3rem; background: var(--muted); } .ds-txt { flex: 1; } .ds-txt p { margin: 0 0 4px; font-size: 0.875rem; } .ds-mono { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 0.75rem; color: var(--muted-foreground); } .ds-play { width: 32px; height: 32px; border-radius: 0.5rem; border: none; background: var(--primary); color: var(--primary-foreground); display: grid; place-items: center; cursor: pointer; } .ds-play:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-strip { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 0.4rem; background: color-mix(in oklch, var(--muted) 60%, transparent); } .ds-time { display: flex; align-items: center; gap: 8px; } .ds-time input { flex: 1; accent-color: var(--primary); } .ds-presets { display: flex; gap: 4px; } .ds-pre { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; height: 24px; padding: 0 8px; border-radius: 0.4rem; border: 1px solid var(--input); background: color-mix(in oklch, var(--input) 30%, var(--background)); color: var(--foreground); font-size: 0.75rem; cursor: pointer; } .ds-pre:hover { background: var(--muted); } .ds-pre[aria-pressed=\"true\"] { background: var(--primary); color: var(--primary-foreground); border-color: transparent; } .ds-pre:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+      "refersTo": "remix-row",
+      "description": "The remix list on aligned columns (CSS grid + subgrid rows) under a muted sentence-case column header; the row whose audio is on is the one raised row.",
+      "html": "<div class=\"ds-rl\"><div class=\"ds-ch\" aria-hidden=\"true\"><span></span><span>Title</span><span>Genre</span><span>Platform</span><span style=\"text-align:right\">Length</span><span></span><span></span></div><ul><li class=\"ds-row ds-raised\"><span class=\"ds-cover\"></span><span class=\"ds-t\"><b>Krysiek Remix</b><small>Remix by Krysiek</small></span><span></span><span class=\"ds-plat\"><i style=\"background: var(--platform-youtube)\"></i>YouTube · 579K views</span><span class=\"ds-len\">3:27</span><button class=\"ds-play ds-on\" aria-label=\"Pause\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"currentColor\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><rect x=\"14\" y=\"4\" width=\"4\" height=\"16\" rx=\"1\"/><rect x=\"6\" y=\"4\" width=\"4\" height=\"16\" rx=\"1\"/></svg></button><button class=\"ds-out\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 17V3\"/><path d=\"m6 11 6 6 6-6\"/><path d=\"M19 21H5\"/></svg>Download</button></li><li class=\"ds-row\"><span class=\"ds-cover\"></span><span class=\"ds-t\"><b>Timmo Hendriks Remix</b><small>Remix by Timmo Hendriks</small></span><span></span><span class=\"ds-plat\"><i style=\"background: var(--platform-soundcloud)\"></i>SoundCloud · 556K plays</span><span class=\"ds-len\">4:20</span><button class=\"ds-play\" aria-label=\"Play\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z\"/></svg></button><button class=\"ds-out\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 17V3\"/><path d=\"m6 11 6 6 6-6\"/><path d=\"M19 21H5\"/></svg>Download</button></li><li class=\"ds-row\"><span class=\"ds-cover\"></span><span class=\"ds-t\"><b>Synthwave Remix</b><small>Remix</small></span><span class=\"ds-genre\">Synthwave</span><span class=\"ds-plat\"><i style=\"background: var(--platform-youtube)\"></i>YouTube · 302K views</span><span class=\"ds-len\">3:55</span><button class=\"ds-play\" aria-label=\"Play\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z\"/></svg></button><button class=\"ds-out\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 17V3\"/><path d=\"m6 11 6 6 6-6\"/><path d=\"M19 21H5\"/></svg>Download</button></li></ul></div>",
+      "css": ".ds-rl { font-family: \"Geist Variable\", sans-serif; display: grid; grid-template-columns: 3rem minmax(0,1fr) auto auto auto auto auto; column-gap: 16px; width: 860px; color: var(--foreground); } .ds-rl ul { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; margin: 0; padding: 0; list-style: none; } .ds-ch, .ds-row { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; padding: 0 8px; } .ds-ch { height: 28px; border-bottom: 1px solid var(--border); font-size: 0.75rem; color: var(--muted-foreground); } .ds-row { min-height: 56px; padding-top: 4px; padding-bottom: 4px; border-bottom: 1px solid color-mix(in oklch, var(--border) 50%, transparent); } .ds-row:last-child { border-bottom: 0; } .ds-raised { background: var(--card); border-radius: 0.5rem; border-color: transparent; } .ds-cover { width: 48px; height: 48px; border-radius: 0.3rem; background: var(--muted); } .ds-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; } .ds-t b { font-size: 0.875rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-t small { font-size: 0.75rem; color: var(--muted-foreground); } .ds-genre { display: inline-flex; align-items: center; height: 20px; padding: 2px 8px; border-radius: 9999px; border: 1px dashed var(--border); font-size: 0.75rem; color: var(--muted-foreground); } .ds-plat { display: inline-flex; align-items: center; gap: 4px; font-size: 0.75rem; color: var(--muted-foreground); font-variant-numeric: tabular-nums; } .ds-plat i { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; } .ds-len { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: 0.75rem; color: var(--muted-foreground); justify-self: end; } .ds-play { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 0.4rem; border: 1px solid var(--input); background: color-mix(in oklch, var(--input) 30%, var(--background)); color: var(--foreground); cursor: pointer; } .ds-play:hover { background: color-mix(in oklch, var(--input) 50%, var(--background)); } .ds-play.ds-on { background: var(--primary); color: var(--primary-foreground); border-color: transparent; } .ds-play:focus-visible, .ds-out:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-out { font-family: inherit; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 0.4rem; border: 1px solid var(--input); background: color-mix(in oklch, var(--input) 30%, var(--background)); color: var(--foreground); font-size: 0.8rem; font-weight: 500; cursor: pointer; } .ds-out:hover { background: color-mix(in oklch, var(--input) 50%, var(--background)); }"
+    },
+    {
+      "name": "Now-Playing Bar",
+      "kind": "custom",
+      "refersTo": "now-playing-bar",
+      "description": "The one player: a 72px in-flow band on the surface step with cover, names, a round violet play/pause, the themed seek bar, the speed grid, Download and Close.",
+      "html": "<section class=\"ds-np\" aria-label=\"Now playing\"><span class=\"ds-info\"><span class=\"ds-cover\"></span><span class=\"ds-names\"><b>Krysiek Remix</b><small>Remix by Krysiek · <i style=\"background: var(--platform-youtube)\"></i>YouTube</small></span></span><button class=\"ds-pp\" aria-label=\"Pause\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"currentColor\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><rect x=\"14\" y=\"4\" width=\"4\" height=\"16\" rx=\"1\"/><rect x=\"6\" y=\"4\" width=\"4\" height=\"16\" rx=\"1\"/></svg></button><span class=\"ds-seek\"><span class=\"ds-mono\">0:42</span><input class=\"ds-range\" type=\"range\" aria-label=\"Seek\" min=\"0\" max=\"207\" value=\"42\" style=\"--value: 20.29%\"><span class=\"ds-mono\">3:27</span></span><span class=\"ds-speed\"><button class=\"ds-pre\">0.75x</button><button class=\"ds-pre\">0.9x</button><button class=\"ds-pre\">1x</button><button class=\"ds-pre\" aria-pressed=\"true\">1.1x</button><button class=\"ds-pre\">1.25x</button><button class=\"ds-pre\">1.5x</button><span class=\"ds-div\"></span><span class=\"ds-mono ds-val\">1.10x</span></span><button class=\"ds-out\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 17V3\"/><path d=\"m6 11 6 6 6-6\"/><path d=\"M19 21H5\"/></svg>Download</button><button class=\"ds-x\" aria-label=\"Close player\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/></svg></button></section>",
+      "css": ".ds-np { font-family: \"Geist Variable\", sans-serif; display: grid; grid-template-columns: minmax(0,17rem) auto minmax(10rem,1fr) auto auto auto; align-items: center; column-gap: 16px; height: 72px; padding: 0 16px; border-top: 1px solid var(--border); background: var(--card); color: var(--foreground); width: 1180px; } .ds-info { display: flex; align-items: center; gap: 12px; min-width: 0; } .ds-cover { width: 48px; height: 48px; border-radius: 0.3rem; background: var(--muted); flex-shrink: 0; } .ds-names { display: flex; flex-direction: column; min-width: 0; } .ds-names b { font-size: 0.875rem; font-weight: 600; } .ds-names small { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--muted-foreground); } .ds-names i { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; } .ds-pp { width: 40px; height: 40px; border-radius: 9999px; border: 0; display: grid; place-items: center; background: var(--primary); color: var(--primary-foreground); cursor: pointer; } .ds-pp:hover { background: color-mix(in oklch, var(--primary) 80%, transparent); } .ds-pp:focus-visible, .ds-pre:focus-visible, .ds-out:focus-visible, .ds-x:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); } .ds-seek { display: flex; align-items: center; gap: 10px; font-size: 0.75rem; color: var(--muted-foreground); min-width: 0; } .ds-mono { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; } .ds-seek .ds-mono { width: 40px; } .ds-seek .ds-mono:first-child { text-align: right; } .ds-range { appearance: none; background: transparent; height: 16px; flex: 1; min-width: 0; cursor: pointer; } .ds-range:focus-visible { outline: none; } .ds-range::-webkit-slider-runnable-track { height: 4px; border-radius: 9999px; background: linear-gradient(to right, var(--primary) var(--value, 0%), var(--muted) var(--value, 0%)); } .ds-range::-webkit-slider-thumb { appearance: none; width: 12px; height: 12px; margin-top: -4px; border: 0; border-radius: 9999px; background: var(--foreground); } .ds-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 60%, transparent); } .ds-range::-moz-range-track { height: 4px; border-radius: 9999px; background: var(--muted); } .ds-range::-moz-range-progress { height: 4px; border-radius: 9999px; background: var(--primary); } .ds-range::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 9999px; background: var(--foreground); } .ds-speed { display: flex; align-items: center; gap: 4px; } .ds-pre { font-family: \"Geist Mono Variable\", ui-monospace, monospace; font-variant-numeric: tabular-nums; height: 24px; padding: 0 8px; border-radius: 0.4rem; border: 1px solid var(--input); background: color-mix(in oklch, var(--input) 30%, var(--background)); color: var(--foreground); font-size: 0.75rem; cursor: pointer; } .ds-pre:hover { background: var(--muted); } .ds-pre[aria-pressed=\"true\"] { background: var(--primary); color: var(--primary-foreground); border-color: transparent; } .ds-div { width: 1px; height: 24px; margin: 0 6px; background: var(--border); } .ds-val { font-size: 0.875rem; } .ds-out { font-family: inherit; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 0.4rem; border: 1px solid var(--input); background: color-mix(in oklch, var(--input) 30%, var(--background)); color: var(--foreground); font-size: 0.8rem; font-weight: 500; cursor: pointer; } .ds-x { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 0.4rem; background: transparent; color: var(--foreground); cursor: pointer; } .ds-x:hover { background: var(--muted); }"
     },
     {
       "name": "Header",
@@ -417,27 +440,29 @@
       },
       {
         "name": "The Measurement Rule",
-        "body": "Geist Mono sets a measurement standing on its own. Counts, sentences and a bitrate inside a prose line (\"MP3 · 320 kbps · re-encoded from …\") stay in Geist with tabular figures.",
+        "body": "Geist Mono sets a measurement standing on its own. Counts (\"579K views\", filter counts), sentences and a bitrate inside a prose line (\"Source: Opus 128 kbps\", \"MP3 · 320 kbps · re-encoded from …\") stay in Geist with tabular figures.",
         "section": "typography"
       },
       {
         "name": "The One Step Rule",
-        "body": "There is one heading step above body text. No display sizes, no uppercase labels, no eyebrows above headings.",
+        "body": "There is one heading step above body text. No display sizes, no uppercase labels, no eyebrows above headings. Column names are sentence-case Label text, not headings.",
         "section": "typography"
       },
       {
         "name": "The One Raised Row Rule",
-        "body": "In a list, only the row whose audio is on rises to the surface step, together with its player strip. Every other row lies on the ground.",
+        "body": "In a list, only the row whose audio is on (preparing, playing, paused or failed) rises to the surface step; the now-playing bar on the same step is its player. Every other row lies on the ground.",
         "section": "elevation"
       }
     ],
     "dos": [
       "Do change the look through tokens in `src/styles.css`; take shadcn components from the CLI as generated.",
       "Do keep violet to primary actions, progress, the active control, checkboxes, switches and focus.",
-      "Do pair every status hue with its icon and its word.",
+      "Do pair every status hue with its icon and its word, failure lines included.",
       "Do show a platform as its brand dot (6 px) beside its name.",
       "Do set standalone measurements in Geist Mono with tabular figures.",
-      "Do raise only the playing remix row to Charcoal Surface."
+      "Do raise only the playing remix row to Charcoal Surface, with the now-playing bar as its player.",
+      "Do style range inputs with the `range-input` utility and its `--value` fill, not the browser's default.",
+      "Do set every heading at 600 on the one Title step (the track and collection titles at Headline)."
     ],
     "donts": [
       "Don't use Tailwind palette colours (`bg-red-500`) in features; use the role tokens.",
@@ -445,7 +470,8 @@
       "Don't use pure white text or a black ground.",
       "Don't set counts, sentences or prose bitrates in monospace.",
       "Don't add a light theme by inheriting shadcn's defaults; a light theme would have to be designed.",
-      "Don't add neon, glow or club styling, or make the primary blue."
+      "Don't add neon, glow or club styling, or make the primary blue.",
+      "Don't float the player over the page; it takes its own row in the flow."
     ]
   }
 }
